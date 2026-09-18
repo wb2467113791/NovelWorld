@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NovelWorld 两周学习计划 + V1→V3 升级路线</title>
+<style>
+:root{
+  --bg:#0b1020;--panel:#121a2f;--panel2:#18223d;--text:#edf2ff;--muted:#aab5d1;
+  --line:#293552;--accent:#8ea1ff;--accent2:#7ee0c4;--warn:#ffd28a;--ok:#8de0a6;--code:#0e1528;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;font-family:Inter,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.72}
+a{color:#b8c5ff;text-decoration:none}
+a:hover{text-decoration:underline}
+.layout{display:grid;grid-template-columns:300px minmax(0,1fr);min-height:100vh}
+aside{position:sticky;top:0;height:100vh;overflow:auto;background:#0f162a;border-right:1px solid var(--line);padding:24px 18px}
+main{padding:34px 42px 80px;max-width:1200px;width:100%}
+.brand{font-size:22px;font-weight:800;margin-bottom:4px}
+.sub{color:var(--muted);font-size:13px}
+.progress-wrap{margin:22px 0 18px}
+.progress-track{height:10px;background:#26304a;border-radius:999px;overflow:hidden}
+.progress-bar{height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:.25s}
+.progress-label{font-size:12px;color:var(--muted);margin-top:8px}
+.search{width:100%;background:var(--panel);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px 12px;margin:8px 0 16px}
+.nav a{display:block;padding:8px 10px;border-radius:8px;color:#c9d2ed;font-size:14px}
+.nav a:hover{background:var(--panel2);text-decoration:none}
+.hero{background:linear-gradient(135deg,#17213e,#102136);border:1px solid var(--line);border-radius:22px;padding:34px;margin-bottom:28px}
+.hero h1{font-size:36px;line-height:1.25;margin:0 0 10px}
+.hero p{color:#c7d1ea;max-width:850px}
+.tagrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}
+.tag{font-size:12px;padding:5px 9px;border-radius:999px;background:#202c4d;border:1px solid #34446d;color:#dbe3ff}
+.section{margin-top:34px}
+.section h2{font-size:26px;margin-bottom:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px;margin:14px 0}
+.callout{border-left:4px solid var(--accent);background:#131d37;padding:16px 18px;border-radius:10px}
+.warn{border-left-color:var(--warn)}
+.ok{border-left-color:var(--ok)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.metric{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:16px}
+.metric b{display:block;font-size:20px;margin-bottom:5px}
+code,pre{font-family:"JetBrains Mono","SFMono-Regular",Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--line);padding:16px;border-radius:12px;overflow:auto;color:#dbe4ff}
+details.day{background:var(--panel);border:1px solid var(--line);border-radius:16px;margin:14px 0;overflow:hidden}
+details.day[open]{box-shadow:0 0 0 1px #374978 inset}
+summary{cursor:pointer;list-style:none;padding:18px 20px;font-weight:800;font-size:18px;background:#141e37}
+summary::-webkit-details-marker{display:none}
+.day-body{padding:18px 20px 22px}
+.day-head{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.badge{font-size:12px;padding:4px 8px;border-radius:999px;background:#243255;color:#d7e0ff}
+.task{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px dashed #273452}
+.task:last-child{border-bottom:none}
+.task input{margin-top:7px;transform:scale(1.15)}
+.task.done span{text-decoration:line-through;color:#7783a1}
+h3{margin-top:24px}
+ul{padding-left:22px}
+table{width:100%;border-collapse:collapse;margin:10px 0 4px}
+th,td{border-bottom:1px solid var(--line);padding:11px 10px;text-align:left;vertical-align:top}
+th{color:#dce4ff;background:#18223b}
+.small{font-size:13px;color:var(--muted)}
+.phase{border-left:4px solid var(--accent2)}
+footer{margin-top:60px;color:var(--muted);font-size:13px}
+.hidden{display:none!important}
+@media(max-width:900px){
+  .layout{display:block}
+  aside{position:relative;height:auto;border-right:none;border-bottom:1px solid var(--line)}
+  main{padding:24px 18px 60px}
+  .grid2,.grid3{grid-template-columns:1fr}
+  .hero h1{font-size:28px}
+}
+</style>
+</head>
+<body>
+<div class="layout">
+<aside>
+  <div class="brand">NovelWorld</div>
+  <div class="sub">两周 V1 学习计划 · 后续持续升级</div>
+  <div class="progress-wrap">
+    <div class="progress-track"><div id="progressBar" class="progress-bar"></div></div>
+    <div id="progressLabel" class="progress-label">0 / 0 已完成</div>
+  </div>
+  <input id="search" class="search" placeholder="搜索：Memory / MCP / Day 7...">
+  <nav class="nav">
+    <a href="#positioning">项目定位</a>
+    <a href="#architecture">最终架构</a>
+    <a href="#rules">两周原则</a>
+    <a href="#plan">Day 1–14</a>
+    <a href="#v1check">V1 验收</a>
+    <a href="#upgrade">V1.5 → V3</a>
+    <a href="#stack">技术栈地图</a>
+    <a href="#interview">面试要会讲</a>
+    <a href="#resume">简历写法</a>
+    <a href="#resources">资料入口</a>
+  </nav>
+</aside>
+
+<main>
+<section class="hero">
+  <h1>NovelWorld：会自己“活下去”的小说世界</h1>
+  <p>目标不是做 AI 聊天角色，而是做一个 <b>动态叙事世界引擎</b>：角色拥有目标、记忆、关系和独立信息视角，会调用工具改变世界状态，并在多智能体交互中自然产生剧情。</p>
+  <div class="tagrow">
+    <span class="tag">Python</span><span class="tag">LangGraph</span><span class="tag">Tool Calling</span>
+    <span class="tag">Memory</span><span class="tag">RAG</span><span class="tag">Multi-Agent</span>
+    <span class="tag">MCP</span><span class="tag">Agent Skills</span><span class="tag">Spring Boot</span>
+  </div>
+</section>
+
+<section id="positioning" class="section">
+<h2>1. 项目定位：不要做“AI 写小说”</h2>
+<div class="callout ok"><b>一句话定位：</b>基于 Multi-Agent、长期记忆与世界状态驱动的动态叙事引擎。</div>
+<div class="grid3">
+  <div class="metric"><b>V1</b>让 3 个 NPC 会自己行动、交流、改变关系和世界状态。</div>
+  <div class="metric"><b>V2</b>加入长期记忆、RAG、MCP、Spring Boot，让架构工程化。</div>
+  <div class="metric"><b>V3</b>加入 Skills、Director、实时 Web UI 和 Eval，成为简历主项目。</div>
+</div>
+<p>核心不是“故事写得多好”，而是你是否真正处理了 <b>Agent State、Memory、Tool、Context、Multi-Agent 协作、外部能力标准化和评测</b>。</p>
+</section>
+
+<section id="architecture" class="section">
+<h2>2. 最终架构（先看终点，第一版不要全做）</h2>
+<pre>
+                         Web UI
+                           │
+                    SSE / WebSocket
+                           │
+                    Spring Boot
+        ┌──────────────────┼───────────────────┐
+        │ World / NPC / Event / Save / Auth   │
+        │ MySQL / Redis / MCP Server          │
+        └──────────────────┬───────────────────┘
+                           │ MCP / HTTP
+                           ▼
+                  Python Agent Runtime
+                      LangGraph
+                           │
+         ┌─────────────────┼──────────────────┐
+         ▼                 ▼                  ▼
+   Director Agent      NPC Agents         World Agent
+                           │
+       ┌───────────────────┼────────────────────┐
+       ▼                   ▼                    ▼
+    Memory               Skills               Tools
+       │                   │                    │
+   Vector DB          Dynamic Load        MCP Client
+       │                                        │
+  Memory RAG + Lore RAG              Map / Time / Event / NPC
+</pre>
+<div class="callout warn"><b>重要：</b>上面是最终形态，不是两周目标。V1 故意只做最小闭环。</div>
+</section>
+
+<section id="rules" class="section">
+<h2>3. 两周开发原则</h2>
+<table>
+<tr><th>必须做</th><th>两周内先不做</th></tr>
+<tr><td>3 个 NPC、Goal、短期 Memory、独立 Knowledge、Tool Calling、World State、多 Agent Tick、基础剧情日志</td>
+<td>MCP、复杂 RAG、向量库、Redis、MySQL、完整 Web UI、复杂 Director、账号系统、K8s、微服务</td></tr>
+</table>
+<p><b>V1 成功标准：</b>启动世界后，即使用户不输入，三个角色也会根据自身目标和已知信息采取行动，并让关系、位置、事件和记忆持续变化。</p>
+</section>
+
+<section id="plan" class="section">
+<h2>4. Day 1–14：每天照着做</h2>
+<p class="small">建议每天 2–4 小时。每天先学 30–60 分钟，再写代码。不要“先把课程看完再做项目”。</p>
+
+<details class="day" open data-title="Day 1 Python LLM API">
+<summary>Day 1｜Python 最小基础 + 第一次调用 LLM</summary>
+<div class="day-body">
+<div class="day-head"><span class="badge">学习 1h</span><span class="badge">开发 1–2h</span><span class="badge">不碰 LangGraph</span></div>
+<h3>学习</h3>
+<ul><li>变量、list、dict、if/for、函数、class、import、异常、类型注解、venv、pip。</li><li>用 Python SDK 调一次 LLM。</li></ul>
+<h3>开发</h3>
+<label class="task"><input type="checkbox"><span>创建 <code>novelworld</code> 项目和虚拟环境。</span></label>
+<label class="task"><input type="checkbox"><span>写 <code>llm_client.py</code>，能发送 prompt 并打印回复。</span></label>
+<label class="task"><input type="checkbox"><span>写最小 CLI：输入角色设定，模型返回角色反应。</span></label>
+<h3>验收</h3><pre>python main.py
+You > 你是谁？
+NPC > 我是晚风客栈老板苏晚……</pre>
+<p><b>坑：</b>不要花一天学 Python。目标是“能看懂、能改、能 Debug”。</p>
+</div></details>
+
+<details class="day" data-title="Day 2 Tool Calling">
+<summary>Day 2｜Tool Calling：让模型第一次“改变世界”</summary>
+<div class="day-body">
+<ul><li>理解：模型负责选择工具，程序负责真正执行工具。</li><li>理解 tool schema / arguments / tool result。</li></ul>
+<label class="task"><input type="checkbox"><span>实现 <code>get_world_time()</code>。</span></label>
+<label class="task"><input type="checkbox"><span>实现 <code>move_character(character, location)</code>。</span></label>
+<label class="task"><input type="checkbox"><span>让模型自己判断何时调用工具。</span></label>
+<p><b>验收：</b>NPC 说要去客栈时，location 真被程序修改。</p>
+</div></details>
+
+<details class="day" data-title="Day 3 Agent Loop">
+<summary>Day 3｜手写 Agent Loop，不用 LangGraph</summary>
+<div class="day-body">
+<p>目标：真正理解 <b>Reason → Act → Observe → 再 Reason</b>。</p>
+<label class="task"><input type="checkbox"><span>手写 while loop：LLM → tool call → execute → tool result → LLM。</span></label>
+<label class="task"><input type="checkbox"><span>增加最大迭代次数，避免死循环。</span></label>
+<label class="task"><input type="checkbox"><span>记录每轮 action / observation。</span></label>
+<h3>你必须会回答</h3>
+<ul><li>LLM 为什么知道有哪些 Tools？</li><li>是谁执行 Tool？</li><li>Tool Result 怎么回到模型？</li><li>为什么这个循环已经是 Agent？</li></ul>
+</div></details>
+
+<details class="day" data-title="Day 4 World State Tools">
+<summary>Day 4｜World State + 最小工具系统</summary>
+<div class="day-body">
+<pre>{
+  "time":"08:00",
+  "characters":{
+    "林默":{"location":"县衙","energy":90},
+    "苏晚":{"location":"晚风客栈","energy":80}
+  }
+}</pre>
+<label class="task"><input type="checkbox"><span>实现 get_character / move / talk / inspect / update_relationship。</span></label>
+<label class="task"><input type="checkbox"><span>Tool 必须真实修改 World State。</span></label>
+<label class="task"><input type="checkbox"><span>每次 Tool 执行后生成 Event Log。</span></label>
+<p><b>验收：</b>角色行动后，JSON 中的世界状态真的变化。</p>
+</div></details>
+
+<details class="day" data-title="Day 5 Character Goal Personality Knowledge">
+<summary>Day 5｜角色模型：Goal / Personality / Knowledge</summary>
+<div class="day-body">
+<label class="task"><input type="checkbox"><span>定义 Character：name / personality / goals / secrets / known_facts / relationships。</span></label>
+<label class="task"><input type="checkbox"><span>设计 3 个原创角色，目标必须存在冲突。</span></label>
+<label class="task"><input type="checkbox"><span>实现独立信息视角：unknown facts 不进入该角色 prompt。</span></label>
+<ul><li>林默：捕快，调查失踪案。</li><li>苏晚：客栈老板，保护弟弟并隐瞒线索。</li><li>赵无极：商会会长，阻止调查深入。</li></ul>
+<p><b>验收：</b>只有赵无极知道的秘密，林默不能无缘无故说出来。</p>
+</div></details>
+
+<details class="day" data-title="Day 6 Short Memory">
+<summary>Day 6｜短期 Memory：角色开始“记得”</summary>
+<div class="day-body">
+<label class="task"><input type="checkbox"><span>每个 NPC 单独维护最近 N 条 episodic memory。</span></label>
+<label class="task"><input type="checkbox"><span>事件结束后只写入相关角色的 Memory。</span></label>
+<label class="task"><input type="checkbox"><span>Prompt 中仅加入当前角色可见的近期 Memory。</span></label>
+<p><b>今天不要做：</b>Embedding / Vector DB。</p>
+</div></details>
+
+<details class="day" data-title="Day 7 Multi Agent Tick">
+<summary>Day 7｜Multi-Agent：让 3 个角色轮流行动</summary>
+<div class="day-body">
+<label class="task"><input type="checkbox"><span>实现 World Tick：每个 tick 选择可行动 NPC。</span></label>
+<label class="task"><input type="checkbox"><span>NPC 根据 Goal + State + Memory + Knowledge 决定下一步。</span></label>
+<label class="task"><input type="checkbox"><span>行动后更新 World State 和相关 Memory。</span></label>
+<label class="task"><input type="checkbox"><span>连续跑 10–20 个 tick。</span></label>
+<p><b>里程碑：</b>到今天结束，NovelWorld 必须“活起来”。</p>
+</div></details>
+
+<details class="day" data-title="Day 8 LangGraph">
+<summary>Day 8｜再学 LangGraph：把手写 Loop 工程化</summary>
+<div class="day-body">
+<p>只学 State / Node / Edge / Conditional Edge / ToolNode / Checkpoint 基本思想。</p>
+<label class="task"><input type="checkbox"><span>把单个 NPC agent loop 改成 LangGraph graph。</span></label>
+<label class="task"><input type="checkbox"><span>State 中保留 npc_id / goal / memories / observations / step。</span></label>
+<label class="task"><input type="checkbox"><span>保留手写版本用于对比。</span></label>
+<p><b>验收：</b>能解释 LangGraph 比手写 while loop 多解决了什么。</p>
+</div></details>
+
+<details class="day" data-title="Day 9 Event System">
+<summary>Day 9｜Event System：把“发生过什么”结构化</summary>
+<div class="day-body">
+<label class="task"><input type="checkbox"><span>定义 Event：type / actor / target / location / payload / timestamp。</span></label>
+<label class="task"><input type="checkbox"><span>talk / move / inspect / relationship change 都生成事件。</span></label>
+<label class="task"><input type="checkbox"><span>实现事件感知：只有相关 NPC 才收到事件。</span></label>
+<p><b>意义：</b>未来 Memory、Director、Replay、Eval 都依赖结构化 Event。</p>
+</div></details>
+
+<details class="day" data-title="Day 10 Memory Reflection">
+<summary>Day 10｜Memory 写入策略 + 简单 Reflection</summary>
+<div class="day-body">
+<label class="task"><input type="checkbox"><span>事件 → 角色视角摘要 → Memory，不直接塞全部日志。</span></label>
+<label class="task"><input type="checkbox"><span>Memory 增加 importance / actors / tags。</span></label>
+<label class="task"><input type="checkbox"><span>每隔若干 tick 生成一次 Reflection。</span></label>
+<p><b>这是 V1.5 Long-term Memory + RAG 的地基。</b></p>
+</div></details>
+
+<details class="day" data-title="Day 11 Rules Guardrails">
+<summary>Day 11｜World Rules：LLM 负责创造，代码负责真实性</summary>
+<div class="day-body">
+<label class="task"><input type="checkbox"><span>移动只能到合法地点。</span></label>
+<label class="task"><input type="checkbox"><span>角色不能操作不存在或不属于自己的物品。</span></label>
+<label class="task"><input type="checkbox"><span>角色不能读取 unknown facts。</span></label>
+<label class="task"><input type="checkbox"><span>非法 Tool Call 返回明确 Observation。</span></label>
+<p><b>面试亮点：</b>把生成式自由度与确定性规则系统分开。</p>
+</div></details>
+
+<details class="day" data-title="Day 12 Timeline CLI">
+<summary>Day 12｜剧情时间线 + 可展示 CLI</summary>
+<div class="day-body">
+<label class="task"><input type="checkbox"><span>打印世界时间、NPC 行动、关系变化、重要记忆。</span></label>
+<label class="task"><input type="checkbox"><span>增加 pause / next tick / run 10 ticks。</span></label>
+<label class="task"><input type="checkbox"><span>重要事件输出简短行动原因。</span></label>
+<pre>08:12 林默 → 晚风客栈
+原因：昨日线索指向客栈。
+
+08:15 林默 与 苏晚交谈
+关系：苏晚 → 林默 12 → 7</pre>
+</div></details>
+
+<details class="day" data-title="Day 13 Eval Benchmark">
+<summary>Day 13｜Eval：别只说“感觉挺智能”</summary>
+<div class="day-body">
+<label class="task"><input type="checkbox"><span>设计 8–10 个固定场景。</span></label>
+<label class="task"><input type="checkbox"><span>统计 Knowledge Leakage。</span></label>
+<label class="task"><input type="checkbox"><span>统计 Goal Consistency。</span></label>
+<label class="task"><input type="checkbox"><span>统计 Invalid Action 和 Repetition Rate。</span></label>
+<table><tr><th>指标</th><th>含义</th></tr>
+<tr><td>Knowledge Leakage Rate</td><td>角色越权知道秘密的比例</td></tr>
+<tr><td>Goal Consistency</td><td>行动与长期目标是否一致</td></tr>
+<tr><td>Invalid Action Rate</td><td>违反世界规则的比例</td></tr>
+<tr><td>Repetition Rate</td><td>重复对话/行为比例</td></tr></table>
+</div></details>
+
+<details class="day" data-title="Day 14 README Demo">
+<summary>Day 14｜README + Demo + V1 封版</summary>
+<div class="day-body">
+<label class="task"><input type="checkbox"><span>画 V1 架构图。</span></label>
+<label class="task"><input type="checkbox"><span>README 写清：问题、架构、Agent Loop、Memory、World State、Eval。</span></label>
+<label class="task"><input type="checkbox"><span>录 30–60 秒 GIF / 视频。</span></label>
+<label class="task"><input type="checkbox"><span>准备一个连续 20 Tick 的固定 Demo。</span></label>
+<label class="task"><input type="checkbox"><span>打 Git tag：<code>v1.0</code>。</span></label>
+<p><b>到这里停止加功能。</b>先完成一个能展示的版本。</p>
+</div></details>
+</section>
+
+<section id="v1check" class="section">
+<h2>5. V1 最终验收</h2>
+<div class="card">
+<label class="task"><input type="checkbox"><span>至少 3 个 NPC，拥有独立 Goal / Personality / Knowledge / Relationship。</span></label>
+<label class="task"><input type="checkbox"><span>角色能主动调用 Tool 改变真实 World State。</span></label>
+<label class="task"><input type="checkbox"><span>事件只被相关角色感知。</span></label>
+<label class="task"><input type="checkbox"><span>每个角色有独立短期 Memory。</span></label>
+<label class="task"><input type="checkbox"><span>可连续运行至少 20 Tick。</span></label>
+<label class="task"><input type="checkbox"><span>至少一组冲突目标产生可观察剧情变化。</span></label>
+<label class="task"><input type="checkbox"><span>有基础 Eval，而不是只看故事好不好看。</span></label>
+</div>
+</section>
+
+<section id="upgrade" class="section">
+<h2>6. V1 之后怎么升级</h2>
+
+<div class="card phase">
+<h3>V1.5｜Long-term Memory + RAG（约 1–2 周）</h3>
+<p><b>真实问题：</b>角色经历越来越多，近期窗口装不下；世界设定也不能全塞 Prompt。</p>
+<ul>
+<li>Memory 分层：Working / Episodic / Semantic / Relationship / Reflection。</li>
+<li>Retrieval：recency + importance + similarity。</li>
+<li>World Lore RAG：地理、势力、历史、规则独立检索。</li>
+<li>Memory RAG 和 Knowledge RAG 分开。</li>
+<li>Vector DB 选一个：Qdrant / pgvector / Chroma。</li>
+</ul>
+</div>
+
+<div class="card phase">
+<h3>V2｜Spring Boot + MySQL / Redis + MCP（约 2 周）</h3>
+<p><b>真实问题：</b>Python Agent Runtime 不该直接承担全部业务和持久化。</p>
+<ul>
+<li>Spring Boot：World / NPC / Event / Save / Inventory / Relationship。</li>
+<li>MySQL：持久化；Redis：World State、session、event queue、热状态。</li>
+<li>Java 侧实现 MCP Server，暴露地图、人物、物品、时间、事件能力。</li>
+<li>Python 侧 MCP Client 调用世界能力。</li>
+</ul>
+<pre>Python Agent Runtime
+        │
+      MCP Client
+        │
+Spring Boot MCP Server
+        │
+ MySQL / Redis</pre>
+</div>
+
+<div class="card phase">
+<h3>V2.5｜Agent Skills（约 1 周）</h3>
+<p><b>真实问题：</b>不同职业需要不同程序性知识，全部塞 System Prompt 会膨胀。</p>
+<pre>skills/
+  investigation/SKILL.md
+  negotiation/SKILL.md
+  trading/SKILL.md
+  deception/SKILL.md
+  survival/SKILL.md</pre>
+<ul>
+<li>Skill Router：按角色职业 + 当前任务选 Skill。</li>
+<li>Progressive Disclosure：只加载当前需要的 Skill。</li>
+<li>Skill 可携带 instructions / scripts / resources。</li>
+</ul>
+</div>
+
+<div class="card phase">
+<h3>V3｜Director Agent + Web UI + 实时事件流（约 2–3 周）</h3>
+<p><b>真实问题：</b>完全自由的 NPC 容易无聊、重复、失去节奏。</p>
+<ul>
+<li>Director 只施加世界事件，不直接控制 NPC 行为。</li>
+<li>检测 stagnation / conflict / participation。</li>
+<li>Vue/React + SSE/WebSocket 展示 Timeline、NPC 状态、关系图、Memory。</li>
+<li>支持暂停、单步 Tick、加速、查看角色视角。</li>
+</ul>
+</div>
+
+<div class="card phase">
+<h3>V3.5｜Eval / Ablation</h3>
+<ul>
+<li>无 Memory vs Short Memory vs Retrieval Memory。</li>
+<li>无 Director vs Director。</li>
+<li>全量 Prompt vs RAG。</li>
+<li>统计一致性、信息泄漏、重复率、Token、延迟。</li>
+</ul>
+</div>
+</section>
+
+<section id="stack" class="section">
+<h2>7. 技术栈地图</h2>
+<table>
+<tr><th>技术</th><th>V1</th><th>后续</th><th>解决的问题</th></tr>
+<tr><td>Python</td><td>✅</td><td>✅</td><td>Agent Runtime</td></tr>
+<tr><td>Tool Calling</td><td>✅</td><td>✅</td><td>让 Agent 真正改变世界</td></tr>
+<tr><td>LangGraph</td><td>✅ Day 8</td><td>✅</td><td>有状态、多步工作流</td></tr>
+<tr><td>Multi-Agent</td><td>✅</td><td>✅</td><td>多个角色独立决策</td></tr>
+<tr><td>Memory</td><td>短期</td><td>长期分层</td><td>跨时间一致性</td></tr>
+<tr><td>RAG</td><td>❌</td><td>V1.5</td><td>长期记忆和世界知识检索</td></tr>
+<tr><td>Vector DB</td><td>❌</td><td>V1.5</td><td>Memory / Lore 检索</td></tr>
+<tr><td>MCP</td><td>❌</td><td>V2</td><td>Agent 与外部世界能力标准化解耦</td></tr>
+<tr><td>Spring Boot</td><td>可选</td><td>V2</td><td>业务、持久化、Java 工程能力</td></tr>
+<tr><td>MySQL / Redis</td><td>❌</td><td>V2</td><td>持久化与热状态</td></tr>
+<tr><td>Agent Skills</td><td>❌</td><td>V2.5</td><td>动态加载程序性能力</td></tr>
+<tr><td>SSE / WebSocket</td><td>❌</td><td>V3</td><td>实时展示世界运行</td></tr>
+<tr><td>Eval</td><td>基础</td><td>系统化</td><td>证明系统真的更好</td></tr>
+</table>
+</section>
+
+<section id="interview" class="section">
+<h2>8. 面试时必须会讲的 12 个问题</h2>
+<div class="grid2">
+<div class="card"><b>1.</b> Tool Calling 到底是谁执行 Tool？</div>
+<div class="card"><b>2.</b> Agent Loop / LangGraph State 是什么？</div>
+<div class="card"><b>3.</b> World State 为什么不能只放 Prompt？</div>
+<div class="card"><b>4.</b> 怎么防止 NPC 使用自己不知道的信息？</div>
+<div class="card"><b>5.</b> Memory 什么时候写、写什么、属于谁？</div>
+<div class="card"><b>6.</b> 为什么 Long-term Memory 需要 Retrieval？</div>
+<div class="card"><b>7.</b> Memory RAG 和 World Knowledge RAG 有什么区别？</div>
+<div class="card"><b>8.</b> 为什么用 MCP，而不是全写本地 Tool？</div>
+<div class="card"><b>9.</b> Tool、Skill、MCP 各自是什么层次？</div>
+<div class="card"><b>10.</b> Multi-Agent 如何避免无限聊天和成本爆炸？</div>
+<div class="card"><b>11.</b> Director 如何不破坏 NPC 自主性？</div>
+<div class="card"><b>12.</b> 如何量化“剧情一致性”和 Agent 质量？</div>
+</div>
+</section>
+
+<section id="resume" class="section">
+<h2>9. 最终简历写法</h2>
+<div class="card">
+<h3>NovelWorld｜基于 Multi-Agent 与长期记忆的动态叙事世界引擎</h3>
+<ul>
+<li>基于 LangGraph 构建多智能体运行时，为 NPC 建立独立 Goal、Knowledge、Memory 与 Relationship State，实现角色基于世界事件自主规划、工具调用和状态更新。</li>
+<li>设计分层长期记忆与双路检索体系，将 Episodic Memory 与 World Lore 分离，通过 Retrieval 控制上下文长度并减少角色知识泄漏。</li>
+<li>基于 Spring Boot 构建世界状态服务，并通过 MCP Server 暴露地图、人物、物品和事件等标准化能力，实现 Python Agent Runtime 与 Java 业务层解耦。</li>
+<li>设计 Agent Skills 动态加载机制和 World Rule Guardrail，并通过 Knowledge Leakage、Goal Consistency、Invalid Action 等指标构建 Agent Eval。</li>
+</ul>
+<p class="small">只有真实做完对应版本后，再把对应条目写进简历。</p>
+</div>
+</section>
+
+<section id="resources" class="section">
+<h2>10. 学习资料入口</h2>
+<div class="grid2">
+<div class="card">
+<h3>V1 先看</h3>
+<ul>
+<li><a href="https://docs.python.org/zh-cn/3/tutorial/" target="_blank">Python 官方教程</a></li>
+<li><a href="https://docs.langchain.com/oss/python/langgraph/overview" target="_blank">LangGraph 官方文档</a></li>
+<li>你所用模型厂商的 Tool / Function Calling 官方文档</li>
+</ul>
+</div>
+<div class="card">
+<h3>升级阶段再看</h3>
+<ul>
+<li><a href="https://modelcontextprotocol.io/" target="_blank">Model Context Protocol</a></li>
+<li><a href="https://docs.spring.io/spring-ai/reference/api/mcp/mcp-overview.html" target="_blank">Spring AI MCP</a></li>
+<li><a href="https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills" target="_blank">Agent Skills</a></li>
+</ul>
+</div>
+</div>
+<div class="callout"><b>学习规则：</b>官方文档优先；只学到“能完成今天任务”的程度。不要提前学习 V2 来拖延 V1。</div>
+</section>
+
+<section class="section">
+<h2>11. V1 推荐目录</h2>
+<pre>novelworld/
+├── agent/
+│   ├── graph.py
+│   ├── loop.py
+│   └── state.py
+├── characters/
+│   ├── model.py
+│   └── presets.py
+├── world/
+│   ├── state.py
+│   ├── events.py
+│   └── rules.py
+├── memory/
+│   ├── short_term.py
+│   └── reflection.py
+├── tools/
+│   ├── movement.py
+│   ├── interaction.py
+│   └── world_tools.py
+├── eval/
+│   ├── scenarios/
+│   └── metrics.py
+├── prompts/
+│   └── npc_system.md
+├── main.py
+├── requirements.txt
+└── README.md</pre>
+</section>
+
+<footer>NovelWorld Roadmap · V1 是学习地基，不是最终简历版本。先让世界活起来，再让系统变复杂。</footer>
+</main>
+</div>
+
+<script>
+const boxes=[...document.querySelectorAll('input[type="checkbox"]')];
+const key='novelworld-roadmap-v1';
+let saved={};
+try{saved=JSON.parse(localStorage.getItem(key)||'{}')}catch(e){}
+boxes.forEach((b,i)=>{
+  b.dataset.i=i;
+  if(saved[i]){b.checked=true;b.closest('.task')?.classList.add('done')}
+  b.addEventListener('change',()=>{
+    saved[i]=b.checked;
+    localStorage.setItem(key,JSON.stringify(saved));
+    b.closest('.task')?.classList.toggle('done',b.checked);
+    updateProgress();
+  });
+});
+function updateProgress(){
+  const done=boxes.filter(b=>b.checked).length;
+  const pct=boxes.length?Math.round(done/boxes.length*100):0;
+  document.getElementById('progressBar').style.width=pct+'%';
+  document.getElementById('progressLabel').textContent=`${done} / ${boxes.length} 已完成 · ${pct}%`;
+}
+updateProgress();
+
+document.getElementById('search').addEventListener('input',e=>{
+  const q=e.target.value.trim().toLowerCase();
+  document.querySelectorAll('details.day').forEach(el=>{
+    const hit=!q || el.innerText.toLowerCase().includes(q) || (el.dataset.title||'').toLowerCase().includes(q);
+    el.classList.toggle('hidden',!hit);
+    if(q && hit) el.open=true;
+  });
+});
+</script>
+</body>
+</html>
