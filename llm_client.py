@@ -23,6 +23,7 @@ client = OpenAI(
 )
 
 MODEL = "qwen3.8-max"
+MAX_TOOL_ROUNDS = 5
 
 
 def chat(prompt: str) -> str:
@@ -36,8 +37,11 @@ def chat(prompt: str) -> str:
     return response.output_text
 
 
-def chat_with_tools(prompt: str) -> str:
-    """允许模型调用一次或多个已注册工具，然后返回最终回答。"""
+def chat_with_tools(prompt: str, max_tool_rounds: int = MAX_TOOL_ROUNDS) -> str:
+    """运行多轮 Reason → Act → Observe，直到模型给出最终回答。"""
+    if max_tool_rounds < 1:
+        raise ValueError("max_tool_rounds 必须至少为 1")
+
     conversation = [
         {
             "role": "user",
@@ -45,52 +49,51 @@ def chat_with_tools(prompt: str) -> str:
         }
     ]
 
-    # 第一次请求：让模型判断是否需要调用工具。
-    response = client.responses.create(
-        model=MODEL,
-        input=conversation,
-        tools=TOOL_SCHEMAS,
-    )
-
-    function_calls = [
-        item for item in response.output if item.type == "function_call"
-    ]
-
-    # 模型认为不需要工具时，直接返回它的文字回答。
-    if not function_calls:
-        return response.output_text
-
-    # Python 执行模型请求的工具，并把结果追加到对话中。
-    for function_call in function_calls:
-        arguments = json.loads(function_call.arguments)
-        print(f"[Tool Call] {function_call.name}({arguments})")
-
-        tool_result = execute_tool(function_call.name, arguments)
-        print(f"[Tool Result] {tool_result}")
-
-        conversation.append(
-            {
-                "type": "function_call",
-                "name": function_call.name,
-                "arguments": function_call.arguments,
-                "call_id": function_call.call_id,
-            }
-        )
-        conversation.append(
-            {
-                "type": "function_call_output",
-                "call_id": function_call.call_id,
-                "output": tool_result,
-            }
+    for round_number in range(1, max_tool_rounds + 1):
+        # 每一轮都让模型根据目前已观察到的结果决定下一步。
+        response = client.responses.create(
+            model=MODEL,
+            input=conversation,
+            tools=TOOL_SCHEMAS,
         )
 
-    # 第二次请求：让模型根据真实工具结果组织最终回答。
-    final_response = client.responses.create(
-        model=MODEL,
-        input=conversation,
-        tools=TOOL_SCHEMAS,
+        function_calls = [
+            item for item in response.output if item.type == "function_call"
+        ]
+
+        # 模型不再请求工具时，说明它已经可以组织最终回答。
+        if not function_calls:
+            return response.output_text
+
+        print(f"[Tool Round {round_number}]")
+
+        # Python 执行模型请求的工具，并把真实结果追加到对话中。
+        for function_call in function_calls:
+            arguments = json.loads(function_call.arguments)
+            print(f"[Tool Call] {function_call.name}({arguments})")
+
+            tool_result = execute_tool(function_call.name, arguments)
+            print(f"[Tool Result] {tool_result}")
+
+            conversation.append(
+                {
+                    "type": "function_call",
+                    "name": function_call.name,
+                    "arguments": function_call.arguments,
+                    "call_id": function_call.call_id,
+                }
+            )
+            conversation.append(
+                {
+                    "type": "function_call_output",
+                    "call_id": function_call.call_id,
+                    "output": tool_result,
+                }
+            )
+
+    raise RuntimeError(
+        f"模型连续 {max_tool_rounds} 轮调用工具，超过安全上限，已停止。"
     )
-    return final_response.output_text
 
 if __name__ == "__main__":
     result = chat("你好，请用一句话介绍你自己。")
