@@ -1,4 +1,4 @@
-from llm_client import chat
+from llm_client import chat_with_tools
 
 
 character = """
@@ -56,7 +56,7 @@ def main():
         try:
             prompt = build_prompt(user_input)
 
-            response = chat(prompt)
+            response = chat_with_tools(prompt)
 
             print(f"\n苏晚 > {response}")
 
