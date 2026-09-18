@@ -1,6 +1,11 @@
 import unittest
 
-from tools.world_tools import TOOL_SCHEMAS, execute_tool, get_world_time
+from tools.world_tools import (
+    TOOL_SCHEMAS,
+    execute_tool,
+    get_world_time,
+    move_character,
+)
 from world.state import WORLD_STATE
 
 
@@ -27,6 +32,20 @@ class WorldToolsTest(unittest.TestCase):
     def test_execute_tool_rejects_unknown_tool(self):
         with self.assertRaisesRegex(ValueError, "未知工具"):
             execute_tool("open_treasure_chest", {})
+
+    def test_move_character_changes_world_state(self):
+        original_location = WORLD_STATE["characters"]["苏晚"]["location"]
+        try:
+            result = move_character("苏晚", "县衙")
+
+            self.assertEqual(WORLD_STATE["characters"]["苏晚"]["location"], "县衙")
+            self.assertEqual(result, "苏晚从晚风客栈移动到县衙。")
+        finally:
+            WORLD_STATE["characters"]["苏晚"]["location"] = original_location
+
+    def test_move_character_rejects_unknown_location(self):
+        with self.assertRaisesRegex(ValueError, "地点不存在"):
+            move_character("苏晚", "皇宫")
 
 
 if __name__ == "__main__":

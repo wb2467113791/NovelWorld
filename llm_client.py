@@ -63,7 +63,10 @@ def chat_with_tools(prompt: str) -> str:
     # Python 执行模型请求的工具，并把结果追加到对话中。
     for function_call in function_calls:
         arguments = json.loads(function_call.arguments)
+        print(f"[Tool Call] {function_call.name}({arguments})")
+
         tool_result = execute_tool(function_call.name, arguments)
+        print(f"[Tool Result] {tool_result}")
 
         conversation.append(
             {
