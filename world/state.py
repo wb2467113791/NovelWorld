@@ -7,9 +7,35 @@ WORLD_STATE = {
     "characters": {
         "苏晚": {
             "location": "晚风客栈",
+            "energy": 80,
+            "relationships": {
+                "林默": 0,
+            },
         },
         "林默": {
             "location": "县衙",
+            "energy": 90,
+            "relationships": {
+                "苏晚": 0,
+            },
         },
     },
+    "inspectables": {
+        "晚风客栈": "一楼桌椅摆放整齐，柜台后方挂着一串旧钥匙。",
+        "县衙": "案桌上放着尚未整理完的失踪案卷宗。",
+        "青石街": "清晨的街面有些潮湿，行人正渐渐多起来。",
+    },
+    "events": [],
 }
+
+
+def record_event(event_type: str, actor: str, description: str) -> dict:
+    """把一次已发生的世界行为追加到事件日志。"""
+    event = {
+        "time": WORLD_STATE["time"],
+        "type": event_type,
+        "actor": actor,
+        "description": description,
+    }
+    WORLD_STATE["events"].append(event)
+    return event
