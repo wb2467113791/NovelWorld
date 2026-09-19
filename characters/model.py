@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass, field
 
+from memory.short_term import ShortTermMemory
+
 
 @dataclass
 class Character:
@@ -17,3 +19,4 @@ class Character:
     secrets: list[str] = field(default_factory=list)
     known_facts: list[str] = field(default_factory=list)
     relationships: dict[str, int] = field(default_factory=dict)
+    memory: ShortTermMemory = field(default_factory=ShortTermMemory)

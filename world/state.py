@@ -17,8 +17,13 @@ WORLD_STATE = {
 }
 
 
-def record_event(event_type: str, actor: str, description: str) -> dict:
-    """把一次已发生的世界行为追加到事件日志。"""
+def record_event(
+    event_type: str,
+    actor: str,
+    description: str,
+    participants: list[str],
+) -> dict:
+    """记录世界行为，并让相关角色保存这段经历。"""
     event = {
         "time": WORLD_STATE["time"],
         "type": event_type,
@@ -26,4 +31,8 @@ def record_event(event_type: str, actor: str, description: str) -> dict:
         "description": description,
     }
     WORLD_STATE["events"].append(event)
+
+    for character_name in participants:
+        WORLD_STATE["characters"][character_name].memory.add(description)
+
     return event

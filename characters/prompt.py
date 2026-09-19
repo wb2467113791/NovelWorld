@@ -16,6 +16,9 @@ def build_character_prompt(
         f"对{target}的关系值为{value}"
         for target, value in character.relationships.items()
     ) or "暂无"
+    memory_text = "\n".join(
+        f"- {memory}" for memory in character.memory.recent()
+    ) or "- 暂无"
 
     return f"""
 你正在进行角色扮演。
@@ -29,6 +32,9 @@ def build_character_prompt(
 自己的秘密：{secrets}
 已知事实：{known_facts}
 当前关系：{relationship_text}
+
+【近期记忆】
+{memory_text}
 
 【用户】
 {user_input}

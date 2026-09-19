@@ -44,7 +44,7 @@ def inspect(character: str) -> str:
         raise ValueError(f"地点无法调查：{location}")
 
     result = f"{character}调查了{location}：{observation}"
-    record_event("inspect", character, result)
+    record_event("inspect", character, result, participants=[character])
     return result
 
 
@@ -69,7 +69,7 @@ def talk(speaker: str, listener: str, message: str) -> str:
         raise ValueError("对话内容不能为空")
 
     result = f"{speaker}对{listener}说：“{message}”"
-    record_event("talk", speaker, result)
+    record_event("talk", speaker, result, participants=[speaker, listener])
     return result
 
 
@@ -95,7 +95,7 @@ def update_relationship(character: str, target: str, change: int) -> str:
     relationships[target] = new_value
 
     result = f"{character}对{target}的关系值从{old_value}变为{new_value}。"
-    record_event("relationship", character, result)
+    record_event("relationship", character, result, participants=[character])
     return result
 
 
@@ -114,12 +114,12 @@ def move_character(character: str, location: str) -> str:
 
     if old_location == location:
         result = f"{character}已经在{location}。"
-        record_event("move", character, result)
+        record_event("move", character, result, participants=[character])
         return result
 
     characters[character].location = location
     result = f"{character}从{old_location}移动到{location}。"
-    record_event("move", character, result)
+    record_event("move", character, result, participants=[character])
     return result
 
 

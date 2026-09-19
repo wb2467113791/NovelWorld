@@ -7,6 +7,16 @@ from world.state import WORLD_STATE
 
 
 class CharacterPromptTest(unittest.TestCase):
+    def setUp(self):
+        self.original_memories = {
+            name: character.memory.recent()
+            for name, character in CHARACTERS.items()
+        }
+
+    def tearDown(self):
+        for name, entries in self.original_memories.items():
+            CHARACTERS[name].memory.entries[:] = entries
+
     def test_prompt_contains_current_character_identity_and_private_knowledge(self):
         su_wan = CHARACTERS["苏晚"]
 
@@ -59,6 +69,23 @@ class CharacterPromptTest(unittest.TestCase):
     def test_prompt_rejects_unknown_character(self):
         with self.assertRaisesRegex(ValueError, "角色不存在"):
             build_prompt_for_character("王五", "你是谁？")
+
+    def test_prompt_contains_only_the_current_characters_recent_memory(self):
+        CHARACTERS["林默"].memory.add("我在县衙发现了新的卷宗线索")
+        CHARACTERS["赵无极"].memory.add("我命人转移了商会账本")
+
+        prompt = build_character_prompt(CHARACTERS["林默"], "接下来做什么？")
+
+        self.assertIn("【近期记忆】", prompt)
+        self.assertIn("我在县衙发现了新的卷宗线索", prompt)
+        self.assertNotIn("我命人转移了商会账本", prompt)
+
+    def test_prompt_marks_empty_recent_memory_as_none(self):
+        CHARACTERS["苏晚"].memory.entries.clear()
+
+        prompt = build_character_prompt(CHARACTERS["苏晚"], "你记得什么？")
+
+        self.assertIn("【近期记忆】\n- 暂无", prompt)
 
 
 if __name__ == "__main__":

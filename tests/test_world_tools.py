@@ -16,6 +16,16 @@ from world.state import WORLD_STATE
 
 
 class WorldToolsTest(unittest.TestCase):
+    def setUp(self):
+        self.original_memories = {
+            name: character.memory.recent()
+            for name, character in WORLD_STATE["characters"].items()
+        }
+
+    def tearDown(self):
+        for name, entries in self.original_memories.items():
+            WORLD_STATE["characters"][name].memory.entries[:] = entries
+
     def test_world_state_contains_day4_data(self):
         su_wan = WORLD_STATE["characters"]["苏晚"]
 
@@ -69,6 +79,8 @@ class WorldToolsTest(unittest.TestCase):
             self.assertEqual(WORLD_STATE["events"][-1]["type"], "inspect")
             self.assertEqual(WORLD_STATE["events"][-1]["actor"], "苏晚")
             self.assertEqual(WORLD_STATE["events"][-1]["description"], result)
+            self.assertIn(result, WORLD_STATE["characters"]["苏晚"].memory.recent())
+            self.assertNotIn(result, WORLD_STATE["characters"]["林默"].memory.recent())
         finally:
             WORLD_STATE["events"][:] = original_events
 
@@ -94,6 +106,9 @@ class WorldToolsTest(unittest.TestCase):
             self.assertEqual(WORLD_STATE["events"][-1]["type"], "talk")
             self.assertEqual(WORLD_STATE["events"][-1]["actor"], "苏晚")
             self.assertEqual(WORLD_STATE["events"][-1]["description"], result)
+            self.assertIn(result, WORLD_STATE["characters"]["苏晚"].memory.recent())
+            self.assertIn(result, WORLD_STATE["characters"]["林默"].memory.recent())
+            self.assertNotIn(result, WORLD_STATE["characters"]["赵无极"].memory.recent())
         finally:
             WORLD_STATE["characters"]["林默"].location = original_location
             WORLD_STATE["events"][:] = original_events
@@ -123,6 +138,8 @@ class WorldToolsTest(unittest.TestCase):
             self.assertEqual(WORLD_STATE["events"][-1]["type"], "relationship")
             self.assertEqual(WORLD_STATE["events"][-1]["actor"], "苏晚")
             self.assertEqual(WORLD_STATE["events"][-1]["description"], result)
+            self.assertIn(result, WORLD_STATE["characters"]["苏晚"].memory.recent())
+            self.assertNotIn(result, WORLD_STATE["characters"]["林默"].memory.recent())
         finally:
             relationships["林默"] = original_value
             WORLD_STATE["events"][:] = original_events
@@ -186,6 +203,8 @@ class WorldToolsTest(unittest.TestCase):
                     "description": result,
                 },
             )
+            self.assertIn(result, WORLD_STATE["characters"]["苏晚"].memory.recent())
+            self.assertNotIn(result, WORLD_STATE["characters"]["林默"].memory.recent())
         finally:
             WORLD_STATE["characters"]["苏晚"].location = original_location
             WORLD_STATE["events"][:] = original_events
