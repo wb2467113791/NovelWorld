@@ -18,9 +18,14 @@ def get_character(character: str) -> str:
     if character not in characters:
         raise ValueError(f"角色不存在：{character}")
 
+    current_character = characters[character]
+    # 这个公共查询工具不返回秘密和独立知识，避免模型越权读取。
     character_state = {
-        "name": character,
-        **characters[character],
+        "name": current_character.name,
+        "role": current_character.role,
+        "location": current_character.location,
+        "energy": current_character.energy,
+        "relationships": current_character.relationships,
     }
     return json.dumps(character_state, ensure_ascii=False)
 
@@ -32,7 +37,7 @@ def inspect(character: str) -> str:
     if character not in characters:
         raise ValueError(f"角色不存在：{character}")
 
-    location = characters[character]["location"]
+    location = characters[character].location
     observation = WORLD_STATE["inspectables"].get(location)
 
     if observation is None:
@@ -56,7 +61,7 @@ def talk(speaker: str, listener: str, message: str) -> str:
     if speaker == listener:
         raise ValueError("角色不能和自己交谈")
 
-    if characters[speaker]["location"] != characters[listener]["location"]:
+    if characters[speaker].location != characters[listener].location:
         raise ValueError(f"{speaker}和{listener}不在同一地点，无法交谈")
 
     message = message.strip()
@@ -84,7 +89,7 @@ def update_relationship(character: str, target: str, change: int) -> str:
     if isinstance(change, bool) or not isinstance(change, int):
         raise ValueError("关系变化值必须是整数")
 
-    relationships = characters[character]["relationships"]
+    relationships = characters[character].relationships
     old_value = relationships.get(target, 0)
     new_value = max(-100, min(100, old_value + change))
     relationships[target] = new_value
@@ -105,14 +110,14 @@ def move_character(character: str, location: str) -> str:
     if location not in locations:
         raise ValueError(f"地点不存在：{location}")
 
-    old_location = characters[character]["location"]
+    old_location = characters[character].location
 
     if old_location == location:
         result = f"{character}已经在{location}。"
         record_event("move", character, result)
         return result
 
-    characters[character]["location"] = location
+    characters[character].location = location
     result = f"{character}从{old_location}移动到{location}。"
     record_event("move", character, result)
     return result

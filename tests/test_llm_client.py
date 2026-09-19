@@ -36,7 +36,7 @@ class FakeClient:
 
 class LlmClientTest(unittest.TestCase):
     def test_chat_with_tools_continues_until_model_returns_text(self):
-        original_location = WORLD_STATE["characters"]["苏晚"]["location"]
+        original_location = WORLD_STATE["characters"]["苏晚"].location
         fake_client = FakeClient(
             [
                 SimpleNamespace(
@@ -63,7 +63,7 @@ class LlmClientTest(unittest.TestCase):
             with patch("llm_client.client", fake_client):
                 result = chat_with_tools("先查时间，再让苏晚去县衙。")
         finally:
-            WORLD_STATE["characters"]["苏晚"]["location"] = original_location
+            WORLD_STATE["characters"]["苏晚"].location = original_location
 
         self.assertEqual(result, "事情已经办妥。")
         self.assertEqual(len(fake_client.responses.inputs), 3)

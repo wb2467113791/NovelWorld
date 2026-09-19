@@ -19,8 +19,12 @@ class WorldToolsTest(unittest.TestCase):
     def test_world_state_contains_day4_data(self):
         su_wan = WORLD_STATE["characters"]["苏晚"]
 
-        self.assertEqual(su_wan["energy"], 80)
-        self.assertEqual(su_wan["relationships"]["林默"], 0)
+        self.assertEqual(su_wan.energy, 80)
+        self.assertEqual(
+            su_wan.relationships,
+            {"林默": 0, "赵无极": 0},
+        )
+        self.assertIn("赵无极", WORLD_STATE["characters"])
         self.assertIn("晚风客栈", WORLD_STATE["inspectables"])
         self.assertIsInstance(WORLD_STATE["events"], list)
 
@@ -39,11 +43,13 @@ class WorldToolsTest(unittest.TestCase):
         self.assertEqual(result["name"], "苏晚")
         self.assertEqual(result["location"], "晚风客栈")
         self.assertEqual(result["energy"], 80)
-        self.assertEqual(result["relationships"], {"林默": 0})
+        self.assertEqual(result["relationships"], {"林默": 0, "赵无极": 0})
+        self.assertNotIn("secrets", result)
+        self.assertNotIn("known_facts", result)
 
     def test_get_character_rejects_unknown_character(self):
         with self.assertRaisesRegex(ValueError, "角色不存在"):
-            get_character("赵无极")
+            get_character("王五")
 
     def test_get_character_is_available_to_the_model(self):
         schema = next(
@@ -68,7 +74,7 @@ class WorldToolsTest(unittest.TestCase):
 
     def test_inspect_rejects_unknown_character(self):
         with self.assertRaisesRegex(ValueError, "角色不存在"):
-            inspect("赵无极")
+            inspect("王五")
 
     def test_inspect_is_available_to_the_model(self):
         schema = next(item for item in TOOL_SCHEMAS if item["name"] == "inspect")
@@ -77,10 +83,10 @@ class WorldToolsTest(unittest.TestCase):
         self.assertIn("inspect", TOOL_FUNCTIONS)
 
     def test_talk_records_event_when_characters_share_location(self):
-        original_location = WORLD_STATE["characters"]["林默"]["location"]
+        original_location = WORLD_STATE["characters"]["林默"].location
         original_events = WORLD_STATE["events"].copy()
         try:
-            WORLD_STATE["characters"]["林默"]["location"] = "晚风客栈"
+            WORLD_STATE["characters"]["林默"].location = "晚风客栈"
 
             result = talk("苏晚", "林默", "客官，要住店吗？")
 
@@ -89,7 +95,7 @@ class WorldToolsTest(unittest.TestCase):
             self.assertEqual(WORLD_STATE["events"][-1]["actor"], "苏晚")
             self.assertEqual(WORLD_STATE["events"][-1]["description"], result)
         finally:
-            WORLD_STATE["characters"]["林默"]["location"] = original_location
+            WORLD_STATE["characters"]["林默"].location = original_location
             WORLD_STATE["events"][:] = original_events
 
     def test_talk_rejects_characters_at_different_locations(self):
@@ -106,7 +112,7 @@ class WorldToolsTest(unittest.TestCase):
         self.assertIn("talk", TOOL_FUNCTIONS)
 
     def test_update_relationship_changes_state_and_records_event(self):
-        relationships = WORLD_STATE["characters"]["苏晚"]["relationships"]
+        relationships = WORLD_STATE["characters"]["苏晚"].relationships
         original_value = relationships["林默"]
         original_events = WORLD_STATE["events"].copy()
         try:
@@ -122,7 +128,7 @@ class WorldToolsTest(unittest.TestCase):
             WORLD_STATE["events"][:] = original_events
 
     def test_update_relationship_stays_within_allowed_range(self):
-        relationships = WORLD_STATE["characters"]["苏晚"]["relationships"]
+        relationships = WORLD_STATE["characters"]["苏晚"].relationships
         original_value = relationships["林默"]
         original_events = WORLD_STATE["events"].copy()
         try:
@@ -164,12 +170,12 @@ class WorldToolsTest(unittest.TestCase):
             execute_tool("open_treasure_chest", {})
 
     def test_move_character_changes_world_state(self):
-        original_location = WORLD_STATE["characters"]["苏晚"]["location"]
+        original_location = WORLD_STATE["characters"]["苏晚"].location
         original_events = WORLD_STATE["events"].copy()
         try:
             result = move_character("苏晚", "县衙")
 
-            self.assertEqual(WORLD_STATE["characters"]["苏晚"]["location"], "县衙")
+            self.assertEqual(WORLD_STATE["characters"]["苏晚"].location, "县衙")
             self.assertEqual(result, "苏晚从晚风客栈移动到县衙。")
             self.assertEqual(
                 WORLD_STATE["events"][-1],
@@ -181,7 +187,7 @@ class WorldToolsTest(unittest.TestCase):
                 },
             )
         finally:
-            WORLD_STATE["characters"]["苏晚"]["location"] = original_location
+            WORLD_STATE["characters"]["苏晚"].location = original_location
             WORLD_STATE["events"][:] = original_events
 
     def test_move_character_rejects_unknown_location(self):
