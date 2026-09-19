@@ -43,7 +43,10 @@ def main():
         try:
             prompt = build_prompt(user_input, character_name)
 
-            response = chat_with_tools(prompt)
+            response = chat_with_tools(
+                prompt,
+                acting_character=character_name,
+            )
 
             print(f"\n{character_name} > {response}")
 

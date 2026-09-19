@@ -233,6 +233,14 @@ TOOL_SCHEMAS = [
 ]
 
 
+# NPC 的自身状态已写入行动 Prompt，因此自主行动时不开放全局角色查询。
+# 普通对话仍可使用完整的 TOOL_SCHEMAS。
+NPC_ACTION_TOOL_SCHEMAS = [
+    schema for schema in TOOL_SCHEMAS
+    if schema["name"] != "get_character"
+]
+
+
 # 工具注册表负责把模型返回的工具名称映射到真正的 Python 函数。
 TOOL_FUNCTIONS = {
     "get_world_time": get_world_time,
@@ -244,11 +252,34 @@ TOOL_FUNCTIONS = {
 }
 
 
-def execute_tool(name: str, arguments: dict[str, Any]) -> str:
+TOOL_ACTOR_ARGUMENTS = {
+    "get_character": "character",
+    "inspect": "character",
+    "talk": "speaker",
+    "update_relationship": "character",
+    "move_character": "character",
+}
+
+
+def execute_tool(
+    name: str,
+    arguments: dict[str, Any],
+    acting_character: str | None = None,
+) -> str:
     """根据工具名称执行对应的 Python 函数。"""
     function = TOOL_FUNCTIONS.get(name)
 
     if function is None:
         raise ValueError(f"未知工具：{name}")
+
+    actor_argument = TOOL_ACTOR_ARGUMENTS.get(name)
+    if (
+        acting_character is not None
+        and actor_argument is not None
+        and arguments.get(actor_argument) != acting_character
+    ):
+        raise ValueError(
+            f"{acting_character}不能通过{name}替其他角色行动"
+        )
 
     return function(**arguments)

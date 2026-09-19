@@ -37,10 +37,17 @@ def chat(prompt: str) -> str:
     return response.output_text
 
 
-def chat_with_tools(prompt: str, max_tool_rounds: int = MAX_TOOL_ROUNDS) -> str:
-    """运行多轮 Reason → Act → Observe，直到模型给出最终回答。"""
+def chat_with_tools(
+    prompt: str,
+    max_tool_rounds: int = MAX_TOOL_ROUNDS,
+    tool_schemas: list[dict] | None = None,
+    acting_character: str | None = None,
+) -> str:
+    """运行多轮 Reason → Act → Observe，并在达到上限后强制收尾。"""
     if max_tool_rounds < 1:
         raise ValueError("max_tool_rounds 必须至少为 1")
+
+    available_tools = TOOL_SCHEMAS if tool_schemas is None else tool_schemas
 
     conversation = [
         {
@@ -54,7 +61,7 @@ def chat_with_tools(prompt: str, max_tool_rounds: int = MAX_TOOL_ROUNDS) -> str:
         response = client.responses.create(
             model=MODEL,
             input=conversation,
-            tools=TOOL_SCHEMAS,
+            tools=available_tools,
         )
 
         function_calls = [
@@ -72,7 +79,11 @@ def chat_with_tools(prompt: str, max_tool_rounds: int = MAX_TOOL_ROUNDS) -> str:
             arguments = json.loads(function_call.arguments)
             print(f"[Tool Call] {function_call.name}({arguments})")
 
-            tool_result = execute_tool(function_call.name, arguments)
+            tool_result = execute_tool(
+                function_call.name,
+                arguments,
+                acting_character=acting_character,
+            )
             print(f"[Tool Result] {tool_result}")
 
             conversation.append(
@@ -91,9 +102,13 @@ def chat_with_tools(prompt: str, max_tool_rounds: int = MAX_TOOL_ROUNDS) -> str:
                 }
             )
 
-    raise RuntimeError(
-        f"模型连续 {max_tool_rounds} 轮调用工具，超过安全上限，已停止。"
+    # 已达到工具轮数上限。最后一次请求不再提供工具，
+    # 让模型只能根据已有观察生成总结，随后结束当前行动回合。
+    final_response = client.responses.create(
+        model=MODEL,
+        input=conversation,
     )
+    return final_response.output_text
 
 if __name__ == "__main__":
     result = chat("你好，请用一句话介绍你自己。")

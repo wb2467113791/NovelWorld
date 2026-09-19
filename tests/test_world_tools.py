@@ -2,6 +2,7 @@ import json
 import unittest
 
 from tools.world_tools import (
+    NPC_ACTION_TOOL_SCHEMAS,
     TOOL_FUNCTIONS,
     TOOL_SCHEMAS,
     execute_tool,
@@ -68,6 +69,14 @@ class WorldToolsTest(unittest.TestCase):
 
         self.assertEqual(schema["parameters"]["required"], ["character"])
         self.assertIn("get_character", TOOL_FUNCTIONS)
+
+    def test_npc_action_tools_exclude_global_character_query(self):
+        tool_names = {
+            schema["name"] for schema in NPC_ACTION_TOOL_SCHEMAS
+        }
+
+        self.assertNotIn("get_character", tool_names)
+        self.assertIn("move_character", tool_names)
 
     def test_inspect_uses_character_current_location_and_records_event(self):
         original_events = WORLD_STATE["events"].copy()
@@ -185,6 +194,14 @@ class WorldToolsTest(unittest.TestCase):
     def test_execute_tool_rejects_unknown_tool(self):
         with self.assertRaisesRegex(ValueError, "未知工具"):
             execute_tool("open_treasure_chest", {})
+
+    def test_execute_tool_rejects_acting_for_another_character(self):
+        with self.assertRaisesRegex(ValueError, "不能.*替其他角色行动"):
+            execute_tool(
+                "move_character",
+                {"character": "苏晚", "location": "县衙"},
+                acting_character="林默",
+            )
 
     def test_move_character_changes_world_state(self):
         original_location = WORLD_STATE["characters"]["苏晚"].location

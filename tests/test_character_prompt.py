@@ -1,7 +1,11 @@
 import unittest
 
 from characters.presets import CHARACTERS
-from characters.prompt import build_character_prompt, build_prompt_for_character
+from characters.prompt import (
+    build_action_prompt_for_character,
+    build_character_prompt,
+    build_prompt_for_character,
+)
 from tools.world_tools import update_relationship
 from world.state import WORLD_STATE
 
@@ -86,6 +90,32 @@ class CharacterPromptTest(unittest.TestCase):
         prompt = build_character_prompt(CHARACTERS["苏晚"], "你记得什么？")
 
         self.assertIn("【近期记忆】\n- 暂无", prompt)
+
+    def test_action_prompt_contains_goal_state_knowledge_and_memory(self):
+        character = CHARACTERS["林默"]
+        character.memory.add("我刚整理过失踪案卷宗")
+        try:
+            prompt = build_action_prompt_for_character("林默")
+
+            self.assertIn("调查失踪案", prompt)
+            self.assertIn(f"世界时间：{WORLD_STATE['time']}", prompt)
+            self.assertIn(f"所在地点：{character.location}", prompt)
+            self.assertIn(f"体力：{character.energy}", prompt)
+            self.assertIn("失踪案卷宗最后提到了晚风客栈", prompt)
+            self.assertIn("我刚整理过失踪案卷宗", prompt)
+            self.assertIn("决定此刻最合理的一步行动", prompt)
+        finally:
+            character.memory.entries.remove("我刚整理过失踪案卷宗")
+
+    def test_action_prompt_does_not_leak_other_characters_secrets(self):
+        prompt = build_action_prompt_for_character("林默")
+
+        self.assertNotIn("她的弟弟与最近发生的失踪案有关", prompt)
+        self.assertNotIn("他知道失踪案背后的交易", prompt)
+
+    def test_action_prompt_rejects_unknown_character(self):
+        with self.assertRaisesRegex(ValueError, "角色不存在"):
+            build_action_prompt_for_character("王五")
 
 
 if __name__ == "__main__":

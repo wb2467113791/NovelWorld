@@ -17,6 +17,18 @@ WORLD_STATE = {
 }
 
 
+def advance_world_time(minutes: int) -> str:
+    """把世界时间向前推进指定分钟，并返回新时间。"""
+    if minutes < 1:
+        raise ValueError("推进分钟数必须至少为 1")
+
+    hour, minute = map(int, WORLD_STATE["time"].split(":"))
+    total_minutes = (hour * 60 + minute + minutes) % (24 * 60)
+    new_hour, new_minute = divmod(total_minutes, 60)
+    WORLD_STATE["time"] = f"{new_hour:02d}:{new_minute:02d}"
+    return WORLD_STATE["time"]
+
+
 def record_event(
     event_type: str,
     actor: str,

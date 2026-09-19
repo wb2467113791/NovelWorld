@@ -23,9 +23,11 @@ class FakeResponses:
     def __init__(self, responses):
         self.responses = iter(responses)
         self.inputs = []
+        self.requests = []
 
     def create(self, **kwargs):
         self.inputs.append(kwargs["input"])
+        self.requests.append(kwargs)
         return next(self.responses)
 
 
@@ -72,7 +74,7 @@ class LlmClientTest(unittest.TestCase):
             "function_call_output",
         )
 
-    def test_chat_with_tools_stops_at_round_limit(self):
+    def test_chat_with_tools_forces_text_response_at_round_limit(self):
         fake_client = FakeClient(
             [
                 SimpleNamespace(
@@ -87,12 +89,16 @@ class LlmClientTest(unittest.TestCase):
                     ],
                     output_text="",
                 ),
+                text_response("已根据现有观察结束本轮行动。"),
             ]
         )
 
         with patch("llm_client.client", fake_client):
-            with self.assertRaisesRegex(RuntimeError, "超过安全上限"):
-                chat_with_tools("一直调用工具", max_tool_rounds=2)
+            result = chat_with_tools("一直调用工具", max_tool_rounds=2)
+
+        self.assertEqual(result, "已根据现有观察结束本轮行动。")
+        self.assertEqual(len(fake_client.responses.requests), 3)
+        self.assertNotIn("tools", fake_client.responses.requests[-1])
 
 
 if __name__ == "__main__":
