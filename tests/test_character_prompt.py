@@ -91,6 +91,12 @@ class CharacterPromptTest(unittest.TestCase):
 
         self.assertIn("【近期记忆】\n- 暂无", prompt)
 
+    def test_dialogue_prompt_requires_tool_for_real_conversation(self):
+        prompt = build_character_prompt(CHARACTERS["林默"], "请与苏晚交谈")
+
+        self.assertIn("请调用 talk 工具", prompt)
+        self.assertIn("只有工具成功执行才算交谈发生", prompt)
+
     def test_action_prompt_contains_goal_state_knowledge_and_memory(self):
         character = CHARACTERS["林默"]
         character.memory.add("我刚整理过失踪案卷宗")

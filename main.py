@@ -1,6 +1,7 @@
 from llm_client import chat_with_tools
 from characters.prompt import build_prompt_for_character
 from characters.presets import CHARACTERS
+from tools.world_tools import NPC_ACTION_TOOL_SCHEMAS
 
 
 DEFAULT_CHARACTER = "苏晚"
@@ -45,6 +46,7 @@ def main():
 
             response = chat_with_tools(
                 prompt,
+                tool_schemas=NPC_ACTION_TOOL_SCHEMAS,
                 acting_character=character_name,
             )
 

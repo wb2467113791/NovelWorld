@@ -95,14 +95,18 @@ def chat_with_tools(
 
         # Python 执行模型请求的工具，并把真实结果追加到对话中。
         for function_call in function_calls:
-            arguments = json.loads(function_call.arguments)
-            print(f"[Tool Call] {function_call.name}({arguments})")
-
-            tool_result = execute_tool(
-                function_call.name,
-                arguments,
-                acting_character=acting_character,
-            )
+            print(f"[Tool Call] {function_call.name}({function_call.arguments})")
+            try:
+                arguments = json.loads(function_call.arguments)
+                if not isinstance(arguments, dict):
+                    raise ValueError("工具参数必须是 JSON 对象")
+                tool_result = execute_tool(
+                    function_call.name,
+                    arguments,
+                    acting_character=acting_character,
+                )
+            except (TypeError, ValueError) as error:
+                tool_result = f"工具错误：{error}"
             print(f"[Tool Result] {tool_result}")
 
             conversation.append(

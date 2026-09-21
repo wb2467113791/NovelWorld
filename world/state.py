@@ -1,6 +1,7 @@
 """保存 NovelWorld 当前的世界状态。"""
 
 from characters.presets import CHARACTERS
+from world.events import Event, recipients_for_event
 
 
 WORLD_STATE = {
@@ -33,18 +34,24 @@ def record_event(
     event_type: str,
     actor: str,
     description: str,
-    participants: list[str],
-) -> dict:
+    *,
+    target: str | None = None,
+    location: str | None = None,
+    payload: dict | None = None,
+) -> Event:
     """记录世界行为，并让相关角色保存这段经历。"""
-    event = {
-        "time": WORLD_STATE["time"],
+    event: Event = {
+        "timestamp": WORLD_STATE["time"],
         "type": event_type,
         "actor": actor,
+        "target": target,
+        "location": location or WORLD_STATE["characters"][actor].location,
+        "payload": payload if payload is not None else {},
         "description": description,
     }
     WORLD_STATE["events"].append(event)
 
-    for character_name in participants:
+    for character_name in recipients_for_event(event, WORLD_STATE["characters"]):
         WORLD_STATE["characters"][character_name].memory.add(description)
 
     return event

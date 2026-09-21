@@ -122,6 +122,56 @@ class LlmClientTest(unittest.TestCase):
         self.assertEqual(len(fake_client.responses.requests), 3)
         self.assertNotIn("tools", fake_client.responses.requests[-1])
 
+    def test_invalid_query_is_returned_to_model_before_valid_talk(self):
+        lin_mo = WORLD_STATE["characters"]["林默"]
+        original_location = lin_mo.location
+        original_events = WORLD_STATE["events"].copy()
+        original_memories = {
+            name: character.memory.recent()
+            for name, character in WORLD_STATE["characters"].items()
+        }
+        fake_client = FakeClient([
+            SimpleNamespace(
+                output=[function_call(
+                    "get_character", '{"character":"苏晚"}', "call-invalid"
+                )],
+                output_text="",
+            ),
+            SimpleNamespace(
+                output=[function_call(
+                    "talk",
+                    '{"speaker":"林默","listener":"苏晚","message":"我想查失踪案"}',
+                    "call-talk",
+                )],
+                output_text="",
+            ),
+            text_response("已经交谈。"),
+        ])
+
+        try:
+            lin_mo.location = "晚风客栈"
+            with patch("llm_client.client", fake_client), patch("builtins.print"):
+                result = chat_with_tools("请与苏晚交谈", acting_character="林默")
+
+            self.assertEqual(result, "已经交谈。")
+            self.assertTrue(
+                any(
+                    "工具错误：林默不能通过get_character替其他角色行动"
+                    in item.get("output", "")
+                    for item in fake_client.responses.inputs[1]
+                ),
+            )
+            self.assertEqual(WORLD_STATE["events"][-1]["type"], "talk")
+            self.assertIn(
+                "林默对苏晚说",
+                WORLD_STATE["characters"]["苏晚"].memory.recent()[-1],
+            )
+        finally:
+            lin_mo.location = original_location
+            WORLD_STATE["events"][:] = original_events
+            for name, entries in original_memories.items():
+                WORLD_STATE["characters"][name].memory.entries[:] = entries
+
 
 if __name__ == "__main__":
     unittest.main()

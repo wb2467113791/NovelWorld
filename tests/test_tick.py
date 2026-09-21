@@ -124,9 +124,13 @@ class WorldTickSchedulerTest(unittest.TestCase):
             action_result,
             WORLD_STATE["characters"]["林默"].memory.recent(),
         )
-        self.assertNotIn(
+        self.assertIn(
             action_result,
             WORLD_STATE["characters"]["苏晚"].memory.recent(),
+        )
+        self.assertNotIn(
+            action_result,
+            WORLD_STATE["characters"]["赵无极"].memory.recent(),
         )
 
     def test_run_ticks_continues_for_ten_ticks(self):

@@ -43,7 +43,6 @@ class WorldTickScheduler:
                 "narration",
                 character.name,
                 f"{character.name}本轮没有执行工具：{action_result}",
-                participants=[character.name],
             )
 
         advance_world_time(TICK_MINUTES)
