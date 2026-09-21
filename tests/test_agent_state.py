@@ -34,7 +34,7 @@ class AgentStateTest(unittest.TestCase):
             self.assertEqual(state["memories"], character.memory.recent())
             self.assertIsNot(state["memories"], character.memory.entries)
         finally:
-            character.memory.entries.remove("我发现卷宗里缺少一页")
+            character.memory.entries.pop()
 
     def test_initial_state_accepts_an_explicit_active_goal(self):
         state = create_initial_agent_state(

@@ -19,7 +19,7 @@ from world.state import WORLD_STATE
 class WorldToolsTest(unittest.TestCase):
     def setUp(self):
         self.original_memories = {
-            name: character.memory.recent()
+            name: character.memory.recent_entries()
             for name, character in WORLD_STATE["characters"].items()
         }
 
@@ -93,7 +93,10 @@ class WorldToolsTest(unittest.TestCase):
                 WORLD_STATE["events"][-1]["payload"],
                 {"observation": WORLD_STATE["inspectables"]["晚风客栈"]},
             )
-            self.assertIn(result, WORLD_STATE["characters"]["苏晚"].memory.recent())
+            self.assertIn(
+                "我调查了晚风客栈：" + WORLD_STATE["inspectables"]["晚风客栈"],
+                WORLD_STATE["characters"]["苏晚"].memory.recent(),
+            )
             self.assertNotIn(result, WORLD_STATE["characters"]["林默"].memory.recent())
         finally:
             WORLD_STATE["events"][:] = original_events
@@ -123,9 +126,22 @@ class WorldToolsTest(unittest.TestCase):
             self.assertEqual(WORLD_STATE["events"][-1]["target"], "林默")
             self.assertEqual(WORLD_STATE["events"][-1]["location"], "晚风客栈")
             self.assertEqual(WORLD_STATE["events"][-1]["payload"], {"message": "客官，要住店吗？"})
-            self.assertIn(result, WORLD_STATE["characters"]["苏晚"].memory.recent())
-            self.assertIn(result, WORLD_STATE["characters"]["林默"].memory.recent())
-            self.assertNotIn(result, WORLD_STATE["characters"]["赵无极"].memory.recent())
+            self.assertIn(
+                "我对林默说：“客官，要住店吗？”",
+                WORLD_STATE["characters"]["苏晚"].memory.recent(),
+            )
+            self.assertIn(
+                "苏晚对我说：“客官，要住店吗？”",
+                WORLD_STATE["characters"]["林默"].memory.recent(),
+            )
+            entry = WORLD_STATE["characters"]["林默"].memory.recent_entries()[-1]
+            self.assertEqual(entry.importance, 3)
+            self.assertEqual(entry.actors, ("苏晚", "林默"))
+            self.assertEqual(entry.tags, ("talk", "晚风客栈"))
+            self.assertEqual(
+                WORLD_STATE["characters"]["赵无极"].memory.recent_entries(),
+                self.original_memories["赵无极"],
+            )
         finally:
             WORLD_STATE["characters"]["林默"].location = original_location
             WORLD_STATE["events"][:] = original_events
@@ -140,9 +156,9 @@ class WorldToolsTest(unittest.TestCase):
             zhao.location = "晚风客栈"
             result = talk("苏晚", "赵无极", "请保守秘密。")
 
-            self.assertIn(result, WORLD_STATE["characters"]["苏晚"].memory.recent())
-            self.assertIn(result, zhao.memory.recent())
-            self.assertNotIn(result, WORLD_STATE["characters"]["林默"].memory.recent())
+            self.assertIn("我对赵无极说：“请保守秘密。”", WORLD_STATE["characters"]["苏晚"].memory.recent())
+            self.assertIn("苏晚对我说：“请保守秘密。”", zhao.memory.recent())
+            self.assertEqual(WORLD_STATE["characters"]["林默"].memory.recent_entries(), self.original_memories["林默"])
         finally:
             lin_mo.location, zhao.location = original_locations
             WORLD_STATE["events"][:] = original_events
@@ -157,8 +173,11 @@ class WorldToolsTest(unittest.TestCase):
             inspection = inspect("苏晚")
             relationship = update_relationship("苏晚", "林默", -1)
 
-            self.assertIn(inspection, WORLD_STATE["characters"]["苏晚"].memory.recent())
-            self.assertIn(relationship, WORLD_STATE["characters"]["苏晚"].memory.recent())
+            self.assertIn(
+                "我调查了晚风客栈：" + WORLD_STATE["inspectables"]["晚风客栈"],
+                WORLD_STATE["characters"]["苏晚"].memory.recent(),
+            )
+            self.assertIn("我对林默的关系值从0变为-1。", WORLD_STATE["characters"]["苏晚"].memory.recent())
             self.assertNotIn(inspection, lin_mo.memory.recent())
             self.assertNotIn(relationship, lin_mo.memory.recent())
         finally:
@@ -196,7 +215,7 @@ class WorldToolsTest(unittest.TestCase):
                 WORLD_STATE["events"][-1]["payload"],
                 {"change": -5, "old_value": 0, "new_value": -5},
             )
-            self.assertIn(result, WORLD_STATE["characters"]["苏晚"].memory.recent())
+            self.assertIn("我对林默的关系值从0变为-5。", WORLD_STATE["characters"]["苏晚"].memory.recent())
             self.assertNotIn(result, WORLD_STATE["characters"]["林默"].memory.recent())
             self.assertNotIn(result, WORLD_STATE["characters"]["赵无极"].memory.recent())
         finally:
@@ -273,9 +292,9 @@ class WorldToolsTest(unittest.TestCase):
                     "description": result,
                 },
             )
-            self.assertIn(result, WORLD_STATE["characters"]["苏晚"].memory.recent())
-            self.assertIn(result, WORLD_STATE["characters"]["林默"].memory.recent())
-            self.assertNotIn(result, WORLD_STATE["characters"]["赵无极"].memory.recent())
+            self.assertIn("我从晚风客栈来到县衙。", WORLD_STATE["characters"]["苏晚"].memory.recent())
+            self.assertIn("我在县衙看到苏晚来到这里。", WORLD_STATE["characters"]["林默"].memory.recent())
+            self.assertEqual(WORLD_STATE["characters"]["赵无极"].memory.recent_entries(), self.original_memories["赵无极"])
         finally:
             WORLD_STATE["characters"]["苏晚"].location = original_location
             WORLD_STATE["events"][:] = original_events

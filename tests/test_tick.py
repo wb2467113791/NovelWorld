@@ -1,7 +1,7 @@
 import unittest
 
 from agent.tick import WorldTickScheduler
-from tools.world_tools import move_character
+from tools.world_tools import inspect, move_character
 from world.state import WORLD_STATE
 
 
@@ -17,7 +17,7 @@ class WorldTickSchedulerTest(unittest.TestCase):
             for name, character in WORLD_STATE["characters"].items()
         }
         self.original_memories = {
-            name: character.memory.recent()
+            name: character.memory.recent_entries()
             for name, character in WORLD_STATE["characters"].items()
         }
         self.original_events = WORLD_STATE["events"].copy()
@@ -121,11 +121,11 @@ class WorldTickSchedulerTest(unittest.TestCase):
             action_result,
         )
         self.assertIn(
-            action_result,
+            "我从县衙来到晚风客栈。",
             WORLD_STATE["characters"]["林默"].memory.recent(),
         )
         self.assertIn(
-            action_result,
+            "我在晚风客栈看到林默来到这里。",
             WORLD_STATE["characters"]["苏晚"].memory.recent(),
         )
         self.assertNotIn(
@@ -157,6 +157,28 @@ class WorldTickSchedulerTest(unittest.TestCase):
                 "林默",
             ],
         )
+
+    def test_reflection_is_written_after_three_ticks_only_to_the_owner(self):
+        for character in WORLD_STATE["characters"].values():
+            character.memory.entries.clear()
+        scheduler = WorldTickScheduler()
+        scheduler.run_ticks(3, lambda character: "只是文字")
+        self.assertFalse(any(
+            "reflection" in entry.tags
+            for character in WORLD_STATE["characters"].values()
+            for entry in character.memory.recent_entries()
+        ))
+
+        scheduler.run_ticks(3, lambda character: inspect(character.name))
+
+        for name, character in WORLD_STATE["characters"].items():
+            reflections = [
+                entry for entry in character.memory.recent_entries()
+                if "reflection" in entry.tags
+            ]
+            self.assertEqual(len(reflections), 1)
+            self.assertIn(name, reflections[0].actors)
+            self.assertNotIn("reflection", WORLD_STATE["events"][-1]["type"])
 
     def test_run_ticks_requires_a_positive_count(self):
         scheduler = WorldTickScheduler()

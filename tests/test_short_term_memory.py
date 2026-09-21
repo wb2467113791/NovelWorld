@@ -35,6 +35,25 @@ class ShortTermMemoryTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "容量必须大于 0"):
             ShortTermMemory(max_items=0)
 
+    def test_memory_keeps_metadata_with_each_entry(self):
+        memory = ShortTermMemory(max_items=1)
+        memory.add("旧记忆", importance=2)
+        memory.add(
+            "苏晚对我说了线索",
+            importance=3,
+            actors=("苏晚", "林默"),
+            tags=("talk", "晚风客栈"),
+        )
+
+        entry = memory.recent_entries()[0]
+        self.assertEqual(memory.recent(), ["苏晚对我说了线索"])
+        self.assertEqual((entry.importance, entry.actors, entry.tags),
+                         (3, ("苏晚", "林默"), ("talk", "晚风客栈")))
+
+    def test_memory_rejects_invalid_importance(self):
+        with self.assertRaisesRegex(ValueError, "1 到 5"):
+            ShortTermMemory().add("错误记忆", importance=6)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -127,7 +127,7 @@ class LlmClientTest(unittest.TestCase):
         original_location = lin_mo.location
         original_events = WORLD_STATE["events"].copy()
         original_memories = {
-            name: character.memory.recent()
+            name: character.memory.recent_entries()
             for name, character in WORLD_STATE["characters"].items()
         }
         fake_client = FakeClient([
@@ -163,7 +163,7 @@ class LlmClientTest(unittest.TestCase):
             )
             self.assertEqual(WORLD_STATE["events"][-1]["type"], "talk")
             self.assertIn(
-                "林默对苏晚说",
+                "林默对我说",
                 WORLD_STATE["characters"]["苏晚"].memory.recent()[-1],
             )
         finally:

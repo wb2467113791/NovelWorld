@@ -1,6 +1,7 @@
 """保存 NovelWorld 当前的世界状态。"""
 
 from characters.presets import CHARACTERS
+from memory.event_summary import event_memory_metadata, summarize_event
 from world.events import Event, recipients_for_event
 
 
@@ -52,6 +53,9 @@ def record_event(
     WORLD_STATE["events"].append(event)
 
     for character_name in recipients_for_event(event, WORLD_STATE["characters"]):
-        WORLD_STATE["characters"][character_name].memory.add(description)
+        WORLD_STATE["characters"][character_name].memory.add(
+            summarize_event(event, character_name),
+            **event_memory_metadata(event),
+        )
 
     return event

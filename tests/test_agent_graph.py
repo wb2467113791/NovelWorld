@@ -24,7 +24,7 @@ class AgentGraphTest(unittest.TestCase):
             name: character.location for name, character in CHARACTERS.items()
         }
         self.original_memories = {
-            name: character.memory.recent() for name, character in CHARACTERS.items()
+            name: character.memory.recent_entries() for name, character in CHARACTERS.items()
         }
         self.original_events = WORLD_STATE["events"].copy()
 

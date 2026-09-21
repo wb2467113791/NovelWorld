@@ -3,10 +3,12 @@
 from collections.abc import Callable
 
 from characters.model import Character
+from memory.reflection import reflect_on_new_memories
 from world.state import WORLD_STATE, advance_world_time, record_event
 
 
 TICK_MINUTES = 5
+REFLECTION_INTERVAL = 3
 
 
 class WorldTickScheduler:
@@ -14,6 +16,7 @@ class WorldTickScheduler:
 
     def __init__(self) -> None:
         self._next_index = 0
+        self._tick_count = 0
 
     def choose_next_character(self) -> Character:
         """返回下一名可行动角色；没有可行动角色时抛出异常。"""
@@ -46,6 +49,10 @@ class WorldTickScheduler:
             )
 
         advance_world_time(TICK_MINUTES)
+        self._tick_count += 1
+        if self._tick_count % REFLECTION_INTERVAL == 0:
+            for current_character in WORLD_STATE["characters"].values():
+                reflect_on_new_memories(current_character.memory)
 
         return {
             "time": tick_time,

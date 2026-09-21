@@ -13,7 +13,7 @@ from world.state import WORLD_STATE
 class CharacterPromptTest(unittest.TestCase):
     def setUp(self):
         self.original_memories = {
-            name: character.memory.recent()
+            name: character.memory.recent_entries()
             for name, character in CHARACTERS.items()
         }
 
@@ -111,7 +111,7 @@ class CharacterPromptTest(unittest.TestCase):
             self.assertIn("我刚整理过失踪案卷宗", prompt)
             self.assertIn("决定此刻最合理的一步行动", prompt)
         finally:
-            character.memory.entries.remove("我刚整理过失踪案卷宗")
+            character.memory.entries.pop()
 
     def test_action_prompt_does_not_leak_other_characters_secrets(self):
         prompt = build_action_prompt_for_character("林默")
