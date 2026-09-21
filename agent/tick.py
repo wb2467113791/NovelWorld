@@ -2,7 +2,6 @@
 
 from collections.abc import Callable
 
-from characters.prompt import build_action_prompt
 from characters.model import Character
 from world.state import WORLD_STATE, advance_world_time, record_event
 
@@ -31,14 +30,13 @@ class WorldTickScheduler:
 
     def run_tick(
         self,
-        decide_action: Callable[[Character, str], str],
+        decide_action: Callable[[Character], str],
     ) -> dict[str, str]:
-        """选择一名 NPC，并让传入的决策函数处理它的行动 Prompt。"""
+        """选择一名 NPC，并让其 Agent 决定本轮行动。"""
         character = self.choose_next_character()
         tick_time = WORLD_STATE["time"]
-        prompt = build_action_prompt(character)
         event_count_before = len(WORLD_STATE["events"])
-        action_result = decide_action(character, prompt)
+        action_result = decide_action(character)
 
         if len(WORLD_STATE["events"]) == event_count_before:
             record_event(
@@ -59,7 +57,7 @@ class WorldTickScheduler:
     def run_ticks(
         self,
         count: int,
-        decide_action: Callable[[Character, str], str],
+        decide_action: Callable[[Character], str],
     ) -> list[dict[str, str]]:
         """连续运行指定次数的 World Tick。"""
         if count < 1:

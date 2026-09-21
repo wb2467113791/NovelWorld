@@ -4,7 +4,10 @@ from characters.model import Character
 from world.state import WORLD_STATE
 
 
-def _build_character_context(character: Character) -> str:
+def _build_character_context(
+    character: Character,
+    memories: list[str] | None = None,
+) -> str:
     """组装对话模式和自主行动模式共用的角色可见信息。"""
     goals = "；".join(character.goals)
     secrets = "；".join(character.secrets) or "暂无"
@@ -13,9 +16,8 @@ def _build_character_context(character: Character) -> str:
         f"对{target}的关系值为{value}"
         for target, value in character.relationships.items()
     ) or "暂无"
-    memory_text = "\n".join(
-        f"- {memory}" for memory in character.memory.recent()
-    ) or "- 暂无"
+    visible_memories = character.memory.recent() if memories is None else memories
+    memory_text = "\n".join(f"- {memory}" for memory in visible_memories) or "- 暂无"
 
     return f"""
 【角色设定】
@@ -66,9 +68,21 @@ def build_prompt_for_character(character_name: str, user_input: str) -> str:
     return build_character_prompt(character, user_input)
 
 
-def build_action_prompt(character: Character) -> str:
+def build_action_prompt(
+    character: Character,
+    *,
+    active_goal: str | None = None,
+    memories: list[str] | None = None,
+    observations: list[str] | None = None,
+) -> str:
     """自主行动模式：NPC 没有用户输入，根据自身上下文决定下一步。"""
-    character_context = _build_character_context(character)
+    character_context = _build_character_context(character, memories)
+    active_goal_text = f"当前目标：{active_goal}\n" if active_goal is not None else ""
+    observation_text = "\n".join(f"- {item}" for item in observations or []) or "- 暂无"
+    observation_section = (
+        f"【本轮观察】\n{observation_text}\n"
+        if observations is not None else ""
+    )
 
     return f"""
 你是正在 NovelWorld 中自主行动的角色。
@@ -80,8 +94,9 @@ def build_action_prompt(character: Character) -> str:
 所在地点：{character.location}
 体力：{character.energy}
 
+{observation_section}
 【本次任务】
-根据你的目标、当前状态、已知事实和近期记忆，决定此刻最合理的一步行动。
+{active_goal_text}根据你的目标、当前状态、已知事实和近期记忆，决定此刻最合理的一步行动。
 需要改变世界或获取信息时，请调用一个合适的工具。
 不要等待用户提问，不要替其他角色行动，也不要使用上面没有提供的信息。
 只有工具结果才能代表真实的状态变化，不要声称位置、体力或关系发生了未经工具执行的改变。

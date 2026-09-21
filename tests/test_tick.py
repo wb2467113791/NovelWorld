@@ -62,12 +62,12 @@ class WorldTickSchedulerTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "没有可行动的角色"):
             scheduler.choose_next_character()
 
-    def test_run_tick_builds_prompt_for_the_selected_character(self):
+    def test_run_tick_passes_selected_character_to_decider(self):
         scheduler = WorldTickScheduler()
-        received_prompts = []
+        received_characters = []
 
-        def fake_decide_action(character, prompt: str) -> str:
-            received_prompts.append(prompt)
+        def fake_decide_action(character) -> str:
+            received_characters.append(character)
             return "林默决定前往晚风客栈调查。"
 
         result = scheduler.run_tick(fake_decide_action)
@@ -77,10 +77,7 @@ class WorldTickSchedulerTest(unittest.TestCase):
             result["action_result"],
             "林默决定前往晚风客栈调查。",
         )
-        self.assertEqual(len(received_prompts), 1)
-        self.assertIn("姓名：林默", received_prompts[0])
-        self.assertIn("调查失踪案", received_prompts[0])
-        self.assertNotIn("她的弟弟与最近发生的失踪案有关", received_prompts[0])
+        self.assertEqual(received_characters, [WORLD_STATE["characters"]["林默"]])
         self.assertEqual(WORLD_STATE["events"][-1]["type"], "narration")
         self.assertTrue(
             any(
@@ -94,10 +91,10 @@ class WorldTickSchedulerTest(unittest.TestCase):
         scheduler = WorldTickScheduler()
 
         first_result = scheduler.run_tick(
-            lambda character, prompt: "第一次行动"
+            lambda character: "第一次行动"
         )
         second_result = scheduler.run_tick(
-            lambda character, prompt: "第二次行动"
+            lambda character: "第二次行动"
         )
 
         self.assertEqual(first_result["character"], "林默")
@@ -107,7 +104,7 @@ class WorldTickSchedulerTest(unittest.TestCase):
     def test_run_tick_can_update_world_event_and_related_memory(self):
         scheduler = WorldTickScheduler()
 
-        def fake_decide_action(character, prompt: str) -> str:
+        def fake_decide_action(character) -> str:
             return move_character("林默", "晚风客栈")
 
         result = scheduler.run_tick(fake_decide_action)
@@ -137,7 +134,7 @@ class WorldTickSchedulerTest(unittest.TestCase):
 
         results = scheduler.run_ticks(
             10,
-            lambda character, prompt: "完成一次行动",
+            lambda character: "完成一次行动",
         )
 
         self.assertEqual(len(results), 10)
@@ -161,7 +158,7 @@ class WorldTickSchedulerTest(unittest.TestCase):
         scheduler = WorldTickScheduler()
 
         with self.assertRaisesRegex(ValueError, "至少为 1"):
-            scheduler.run_ticks(0, lambda character, prompt: "不会执行")
+            scheduler.run_ticks(0, lambda character: "不会执行")
 
 
 if __name__ == "__main__":

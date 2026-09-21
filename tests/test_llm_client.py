@@ -2,7 +2,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from llm_client import chat_with_tools
+from llm_client import MODEL, chat_with_tools, request_npc_graph_response
 from world.state import WORLD_STATE
 
 
@@ -37,6 +37,28 @@ class FakeClient:
 
 
 class LlmClientTest(unittest.TestCase):
+    def test_graph_adapter_uses_npc_tools_and_disables_them_at_limit(self):
+        fake_client = FakeClient([
+            text_response("第一轮结果"),
+            text_response("最终结果"),
+        ])
+        conversation = [{"role": "user", "content": "林默下一步做什么？"}]
+
+        with patch("llm_client.client", fake_client):
+            first = request_npc_graph_response(conversation, allow_tools=True)
+            final = request_npc_graph_response(conversation, allow_tools=False)
+
+        first_request, final_request = fake_client.responses.requests
+        self.assertEqual(first.output_text, "第一轮结果")
+        self.assertEqual(final.output_text, "最终结果")
+        self.assertEqual(first_request["model"], MODEL)
+        self.assertIs(first_request["input"], conversation)
+        tool_names = {tool["name"] for tool in first_request["tools"]}
+        self.assertIn("move_character", tool_names)
+        self.assertNotIn("get_character", tool_names)
+        self.assertEqual(final_request["model"], MODEL)
+        self.assertNotIn("tools", final_request)
+
     def test_chat_with_tools_continues_until_model_returns_text(self):
         original_location = WORLD_STATE["characters"]["苏晚"].location
         fake_client = FakeClient(

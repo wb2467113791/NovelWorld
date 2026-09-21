@@ -1,10 +1,15 @@
 import json
 import os
+from typing import Any
 
 from dotenv import load_dotenv
 from openai import OpenAI
 
-from tools.world_tools import TOOL_SCHEMAS, execute_tool
+from tools.world_tools import (
+    NPC_ACTION_TOOL_SCHEMAS,
+    TOOL_SCHEMAS,
+    execute_tool,
+)
 
 
 # 读取 .env
@@ -35,6 +40,20 @@ def chat(prompt: str) -> str:
         input=prompt
     )
     return response.output_text
+
+
+def request_npc_graph_response(
+    conversation: list[dict[str, Any]],
+    allow_tools: bool,
+):
+    """为单 NPC Graph 调用现有 Qwen Responses 客户端。"""
+    request: dict[str, Any] = {
+        "model": MODEL,
+        "input": conversation,
+    }
+    if allow_tools:
+        request["tools"] = NPC_ACTION_TOOL_SCHEMAS
+    return client.responses.create(**request)
 
 
 def chat_with_tools(
