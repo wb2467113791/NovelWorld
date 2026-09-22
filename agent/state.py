@@ -1,6 +1,6 @@
 """定义单个 NPC LangGraph 流程中传递的状态。"""
 
-from typing import Any, TypedDict
+from typing import Any, NotRequired, TypedDict
 
 from characters.model import Character
 
@@ -40,6 +40,8 @@ class ToolResult(ToolCall):
     """工具执行结果，保留调用信息以便回传给 Responses API。"""
 
     output: str
+    # 执行前的位置，供 Eval 区分在不同地点进行的调查。
+    location_before: NotRequired[str]
 
 
 def create_initial_agent_state(

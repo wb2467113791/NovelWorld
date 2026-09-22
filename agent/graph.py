@@ -48,6 +48,7 @@ def execute_pending_tools(state: AgentState) -> dict:
     new_results: list[ToolResult] = []
 
     for call in state["pending_tool_calls"]:
+        location_before = WORLD_STATE["characters"][state["npc_id"]].location
         try:
             arguments = json.loads(call["arguments"])
             if not isinstance(arguments, dict):
@@ -58,7 +59,7 @@ def execute_pending_tools(state: AgentState) -> dict:
         except (TypeError, ValueError) as error:
             output = f"工具错误：{error}"
 
-        new_results.append({**call, "output": output})
+        new_results.append({**call, "output": output, "location_before": location_before})
 
     return {
         "pending_tool_calls": [],
