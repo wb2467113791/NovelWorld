@@ -140,6 +140,36 @@ def move_character(character: str, location: str) -> str:
     return result
 
 
+def give_item(giver: str, receiver: str, item: str) -> str:
+    """同地点交付物品；归属校验通过后才修改双方清单。"""
+    characters = WORLD_STATE["characters"]
+    if giver not in characters:
+        raise ValueError(f"角色不存在：{giver}")
+    if receiver not in characters:
+        raise ValueError(f"角色不存在：{receiver}")
+    if giver == receiver:
+        raise ValueError("角色不能把物品交给自己")
+
+    giver_items = characters[giver].items
+    if item not in giver_items:
+        if any(item in character.items for character in characters.values()):
+            raise ValueError(f"{giver}不拥有物品：{item}")
+        raise ValueError(f"物品不存在：{item}")
+
+    location = characters[giver].location
+    if location != characters[receiver].location:
+        raise ValueError(f"{giver}和{receiver}不在同一地点，无法交付物品")
+
+    giver_items.remove(item)
+    characters[receiver].items.append(item)
+    result = f"{giver}在{location}把{item}交给了{receiver}。"
+    record_event(
+        "give_item", giver, result,
+        target=receiver, location=location, payload={"item": item},
+    )
+    return result
+
+
 # Tool Schema 是给模型看的工具说明书，不负责执行 Python 函数。
 TOOL_SCHEMAS = [
     {
@@ -247,6 +277,20 @@ TOOL_SCHEMAS = [
             "required": ["character", "location"],
         },
     },
+    {
+        "type": "function",
+        "name": "give_item",
+        "description": "把自己持有的物品交给同一地点的另一名角色。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "giver": {"type": "string", "description": "交付物品的角色名称。"},
+                "receiver": {"type": "string", "description": "接收物品的角色名称。"},
+                "item": {"type": "string", "description": "要交付的物品名称。"},
+            },
+            "required": ["giver", "receiver", "item"],
+        },
+    },
 ]
 
 
@@ -266,6 +310,7 @@ TOOL_FUNCTIONS = {
     "talk": talk,
     "update_relationship": update_relationship,
     "move_character": move_character,
+    "give_item": give_item,
 }
 
 
@@ -275,6 +320,7 @@ TOOL_ACTOR_ARGUMENTS = {
     "talk": "speaker",
     "update_relationship": "character",
     "move_character": "character",
+    "give_item": "giver",
 }
 
 

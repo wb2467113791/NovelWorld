@@ -12,6 +12,7 @@ def _build_character_context(
     goals = "；".join(character.goals)
     secrets = "；".join(character.secrets) or "暂无"
     known_facts = "；".join(character.known_facts) or "暂无"
+    items = "；".join(character.items) or "暂无"
     relationship_text = "；".join(
         f"对{target}的关系值为{value}"
         for target, value in character.relationships.items()
@@ -28,6 +29,7 @@ def _build_character_context(
 目标：{goals}
 自己的秘密：{secrets}
 已知事实：{known_facts}
+持有物品：{items}
 当前关系：{relationship_text}
 
 【近期记忆】

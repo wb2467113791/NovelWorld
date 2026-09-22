@@ -32,7 +32,7 @@ def recipients_for_event(
     """按事件类别确定能感知事件的角色，返回不重复的姓名。"""
     recipients = [event["actor"]]
 
-    if event["type"] == "talk" and event["target"] is not None:
+    if event["type"] in {"talk", "give_item"} and event["target"] is not None:
         recipients.append(event["target"])
     elif event["type"] == "move":
         recipients.extend(

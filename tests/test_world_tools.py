@@ -6,6 +6,7 @@ from tools.world_tools import (
     TOOL_FUNCTIONS,
     TOOL_SCHEMAS,
     execute_tool,
+    give_item,
     get_character,
     get_world_time,
     inspect,
@@ -302,6 +303,49 @@ class WorldToolsTest(unittest.TestCase):
     def test_move_character_rejects_unknown_location(self):
         with self.assertRaisesRegex(ValueError, "地点不存在"):
             move_character("苏晚", "皇宫")
+
+    def test_give_item_transfers_ownership_and_records_private_event(self):
+        su_wan = WORLD_STATE["characters"]["苏晚"]
+        lin_mo = WORLD_STATE["characters"]["林默"]
+        original_location = lin_mo.location
+        original_items = (su_wan.items.copy(), lin_mo.items.copy())
+        original_events = WORLD_STATE["events"].copy()
+        try:
+            lin_mo.location = su_wan.location
+            result = execute_tool(
+                "give_item",
+                {"giver": "苏晚", "receiver": "林默", "item": "私人账本"},
+                acting_character="苏晚",
+            )
+
+            self.assertEqual(result, "苏晚在晚风客栈把私人账本交给了林默。")
+            self.assertNotIn("私人账本", su_wan.items)
+            self.assertIn("私人账本", lin_mo.items)
+            self.assertEqual(WORLD_STATE["events"][-1]["type"], "give_item")
+            self.assertIn("我把私人账本交给了林默。", su_wan.memory.recent())
+            self.assertIn("苏晚把私人账本交给了我。", lin_mo.memory.recent())
+        finally:
+            lin_mo.location = original_location
+            su_wan.items[:], lin_mo.items[:] = original_items
+            WORLD_STATE["events"][:] = original_events
+
+    def test_give_item_rejects_missing_and_foreign_items_without_changes(self):
+        original_items = {
+            name: character.items.copy()
+            for name, character in WORLD_STATE["characters"].items()
+        }
+        original_events = WORLD_STATE["events"].copy()
+
+        with self.assertRaisesRegex(ValueError, "物品不存在：不存在的钥匙"):
+            give_item("苏晚", "林默", "不存在的钥匙")
+        with self.assertRaisesRegex(ValueError, "苏晚不拥有物品：捕快腰牌"):
+            give_item("苏晚", "林默", "捕快腰牌")
+
+        self.assertEqual(
+            {name: character.items for name, character in WORLD_STATE["characters"].items()},
+            original_items,
+        )
+        self.assertEqual(WORLD_STATE["events"], original_events)
 
 
 if __name__ == "__main__":

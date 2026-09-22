@@ -9,6 +9,7 @@ EVENT_IMPORTANCE = {
     "inspect": 3,
     "talk": 3,
     "relationship": 4,
+    "give_item": 3,
 }
 
 
@@ -37,6 +38,12 @@ def summarize_event(event: Event, observer: str) -> str:
         if observer == actor:
             return f"我对{target}说：“{message}”"
         return f"{actor}对我说：“{message}”"
+
+    if kind == "give_item":
+        item = payload["item"]
+        if observer == actor:
+            return f"我把{item}交给了{target}。"
+        return f"{actor}把{item}交给了我。"
 
     if kind == "move":
         origin = payload["from"]

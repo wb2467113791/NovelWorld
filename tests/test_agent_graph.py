@@ -122,6 +122,87 @@ class AgentGraphTest(unittest.TestCase):
         self.assertIn("工具错误", result["observations"][0])
         self.assertEqual(result["tool_results"][0]["call_id"], "call-3")
 
+    def test_missing_item_returns_explicit_observation_to_model(self):
+        responses = iter([
+            SimpleNamespace(
+                output=[tool_call(
+                    "give_item",
+                    '{"giver":"苏晚","receiver":"林默","item":"不存在的钥匙"}',
+                    "call-item",
+                )],
+                output_text="",
+            ),
+            SimpleNamespace(output=[], output_text="物品不存在，无法交付。"),
+        ])
+        requests = []
+
+        def fake_request_model(conversation, allow_tools):
+            requests.append(list(conversation))
+            return next(responses)
+
+        graph = build_agent_loop_graph(fake_request_model)
+        result = graph.invoke(create_initial_agent_state(CHARACTERS["苏晚"]))
+
+        self.assertEqual(WORLD_STATE["events"], self.original_events)
+        self.assertEqual(
+            result["observations"], ["工具错误：物品不存在：不存在的钥匙"],
+        )
+        self.assertEqual(requests[1][-1]["output"], result["observations"][0])
+
+    def test_other_characters_facts_cannot_be_read_through_tool_call(self):
+        responses = iter([
+            SimpleNamespace(
+                output=[tool_call(
+                    "get_character", '{"character":"苏晚"}', "call-fact"
+                )],
+                output_text="",
+            ),
+            SimpleNamespace(output=[], output_text="我无法读取苏晚的私人信息。"),
+        ])
+        requests = []
+
+        def fake_request_model(conversation, allow_tools):
+            requests.append(list(conversation))
+            return next(responses)
+
+        graph = build_agent_loop_graph(fake_request_model)
+        result = graph.invoke(create_initial_agent_state(CHARACTERS["林默"]))
+
+        self.assertNotIn(CHARACTERS["苏晚"].secrets[0], requests[0][0]["content"])
+        self.assertEqual(
+            result["observations"],
+            ["工具错误：林默不能通过get_character替其他角色行动"],
+        )
+        self.assertEqual(requests[1][-1]["output"], result["observations"][0])
+        self.assertNotIn(CHARACTERS["苏晚"].secrets[0], str(requests[1]))
+        self.assertEqual(WORLD_STATE["events"], self.original_events)
+
+    def test_invalid_destination_returns_observation_without_moving(self):
+        responses = iter([
+            SimpleNamespace(
+                output=[tool_call(
+                    "move_character",
+                    '{"character":"林默","location":"皇宫"}',
+                    "call-location",
+                )],
+                output_text="",
+            ),
+            SimpleNamespace(output=[], output_text="皇宫不是可前往的地点。"),
+        ])
+        requests = []
+
+        def fake_request_model(conversation, allow_tools):
+            requests.append(list(conversation))
+            return next(responses)
+
+        graph = build_agent_loop_graph(fake_request_model)
+        result = graph.invoke(create_initial_agent_state(CHARACTERS["林默"]))
+
+        self.assertEqual(CHARACTERS["林默"].location, self.original_locations["林默"])
+        self.assertEqual(WORLD_STATE["events"], self.original_events)
+        self.assertEqual(result["observations"], ["工具错误：地点不存在：皇宫"])
+        self.assertEqual(requests[1][-1]["output"], result["observations"][0])
+
     def test_initial_prompt_uses_state_snapshot_without_other_secrets(self):
         state = create_initial_agent_state(
             CHARACTERS["林默"], goal="找到失踪者的下落"

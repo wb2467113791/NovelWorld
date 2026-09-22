@@ -14,6 +14,7 @@ CHARACTERS = {
         energy=90,
         known_facts=["失踪案卷宗最后提到了晚风客栈"],
         relationships={"苏晚": 0, "赵无极": -5},
+        items=["捕快腰牌"],
     ),
     "苏晚": Character(
         name="苏晚",
@@ -26,6 +27,7 @@ CHARACTERS = {
         secrets=["她的弟弟与最近发生的失踪案有关"],
         known_facts=["失踪案当晚有人在客栈后门出现"],
         relationships={"林默": 0, "赵无极": 0},
+        items=["私人账本"],
     ),
     "赵无极": Character(
         name="赵无极",
@@ -38,5 +40,6 @@ CHARACTERS = {
         secrets=["他知道失踪案背后的交易，并安排人销毁过证据"],
         known_facts=["商会近期有一批货物去向不明"],
         relationships={"林默": -10, "苏晚": 5},
+        items=["商会令牌"],
     ),
 }
