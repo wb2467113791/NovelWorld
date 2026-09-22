@@ -29,13 +29,13 @@ DEMO_ACTIONS = (
     ("林默", "update_relationship", {"character": "林默", "target": "赵无极", "change": -3}, "施压使怀疑加深。"),
     ("苏晚", "give_item", {"giver": "苏晚", "receiver": "林默", "item": "私人账本"}, "把账本交给捕快核查，避免线索被销毁。"),
     ("赵无极", "update_relationship", {"character": "赵无极", "target": "苏晚", "change": -4}, "不满账本被交出。"),
-    ("林默", "inspect", {"character": "林默"}, "核对客栈现场与账本。"),
+    ("林默", "inspect", {"character": "林默", "object_name": "住客登记簿"}, "查看可核实的住客登记资料。"),
     ("苏晚", "talk", {"speaker": "苏晚", "listener": "林默", "message": "请先查清账本上的货物去向。"}, "引导调查关注交易记录。"),
     ("赵无极", "move_character", {"character": "赵无极", "location": "青石街"}, "回商会处理交易风险。"),
     ("林默", "move_character", {"character": "林默", "location": "县衙"}, "回县衙比对账本与卷宗。"),
-    ("苏晚", "inspect", {"character": "苏晚"}, "再次检查客栈。"),
+    ("苏晚", "inspect", {"character": "苏晚", "object_name": "后门"}, "检查后门当前可见的情况。"),
     ("赵无极", "inspect", {"character": "赵无极"}, "查看青石街的动向。"),
-    ("林默", "inspect", {"character": "林默"}, "继续核对县衙卷宗。"),
+    ("林默", "update_relationship", {"character": "林默", "target": "苏晚", "change": 1}, "苏晚交出账本后稍增信任。"),
     ("苏晚", "update_relationship", {"character": "苏晚", "target": "赵无极", "change": -3}, "商会施压后更加警惕。"),
 )
 

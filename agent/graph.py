@@ -9,7 +9,7 @@ from langgraph.graph import END, START, StateGraph
 
 from agent.state import AgentState, ToolCall, ToolResult
 from characters.prompt import build_action_prompt
-from tools.world_tools import execute_tool
+from tools.world_tools import READ_ONLY_TOOLS, execute_tool, unverified_inspection_claim
 from world.state import WORLD_STATE
 
 
@@ -46,18 +46,28 @@ def _extract_tool_calls(response: Any) -> list[ToolCall]:
 def execute_pending_tools(state: AgentState) -> dict:
     """执行模型提出的工具请求，并记录实际结果或可读错误。"""
     new_results: list[ToolResult] = []
+    action_done = any(
+        result["name"] not in READ_ONLY_TOOLS
+        and not result["output"].startswith("工具错误：")
+        for result in state["tool_results"]
+    )
 
     for call in state["pending_tool_calls"]:
         location_before = WORLD_STATE["characters"][state["npc_id"]].location
-        try:
-            arguments = json.loads(call["arguments"])
-            if not isinstance(arguments, dict):
-                raise ValueError("工具参数必须是 JSON 对象")
-            output = execute_tool(
-                call["name"], arguments, acting_character=state["npc_id"]
-            )
-        except (TypeError, ValueError) as error:
-            output = f"工具错误：{error}"
+        if action_done:
+            output = "工具错误：本轮已完成一次行动，请在下一 Tick 再行动"
+        else:
+            try:
+                arguments = json.loads(call["arguments"])
+                if not isinstance(arguments, dict):
+                    raise ValueError("工具参数必须是 JSON 对象")
+                output = execute_tool(
+                    call["name"], arguments, acting_character=state["npc_id"]
+                )
+            except (TypeError, ValueError) as error:
+                output = f"工具错误：{error}"
+            if call["name"] not in READ_ONLY_TOOLS and not output.startswith("工具错误："):
+                action_done = True
 
         new_results.append({**call, "output": output, "location_before": location_before})
 
@@ -97,7 +107,12 @@ def build_agent_loop_graph(
         conversation = state["conversation"] or [
             {"role": "user", "content": build_model_prompt(state)}
         ]
-        allow_tools = state["step"] < max_tool_rounds
+        action_done = any(
+            result["name"] not in READ_ONLY_TOOLS
+            and not result["output"].startswith("工具错误：")
+            for result in state["tool_results"]
+        )
+        allow_tools = state["step"] < max_tool_rounds and not action_done
         response = request_model(conversation, allow_tools)
         tool_calls = _extract_tool_calls(response) if allow_tools else []
         call_messages = [
@@ -109,13 +124,15 @@ def build_agent_loop_graph(
             }
             for call in tool_calls
         ]
+        answer = response.output_text or "已达到工具轮数上限，本轮结束。"
+        if not tool_calls:
+            unverified_object = unverified_inspection_claim(state["npc_id"], answer)
+            if unverified_object:
+                answer = f"本轮回复声称已调查{unverified_object}，但缺少工具记录。原因：需要先执行调查工具。"
         return {
             "conversation": conversation + call_messages,
             "pending_tool_calls": tool_calls,
-            "final_answer": (
-                None if tool_calls else
-                response.output_text or "已达到工具轮数上限，本轮结束。"
-            ),
+            "final_answer": None if tool_calls else answer,
         }
 
     builder = StateGraph(AgentState)

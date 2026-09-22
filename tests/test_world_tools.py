@@ -110,7 +110,54 @@ class WorldToolsTest(unittest.TestCase):
         schema = next(item for item in TOOL_SCHEMAS if item["name"] == "inspect")
 
         self.assertEqual(schema["parameters"]["required"], ["character"])
+        self.assertIn("object_name", schema["parameters"]["properties"])
         self.assertIn("inspect", TOOL_FUNCTIONS)
+
+    def test_register_review_requires_real_inspection_event(self):
+        lin_mo = WORLD_STATE["characters"]["林默"]
+        original_location = lin_mo.location
+        original_events = WORLD_STATE["events"].copy()
+        claim = "登记簿我已过目，接下来核对卷宗。"
+        try:
+            with self.assertRaisesRegex(ValueError, "没有可调查对象"):
+                inspect("林默", "住客登记簿")
+            self.assertEqual(WORLD_STATE["events"], original_events)
+
+            lin_mo.location = "晚风客栈"
+            with self.assertRaisesRegex(ValueError, "尚未调查住客登记簿"):
+                talk("林默", "苏晚", claim)
+            self.assertEqual(WORLD_STATE["events"], original_events)
+
+            inspect("苏晚", "住客登记簿")
+            with self.assertRaisesRegex(ValueError, "尚未调查住客登记簿"):
+                talk("林默", "苏晚", claim)
+
+            result = inspect("林默", "住客登记簿")
+            self.assertIn("现有记录未列出具体住客与时辰", result)
+            self.assertEqual(WORLD_STATE["events"][-1]["payload"]["object_name"], "住客登记簿")
+            self.assertIn("我调查了晚风客栈的住客登记簿", lin_mo.memory.recent()[-1])
+            self.assertIn(claim, talk("林默", "苏晚", claim))
+        finally:
+            lin_mo.location = original_location
+            WORLD_STATE["events"][:] = original_events
+
+    def test_specific_objects_and_repeated_inspection(self):
+        original_events = WORLD_STATE["events"].copy()
+        try:
+            for object_name in ("后门", "柴房门锁"):
+                result = inspect("苏晚", object_name)
+                self.assertIn(object_name, result)
+                self.assertEqual(WORLD_STATE["events"][-1]["payload"]["object_name"], object_name)
+
+            count = len(WORLD_STATE["events"])
+            with self.assertRaisesRegex(ValueError, "目前没有新发现"):
+                inspect("苏晚", "后门")
+            self.assertEqual(len(WORLD_STATE["events"]), count)
+            with self.assertRaisesRegex(ValueError, "没有可调查对象"):
+                inspect("苏晚", "不存在的房间")
+            self.assertEqual(len(WORLD_STATE["events"]), count)
+        finally:
+            WORLD_STATE["events"][:] = original_events
 
     def test_talk_records_event_when_characters_share_location(self):
         original_location = WORLD_STATE["characters"]["林默"].location

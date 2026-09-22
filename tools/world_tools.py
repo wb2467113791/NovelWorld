@@ -1,9 +1,45 @@
 """读取或修改世界状态的工具。"""
 
 import json
+import re
 from typing import Any
 
 from world.state import WORLD_STATE, record_event
+
+
+REVIEW_CLAIM = re.compile(
+    r"(?:我|本人)(?:已|已经)?(?:看过|查过|翻过|过目|调查过|核对过|看了|查了|调查了)"
+)
+READ_ONLY_TOOLS = frozenset({"get_world_time", "get_character"})
+OBJECT_ALIASES = {
+    "住客登记簿": ("住客登记簿", "登记簿"),
+    "后门": ("后门",),
+    "柴房门锁": ("柴房门锁", "柴房"),
+}
+
+
+def unverified_inspection_claim(character: str, text: str) -> str | None:
+    """找出角色自称已查看、但没有调查事件支持的具体对象。"""
+    object_names = {
+        name
+        for objects in WORLD_STATE["inspectable_objects"].values()
+        for name in objects
+    }
+    for sentence in re.split(r"[。！？\n]", text):
+        if not REVIEW_CLAIM.search(sentence):
+            continue
+        for object_name in object_names:
+            aliases = OBJECT_ALIASES.get(object_name, (object_name,))
+            if not any(alias in sentence for alias in aliases):
+                continue
+            if not any(
+                event["type"] == "inspect"
+                and event["actor"] == character
+                and event["payload"].get("object_name") == object_name
+                for event in WORLD_STATE["events"]
+            ):
+                return object_name
+    return None
 
 
 def get_world_time() -> str:
@@ -30,23 +66,40 @@ def get_character(character: str) -> str:
     return json.dumps(character_state, ensure_ascii=False)
 
 
-def inspect(character: str) -> str:
-    """调查角色当前所在地点，并记录调查事件。"""
+def inspect(character: str, object_name: str | None = None) -> str:
+    """调查当前地点或该地点的具体对象，并记录调查事件。"""
     characters = WORLD_STATE["characters"]
 
     if character not in characters:
         raise ValueError(f"角色不存在：{character}")
 
     location = characters[character].location
-    observation = WORLD_STATE["inspectables"].get(location)
-
-    if observation is None:
-        raise ValueError(f"地点无法调查：{location}")
-
-    result = f"{character}调查了{location}：{observation}"
+    if object_name is None:
+        observation = WORLD_STATE["inspectables"].get(location)
+        if observation is None:
+            raise ValueError(f"地点无法调查：{location}")
+        result = f"{character}调查了{location}：{observation}"
+    else:
+        if not isinstance(object_name, str):
+            raise ValueError("调查对象名称必须是文字")
+        observation = WORLD_STATE["inspectable_objects"].get(location, {}).get(object_name)
+        if observation is None:
+            raise ValueError(f"{location}没有可调查对象：{object_name}")
+        result = f"{character}调查了{location}的{object_name}：{observation}"
+    if any(
+        event["type"] == "inspect"
+        and event["actor"] == character
+        and event["location"] == location
+        and event["payload"].get("object_name") == object_name
+        and event["payload"].get("observation") == observation
+        for event in WORLD_STATE["events"]
+    ):
+        subject = object_name or location
+        raise ValueError(f"{character}已调查过{subject}，目前没有新发现")
     record_event(
         "inspect", character, result,
-        location=location, payload={"observation": observation},
+        location=location,
+        payload={"observation": observation, **({"object_name": object_name} if object_name else {})},
     )
     return result
 
@@ -70,6 +123,11 @@ def talk(speaker: str, listener: str, message: str) -> str:
     message = message.strip()
     if not message:
         raise ValueError("对话内容不能为空")
+
+    # 他人的口头承诺不算本人已经调查的证据。
+    unverified_object = unverified_inspection_claim(speaker, message)
+    if unverified_object:
+        raise ValueError(f"{speaker}尚未调查{unverified_object}，不能声称已经查看")
 
     result = f"{speaker}对{listener}说：“{message}”"
     record_event(
@@ -200,13 +258,17 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "name": "inspect",
-        "description": "调查指定角色当前所在地点，获取该地点可观察到的信息。",
+        "description": "调查角色当前地点；可选 object_name 查看当地具体对象。晚风客栈有住客登记簿、后门、柴房门锁。重复调查未变化的内容不会产生新发现。",
         "parameters": {
             "type": "object",
             "properties": {
                 "character": {
                     "type": "string",
                     "description": "执行调查的角色名称，例如苏晚或林默。",
+                },
+                "object_name": {
+                    "type": "string",
+                    "description": "可选的具体调查对象：晚风客栈的住客登记簿、后门或柴房门锁。省略时调查所在地点。",
                 },
             },
             "required": ["character"],

@@ -110,6 +110,8 @@ class CharacterPromptTest(unittest.TestCase):
             self.assertIn("失踪案卷宗最后提到了晚风客栈", prompt)
             self.assertIn("我刚整理过失踪案卷宗", prompt)
             self.assertIn("决定此刻最合理的一步行动", prompt)
+            self.assertIn("所在地点可调查对象", prompt)
+            self.assertIn("先用 inspect 工具指定 object_name", prompt)
         finally:
             character.memory.entries.pop()
 

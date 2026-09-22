@@ -81,6 +81,7 @@ def build_action_prompt(
 ) -> str:
     """自主行动模式：NPC 没有用户输入，根据自身上下文决定下一步。"""
     character_context = _build_character_context(character, memories)
+    local_objects = "、".join(WORLD_STATE["inspectable_objects"].get(character.location, {})) or "暂无"
     active_goal_text = f"当前目标：{active_goal}\n" if active_goal is not None else ""
     observation_text = "\n".join(f"- {item}" for item in observations or []) or "- 暂无"
     observation_section = (
@@ -97,6 +98,7 @@ def build_action_prompt(
 世界时间：{WORLD_STATE["time"]}
 所在地点：{character.location}
 体力：{character.energy}
+所在地点可调查对象：{local_objects}
 
 {observation_section}
 【本次任务】
@@ -104,7 +106,8 @@ def build_action_prompt(
 需要改变世界或获取信息时，请调用一个合适的工具。
 不要等待用户提问，不要替其他角色行动，也不要使用上面没有提供的信息。
 只有工具结果才能代表真实的状态变化，不要声称位置、体力或关系发生了未经工具执行的改变。
-一次只推进一个清晰、具体的行动。
+他人说“请过目”只是一句对话；若要声称自己已查看某个对象，先用 inspect 工具指定 object_name，并以成功结果为依据。不要虚构工具结果未提供的细节。
+每个 Tick 最多成功执行一个行动。完成后根据工具结果结束本轮，不要重复调查没有变化的内容。
 最终回复请另起一行写“原因：……”，用一句简短的话说明你为何采取这一步；只依据你已知的信息和工具结果。
 """
 

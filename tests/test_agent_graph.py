@@ -59,11 +59,46 @@ class AgentGraphTest(unittest.TestCase):
         self.assertEqual(WORLD_STATE["events"][-1]["type"], "move")
         self.assertEqual(result["final_answer"], "我已抵达客栈。")
         self.assertEqual(result["step"], 1)
-        self.assertEqual([allowed for _, allowed in requests], [True, True])
+        self.assertEqual([allowed for _, allowed in requests], [True, False])
         self.assertEqual(requests[1][0][-2]["type"], "function_call")
         self.assertEqual(requests[1][0][-1]["type"], "function_call_output")
         self.assertEqual(requests[1][0][-1]["call_id"], "call-1")
         self.assertIn("移动到", requests[1][0][-1]["output"])
+
+    def test_only_one_successful_action_in_a_tick(self):
+        responses = iter([
+            SimpleNamespace(
+                output=[
+                    tool_call("move_character", '{"character":"林默","location":"晚风客栈"}', "move"),
+                    tool_call("talk", '{"speaker":"林默","listener":"苏晚","message":"我来了。"}', "talk"),
+                ],
+                output_text="",
+            ),
+            SimpleNamespace(output=[], output_text="本轮已经移动。"),
+        ])
+        allowed_tools = []
+
+        def fake_request_model(conversation, allow_tools):
+            allowed_tools.append(allow_tools)
+            return next(responses)
+
+        result = build_agent_loop_graph(fake_request_model).invoke(
+            create_initial_agent_state(CHARACTERS["林默"])
+        )
+
+        self.assertEqual(allowed_tools, [True, False])
+        self.assertEqual(CHARACTERS["林默"].location, "晚风客栈")
+        self.assertEqual([event["type"] for event in WORLD_STATE["events"]], ["move"])
+        self.assertIn("本轮已完成一次行动", result["tool_results"][1]["output"])
+
+    def test_final_answer_cannot_claim_unperformed_object_inspection(self):
+        response = SimpleNamespace(output=[], output_text="登记簿我已过目。原因：查案。")
+        result = build_agent_loop_graph(
+            lambda conversation, allow_tools: response
+        ).invoke(create_initial_agent_state(CHARACTERS["林默"]))
+
+        self.assertIn("缺少工具记录", result["final_answer"])
+        self.assertEqual(result["tool_results"], [])
 
     def test_text_answer_finishes_without_executing_tool(self):
         event_count = len(WORLD_STATE["events"])

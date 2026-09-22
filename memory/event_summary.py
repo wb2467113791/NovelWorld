@@ -52,7 +52,9 @@ def summarize_event(event: Event, observer: str) -> str:
         return f"我在{location}看到{actor}来到这里。"
 
     if kind == "inspect":
-        return f"我调查了{location}：{payload['observation']}"
+        object_name = payload.get("object_name")
+        subject = f"{location}的{object_name}" if object_name else location
+        return f"我调查了{subject}：{payload['observation']}"
 
     if kind == "relationship":
         return (
