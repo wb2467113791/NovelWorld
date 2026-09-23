@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS world_saves (
+  world_id VARCHAR(64) PRIMARY KEY,
+  snapshot LONGTEXT NOT NULL,
+  revision BIGINT NOT NULL
+);

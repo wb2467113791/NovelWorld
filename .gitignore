@@ -14,3 +14,7 @@ __pycache__/
 # IDE
 .idea/
 .vscode/
+
+# Maven build and local dependency cache
+.m2/
+world-service/target/

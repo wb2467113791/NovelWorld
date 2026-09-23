@@ -2,3 +2,4 @@ openai
 python-dotenv
 langgraph
 chromadb==1.5.9
+mcp>=1.25,<2

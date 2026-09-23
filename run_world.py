@@ -1,6 +1,7 @@
 """运行 NovelWorld 的多角色 World Tick。"""
 
 from collections.abc import Callable
+import argparse
 from threading import Event, Thread
 from typing import Any
 from pathlib import Path
@@ -109,6 +110,10 @@ class WorldSession:
             self.completed_ticks += 1
             return result
         finally:
+            from tools.remote_world import active_backend
+            backend = active_backend()
+            if backend is not None:
+                backend.save_agent_state(self.scheduler.snapshot())
             if self.save_path is not None:
                 save_world(self.save_path, scheduler_state=self.scheduler.snapshot())
             if self.index is not None:
@@ -156,7 +161,17 @@ def main() -> None:
     # 延迟导入：普通单元测试不需要安装或调用模型 SDK。
     from llm_client import request_npc_graph_response
 
+    parser = argparse.ArgumentParser(description="NovelWorld 世界 Tick")
+    parser.add_argument("--v2", action="store_true", help="通过 MCP 使用 Java 世界服务")
+    args = parser.parse_args()
+
     scheduler_state = load_world(DEFAULT_SAVE_PATH) if DEFAULT_SAVE_PATH.exists() else None
+    if args.v2:
+        from tools.remote_world import RemoteWorld, use_backend
+        from world.persistence import restore_snapshot, snapshot_world
+        backend = RemoteWorld(WORLD_STATE["world_id"])
+        scheduler_state = restore_snapshot(backend.open(snapshot_world(scheduler_state=scheduler_state)))
+        use_backend(backend)
     index = ChromaIndex(WORLD_STATE["world_id"])
     index.sync_world(WORLD_STATE["characters"])
     if not DEFAULT_SAVE_PATH.exists():

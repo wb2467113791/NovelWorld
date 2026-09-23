@@ -407,4 +407,9 @@ def execute_tool(
             f"{acting_character}不能通过{name}替其他角色行动"
         )
 
+    from tools.remote_world import active_backend
+    backend = active_backend()
+    if backend is not None:
+        return backend.execute(name, arguments, acting_character)
+
     return function(**arguments)

@@ -73,9 +73,9 @@ def _character_from_dict(data: dict) -> Character:
     return Character(**ordinary_fields, memory=memory, semantic_memory=semantic)
 
 
-def save_world(path: Path = DEFAULT_SAVE_PATH, *, scheduler_state: dict | None = None) -> None:
-    """写入临时文件后替换存档，避免中途退出留下半份 JSON。"""
-    snapshot = {
+def snapshot_world(*, scheduler_state: dict | None = None) -> dict:
+    """生成可供本地存档和 V2 服务共用的完整快照。"""
+    return {
         "version": SAVE_VERSION,
         "world_id": WORLD_STATE["world_id"],
         "time": WORLD_STATE["time"],
@@ -89,16 +89,10 @@ def save_world(path: Path = DEFAULT_SAVE_PATH, *, scheduler_state: dict | None =
         },
         "scheduler": scheduler_state or {"next_index": 0, "tick_count": 0},
     }
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(path.name + ".tmp")
-    temporary.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8")
-    temporary.replace(path)
 
 
-def load_world(path: Path = DEFAULT_SAVE_PATH) -> dict:
-    """先完整解析存档，再一次性替换当前世界；返回调度进度。"""
-    snapshot = json.loads(Path(path).read_text(encoding="utf-8"))
+def restore_snapshot(snapshot: dict) -> dict:
+    """先完整解析存档，再一次性替换当前世界。"""
     if snapshot.get("version") != SAVE_VERSION:
         raise ValueError("不支持的世界存档版本")
     characters = {
@@ -115,6 +109,22 @@ def load_world(path: Path = DEFAULT_SAVE_PATH) -> dict:
     WORLD_STATE.clear()
     WORLD_STATE.update(restored)
     return snapshot["scheduler"]
+
+
+def save_world(path: Path = DEFAULT_SAVE_PATH, *, scheduler_state: dict | None = None) -> None:
+    """写入临时文件后替换存档，避免中途退出留下半份 JSON。"""
+    snapshot = snapshot_world(scheduler_state=scheduler_state)
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8")
+    temporary.replace(path)
+
+
+def load_world(path: Path = DEFAULT_SAVE_PATH) -> dict:
+    """先完整解析存档，再一次性替换当前世界；返回调度进度。"""
+    snapshot = json.loads(Path(path).read_text(encoding="utf-8"))
+    return restore_snapshot(snapshot)
 
 
 def start_new_world() -> None:

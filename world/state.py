@@ -37,6 +37,12 @@ def advance_world_time(minutes: int) -> str:
     if minutes < 1:
         raise ValueError("推进分钟数必须至少为 1")
 
+    from tools.remote_world import active_backend
+    backend = active_backend()
+    if backend is not None:
+        WORLD_STATE["time"] = backend.advance_time(minutes)
+        return WORLD_STATE["time"]
+
     hour, minute = map(int, WORLD_STATE["time"].split(":"))
     total_minutes = (hour * 60 + minute + minutes) % (24 * 60)
     new_hour, new_minute = divmod(total_minutes, 60)
@@ -65,7 +71,14 @@ def record_event(
         "description": description,
     }
     WORLD_STATE["events"].append(event)
+    remember_event(event)
+    return event
 
+
+def remember_event(event: Event) -> None:
+    """为已持久化的事件补充 Python 角色记忆，不重复写事件。"""
+    event_type = event["type"]
+    actor = event["actor"]
     for character_name in recipients_for_event(event, WORLD_STATE["characters"]):
         character = WORLD_STATE["characters"][character_name]
         character.memory.add(
@@ -84,5 +97,3 @@ def record_event(
                 source_event_id=event["id"],
                 timestamp=event["timestamp"],
             )
-
-    return event

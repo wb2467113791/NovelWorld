@@ -1,6 +1,43 @@
-# NovelWorld V1.5
+# NovelWorld V2
 
 NovelWorld 是一个用于学习 Agent 工程的动态叙事世界引擎。三个 NPC 各自拥有目标、已知事实、短期记忆和关系；他们轮流行动，经由工具改变同一个世界。V1.5 在 V1 闭环上加入角色独立的长期记忆、世界设定检索和世界存档。
+
+## V2：Java 世界服务 + MCP
+
+V2 模式使用 Spring Boot 4 / Spring AI 2 的 Streamable HTTP MCP Server。Python 仍负责模型请求、Agent Loop、角色视角、检索和记忆摘要；**Java 校验并执行角色行动，MySQL 保存世界快照，Redis 缓存热状态并接收事件队列**。Python 从 MCP 读取已提交事件后更新角色记忆，再同步记忆和 Tick 调度进度。世界事件与业务状态不由模型文本直接修改。
+
+```mermaid
+flowchart LR
+  L[模型] --> P[Python Agent Runtime]
+  P -->|MCP 工具请求| J[Spring Boot 世界服务]
+  J --> M[(MySQL 世界存档)]
+  J --> R[(Redis 热状态 / 事件队列)]
+  J -->|已提交事件| P
+  P --> K[角色记忆 / Chroma 检索]
+```
+
+本机需要 Java 17、Maven、Docker Compose 和 Python 3.11+。本仓库的 Java 服务默认只监听 `127.0.0.1:8080`，Docker 将 MySQL/Redis 端口也只映射到本机。启动步骤：
+
+```powershell
+docker compose up -d
+$env:JAVA_HOME='C:\Program Files\Java\jdk-17.0.2' # 按本机实际安装路径调整
+cd world-service
+mvn spring-boot:run
+```
+
+另开终端，在项目根目录安装 Python 依赖并运行：
+
+```powershell
+.venv\Scripts\python -m pip install -r requirements.txt
+.venv\Scripts\python demo_v2.py
+.venv\Scripts\python run_world.py --v2
+```
+
+`demo_v2.py` 使用新世界 ID，通过真实 MCP 连接验证移动、无权交付被拒绝、事件记忆和存档读取；不调用模型，不产生 API 费用。`run_world.py --v2` 使用原有世界存档的 ID：服务端若已有该世界，以 MySQL 中的状态为准；若没有，首次导入本地 `data/world.json`。运行 `next` 或 `run 10` 会调用当前 `llm_client.py` 配置的真实模型，产生 API 费用。停止服务不删除 MySQL 数据；下次启动仍可恢复世界。`run_world.py` 不带 `--v2` 时继续使用 V1.5 的本地工具和存档。
+
+服务提供 `create_world`、`get_world`、`execute_world_tool`、`advance_world_time`、`save_agent_state` 五个 MCP 工具。`execute_world_tool` 支持查询时间/角色、调查、交谈、移动、交付物品和更新关系。Java 每次成功行动只追加一条事件，失败请求不写状态；存档的 revision 防止并发覆盖。MySQL 当前保存完整 JSON 快照，Redis 用作可重建的热缓存及事件队列；这是 V2 的最小可运行存储设计，尚未把各实体拆为独立关系表。MCP 接口供可信的本机 Python Runtime 使用，没有远程用户认证；部署到其他机器前需要加认证与访问控制。
+
+Java 验证：`mvn -f world-service/pom.xml test`。Python 验证：`.venv\Scripts\python -m unittest discover -s tests -q`。在本机 Docker 守护进程不可用时，可以用 Maven 的测试类路径及 H2 内存库启动服务验证 MCP 链路；这种验证不覆盖 MySQL/Redis 的实际部署行为。
 
 想按文件和调用链理解实现，请阅读 [V1.5 架构详解](docs/NovelWorld_V1.5架构详解.md)。
 
