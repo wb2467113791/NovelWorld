@@ -26,6 +26,8 @@ def build_model_prompt(state: AgentState) -> str:
         character,
         active_goal=state["goal"],
         memories=state["memories"],
+        retrieved_context=state["retrieved_context"],
+        lore_context=state.get("lore_context", []),
         observations=state["observations"],
     )
 

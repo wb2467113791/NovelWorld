@@ -3,6 +3,8 @@
 from typing import Any, NotRequired, TypedDict
 
 from characters.model import Character
+from memory.retrieval import recent_memory_texts, retrieve_character_memory
+from lore.catalog import retrieve_lore
 
 
 class AgentState(TypedDict):
@@ -14,6 +16,9 @@ class AgentState(TypedDict):
     goal: str
     # 本轮启动时的近期记忆快照，不随角色记忆的后续写入自动变化。
     memories: list[str]
+    # 本轮开始时按目标检索出的历史经历与调查事实快照。
+    retrieved_context: list[str]
+    lore_context: list[str]
     # 本轮工具返回的观察结果，供后续模型决策查看。
     observations: list[str]
     # 已执行的工具轮数，用来限制 Agent Loop 的最大轮数。
@@ -47,14 +52,18 @@ class ToolResult(ToolCall):
 def create_initial_agent_state(
     character: Character,
     goal: str | None = None,
+    index: Any | None = None,
 ) -> AgentState:
     """根据角色当前信息创建一次全新的 Agent 流程状态。"""
     active_goal = goal or character.goals[0]
+    query = f"{active_goal} {character.location}"
 
     return {
         "npc_id": character.name,
         "goal": active_goal,
-        "memories": character.memory.recent(),
+        "memories": recent_memory_texts(character),
+        "retrieved_context": (index.retrieve_memory(character, query) if index else retrieve_character_memory(character, query)),
+        "lore_context": (index.retrieve_lore(character.name, query) if index else retrieve_lore(character.name, query)),
         "observations": [],
         "step": 0,
         "pending_tool_calls": [],

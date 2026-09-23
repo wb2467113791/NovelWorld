@@ -186,6 +186,15 @@ class WorldToolsTest(unittest.TestCase):
             self.assertEqual(entry.importance, 3)
             self.assertEqual(entry.actors, ("苏晚", "林默"))
             self.assertEqual(entry.tags, ("talk", "晚风客栈"))
+            event = WORLD_STATE["events"][-1]
+            self.assertTrue(entry.id)
+            self.assertEqual(entry.source_event_id, event["id"])
+            self.assertEqual(entry.id, f"{event['id']}:林默")
+            self.assertEqual(entry.timestamp, event["timestamp"])
+            self.assertEqual(
+                WORLD_STATE["characters"]["苏晚"].memory.recent_entries()[-1].source_event_id,
+                event["id"],
+            )
             self.assertEqual(
                 WORLD_STATE["characters"]["赵无极"].memory.recent_entries(),
                 self.original_memories["赵无极"],
@@ -328,9 +337,12 @@ class WorldToolsTest(unittest.TestCase):
 
             self.assertEqual(WORLD_STATE["characters"]["苏晚"].location, "县衙")
             self.assertEqual(result, "苏晚从晚风客栈移动到县衙。")
+            event = WORLD_STATE["events"][-1]
+            self.assertTrue(event["id"])
             self.assertEqual(
-                WORLD_STATE["events"][-1],
+                event,
                 {
+                    "id": event["id"],
                     "timestamp": WORLD_STATE["time"],
                     "type": "move",
                     "actor": "苏晚",

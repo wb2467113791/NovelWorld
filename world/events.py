@@ -9,6 +9,8 @@ from characters.model import Character
 class Event(TypedDict):
     """一次已发生的世界行为，字段共同描述谁在何时何地做了什么。"""
 
+    # 唯一 ID，用于关联角色记忆与其来源事件。
+    id: str
     # 行为类别，例如 move、talk、inspect 或 relationship。
     type: str
     # 发起行为的角色名称。

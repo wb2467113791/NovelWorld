@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 
 from memory.short_term import ShortTermMemory
+from memory.semantic import SemanticMemory
 
 
 @dataclass
@@ -21,3 +22,4 @@ class Character:
     relationships: dict[str, int] = field(default_factory=dict)
     items: list[str] = field(default_factory=list)
     memory: ShortTermMemory = field(default_factory=ShortTermMemory)
+    semantic_memory: SemanticMemory = field(default_factory=SemanticMemory)

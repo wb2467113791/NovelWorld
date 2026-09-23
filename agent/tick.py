@@ -18,6 +18,20 @@ class WorldTickScheduler:
         self._next_index = 0
         self._tick_count = 0
 
+    def snapshot(self) -> dict[str, int]:
+        return {"next_index": self._next_index, "tick_count": self._tick_count}
+
+    def restore(self, state: dict[str, int]) -> None:
+        count = len(WORLD_STATE["characters"])
+        next_index = state["next_index"]
+        tick_count = state["tick_count"]
+        if not isinstance(next_index, int) or not 0 <= next_index < count:
+            raise ValueError("存档中的角色调度位置无效")
+        if not isinstance(tick_count, int) or tick_count < 0:
+            raise ValueError("存档中的 Tick 数无效")
+        self._next_index = next_index
+        self._tick_count = tick_count
+
     def choose_next_character(self) -> Character:
         """返回下一名可行动角色；没有可行动角色时抛出异常。"""
         characters = list(WORLD_STATE["characters"].values())
@@ -52,7 +66,10 @@ class WorldTickScheduler:
         self._tick_count += 1
         if self._tick_count % REFLECTION_INTERVAL == 0:
             for current_character in WORLD_STATE["characters"].values():
-                reflect_on_new_memories(current_character.memory)
+                reflect_on_new_memories(
+                    current_character.memory,
+                    superseded_event_ids=current_character.semantic_memory.superseded_event_ids,
+                )
 
         return {
             "time": tick_time,

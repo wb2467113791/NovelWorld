@@ -3,22 +3,26 @@
 from collections.abc import Callable
 from threading import Event, Thread
 from typing import Any
+from pathlib import Path
 
 from agent.graph import build_agent_loop_graph
 from agent.state import create_initial_agent_state
 from agent.tick import WorldTickScheduler
 from characters.model import Character
 from world.state import WORLD_STATE
+from world.persistence import DEFAULT_SAVE_PATH, load_world, save_world
+from retrieval.chroma_index import ChromaIndex
 
 
 def make_graph_decide_action(
     request_model: Callable[[list[dict[str, Any]], bool], Any],
+    index: ChromaIndex | None = None,
 ) -> Callable[[Character], str]:
     """把单 NPC Graph 适配为 World Tick 使用的决策函数。"""
     graph = build_agent_loop_graph(request_model)
 
     def decide_npc_action(character: Character) -> str:
-        result = graph.invoke(create_initial_agent_state(character))
+        result = graph.invoke(create_initial_agent_state(character, index=index))
         answer = result["final_answer"]
         if answer is None:
             raise RuntimeError("NPC Graph 未返回最终回答")
@@ -79,10 +83,16 @@ def run_world(
 class WorldSession:
     """保持调度顺序，并允许在连续运行期间请求暂停。"""
 
-    def __init__(self, decide_action: Callable[[Character], str]) -> None:
+    def __init__(self, decide_action: Callable[[Character], str], *,
+                 save_path: Path | None = None, index: ChromaIndex | None = None,
+                 scheduler_state: dict | None = None) -> None:
         self.decide_action = decide_action
         self.scheduler = WorldTickScheduler()
-        self.completed_ticks = 0
+        if scheduler_state is not None:
+            self.scheduler.restore(scheduler_state)
+        self.completed_ticks = self.scheduler.snapshot()["tick_count"]
+        self.save_path = save_path
+        self.index = index
         self._pause_requested = Event()
         self._worker: Thread | None = None
 
@@ -92,11 +102,17 @@ class WorldSession:
         return self._step()
 
     def _step(self) -> dict[str, str]:
-        result = print_next_tick(
-            self.scheduler, self.decide_action, self.completed_ticks + 1
-        )
-        self.completed_ticks += 1
-        return result
+        try:
+            result = print_next_tick(
+                self.scheduler, self.decide_action, self.completed_ticks + 1
+            )
+            self.completed_ticks += 1
+            return result
+        finally:
+            if self.save_path is not None:
+                save_world(self.save_path, scheduler_state=self.scheduler.snapshot())
+            if self.index is not None:
+                self.index.sync_world(WORLD_STATE["characters"])
 
     @property
     def is_running(self) -> bool:
@@ -140,7 +156,16 @@ def main() -> None:
     # 延迟导入：普通单元测试不需要安装或调用模型 SDK。
     from llm_client import request_npc_graph_response
 
-    session = WorldSession(make_graph_decide_action(request_npc_graph_response))
+    scheduler_state = load_world(DEFAULT_SAVE_PATH) if DEFAULT_SAVE_PATH.exists() else None
+    index = ChromaIndex(WORLD_STATE["world_id"])
+    index.sync_world(WORLD_STATE["characters"])
+    if not DEFAULT_SAVE_PATH.exists():
+        save_world(DEFAULT_SAVE_PATH)
+    session = WorldSession(
+        make_graph_decide_action(request_npc_graph_response, index),
+        save_path=DEFAULT_SAVE_PATH, index=index, scheduler_state=scheduler_state,
+    )
+    print(f"世界 ID：{WORLD_STATE['world_id']}；存档：{DEFAULT_SAVE_PATH}")
     print("命令：next（下一轮）、run 10（连续十轮）、pause（暂停）、quit（退出）。")
     print("每轮会调用真实模型，可能产生多次 API 请求和费用。")
     try:

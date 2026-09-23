@@ -86,14 +86,14 @@ def inspect(character: str, object_name: str | None = None) -> str:
         if observation is None:
             raise ValueError(f"{location}没有可调查对象：{object_name}")
         result = f"{character}调查了{location}的{object_name}：{observation}"
-    if any(
-        event["type"] == "inspect"
+    last_inspection = next((
+        event for event in reversed(WORLD_STATE["events"])
+        if event["type"] == "inspect"
         and event["actor"] == character
         and event["location"] == location
         and event["payload"].get("object_name") == object_name
-        and event["payload"].get("observation") == observation
-        for event in WORLD_STATE["events"]
-    ):
+    ), None)
+    if last_inspection is not None and last_inspection["payload"].get("observation") == observation:
         subject = object_name or location
         raise ValueError(f"{character}已调查过{subject}，目前没有新发现")
     record_event(

@@ -54,9 +54,10 @@ def fresh_demo_world() -> Iterator[None]:
         WORLD_STATE.update(original)
 
 
-def run_demo() -> dict:
+def run_demo(index_factory=None) -> dict:
     """通过真实 Graph 和工具执行 20 个固定 Tick，返回最终摘要。"""
     with fresh_demo_world():
+        index = index_factory(WORLD_STATE["world_id"]) if index_factory else None
         scheduler = WorldTickScheduler()
         for number, (actor, tool, arguments, reason) in enumerate(DEMO_ACTIONS, 1):
             call_id = f"demo-{number}"
@@ -76,10 +77,12 @@ def run_demo() -> dict:
             def decide_action(character):
                 if character.name != actor:
                     raise AssertionError(f"Tick {number} 角色顺序不符：{character.name} != {actor}")
-                return graph.invoke(create_initial_agent_state(character))["final_answer"]
+                return graph.invoke(create_initial_agent_state(character, index=index))["final_answer"]
 
             print(f"预设 Tool Call: {tool}({json.dumps(arguments, ensure_ascii=False)})")
             print_next_tick(scheduler, decide_action, number)
+            if index is not None:
+                index.sync_world(WORLD_STATE["characters"])
 
         events = WORLD_STATE["events"]
         if len(events) != 20 or any(event["type"] == "narration" for event in events):
@@ -99,6 +102,9 @@ def run_demo() -> dict:
                 "赵无极→苏晚": characters["赵无极"].relationships["苏晚"],
             },
         }
+        if index is not None:
+            summary["chroma_memory_records"] = index.memories.count()
+            summary["chroma_lore_records"] = index.lore.count()
         print("\n=== 最终世界状态 ===")
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         return summary

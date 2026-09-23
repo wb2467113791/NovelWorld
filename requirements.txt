@@ -1,3 +1,4 @@
 openai
 python-dotenv
 langgraph
+chromadb==1.5.9

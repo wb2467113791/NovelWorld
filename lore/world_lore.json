@@ -1,0 +1,9 @@
+[
+  {"id":"place-inn","category":"地理","audience":"public","text":"晚风客栈是旅客落脚与打听消息的地方，由苏晚经营。"},
+  {"id":"place-yamen","category":"地理","audience":"public","text":"县衙保存本地案件卷宗，是捕快处理调查事务的地方。"},
+  {"id":"place-street","category":"地理","audience":"public","text":"青石街是县城商贩和行人往来较多的街道。"},
+  {"id":"faction-guild","category":"势力","audience":"public","text":"本地商会由赵无极主持，参与货物流通和商户之间的协调。"},
+  {"id":"history-inn","category":"历史","audience":"public","text":"晚风客栈经营多年，曾接待过往来的商旅；过往传闻不能直接当作当前案件证据。"},
+  {"id":"rule-observation","category":"规则","audience":"public","text":"角色只能调查自己所在地点；交谈须在同一地点，物品交付须由持有者执行。"},
+  {"id":"yamen-records","category":"县衙内部","audience":"林默","text":"县衙办案时应先核对卷宗原文，再把传闻和可验证证据分开记录。"}
+]

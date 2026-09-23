@@ -1,6 +1,25 @@
-# NovelWorld V1
+# NovelWorld V1.5
 
-NovelWorld 是一个用于学习 Agent 工程的动态叙事世界引擎。三个 NPC 各自拥有目标、已知事实、短期记忆和关系；他们轮流行动，经由工具改变同一个世界。V1 重点是让行动、规则、事件与记忆形成可检查的闭环，而非让模型只用文字声称世界发生了变化。
+NovelWorld 是一个用于学习 Agent 工程的动态叙事世界引擎。三个 NPC 各自拥有目标、已知事实、短期记忆和关系；他们轮流行动，经由工具改变同一个世界。V1.5 在 V1 闭环上加入角色独立的长期记忆、世界设定检索和世界存档。
+
+想按文件和调用链理解实现，请阅读 [V1.5 架构详解](docs/NovelWorld_V1.5架构详解.md)。
+
+## V1.5：记忆、设定和存档
+
+- 近期记忆保留 5 条，溢出的亲历事件进入该角色自己的情节档案。每条记录保留来源事件 ID、时间和重要性。每 3 Tick 的反思只处理新增经历；反思不会直接改变世界状态。
+- Python 从成功执行的 `inspect` 事件建立该角色的最新调查事实；同一对象的新观察会取代旧事实。其他角色的调查不会自动成为本人的知识。关系的当前数值仍以 `Character.relationships` 为准。
+- Chroma 的 `npc_memories` 和 `world_lore` 是分开的本地索引。检索先按角色或设定可见范围过滤，再限制条数与字符数；Prompt 中分别显示历史经历和世界设定。这里使用无需下载模型的中文字符片段哈希向量，能匹配相近字词，但同义词召回能力有限；不会调用 Embedding API。
+- `data/world.json` 同时保存世界 ID、角色状态、事件、记忆和 Tick 调度位置。Chroma 索引位于 `data/chroma/<world_id>`，可由存档与 `lore/world_lore.json` 重建。`data/` 已被 Git 忽略。启动 `main.py` 或 `run_world.py` 时会继续现有存档；首次运行会创建存档。要开启完全独立的世界，可在 Python 中调用 `world.persistence.start_new_world()`，并保存到新的路径。
+- 模型只决定回复和工具请求；Python 负责权限过滤、工具执行、事实写入与存档。检索到的文字本身不会生成世界事件。
+
+无需 API 的固定对照：
+
+```powershell
+.venv\Scripts\python -m eval.v15
+.venv\Scripts\python demo_v15.py
+```
+
+第一条命令输出旧线索在近期窗口与长期检索中的召回情况、其他角色的可见性、Prompt 长度和本机耗时。第二条命令让固定模型替身通过真实 Agent Graph、工具与 Chroma 检索运行 20 Tick。两者均无模型 API 费用；耗时是本机单次测量，不能代表线上模型性能。完整 V1.5 实施说明见 `docs/NovelWorld_V1.5升级实施计划.md`。
 
 ## V1 架构
 
@@ -65,4 +84,4 @@ python -m venv .venv
 .venv\Scripts\python demo_v1.py
 ```
 
-V1 保持内存中的世界状态，没有持久化存档。长期记忆检索、MCP、数据库和 Web UI 属于后续版本。
+世界设定文件由作者手工维护。自动从自由文本抽取事实、跨措辞语义检索和并发写入冲突处理不在当前 V1.5 范围。

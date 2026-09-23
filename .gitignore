@@ -4,6 +4,9 @@
 # API Key
 .env
 
+# V1.5 本地世界存档与 Chroma 索引
+data/
+
 # Python 缓存
 __pycache__/
 *.pyc

@@ -1,5 +1,6 @@
 import unittest
 
+from characters.model import Character
 from characters.presets import CHARACTERS
 from memory.short_term import ShortTermMemory
 
@@ -49,6 +50,31 @@ class ShortTermMemoryTest(unittest.TestCase):
         self.assertEqual(memory.recent(), ["苏晚对我说了线索"])
         self.assertEqual((entry.importance, entry.actors, entry.tags),
                          (3, ("苏晚", "林默"), ("talk", "晚风客栈")))
+
+    def test_evicted_memory_is_archived_with_its_metadata(self):
+        memory = ShortTermMemory(max_items=1)
+        memory.add("旧线索", importance=4, actors=("林默",), tags=("inspect",))
+        memory.add("新线索")
+
+        self.assertEqual(memory.recent(), ["新线索"])
+        archived = memory.archived_entries()
+        self.assertEqual(len(archived), 1)
+        self.assertEqual(
+            (archived[0].content, archived[0].importance, archived[0].actors, archived[0].tags),
+            ("旧线索", 4, ("林默",), ("inspect",)),
+        )
+        archived.clear()
+        self.assertEqual(len(memory.archived_entries()), 1)
+
+    def test_archives_belong_to_separate_characters(self):
+        lin_mo = Character("林默", "捕快", "", "", [], "县衙", 90)
+        su_wan = Character("苏晚", "掌柜", "", "", [], "晚风客栈", 80)
+        for number in range(6):
+            lin_mo.memory.add(f"林默的第{number}条线索")
+
+        self.assertEqual(len(lin_mo.memory.recent()), 5)
+        self.assertEqual(lin_mo.memory.archived_entries()[0].content, "林默的第0条线索")
+        self.assertEqual(su_wan.memory.archived_entries(), [])
 
     def test_memory_rejects_invalid_importance(self):
         with self.assertRaisesRegex(ValueError, "1 到 5"):
