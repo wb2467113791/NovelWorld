@@ -108,6 +108,8 @@ def build_action_prompt(
     lore_text = "\n".join(f"- {item}" for item in lore_context) or "- 暂无"
     local_objects = "、".join(WORLD_STATE["inspectable_objects"].get(character.location, {})) or "暂无"
     active_goal_text = f"当前目标：{active_goal}\n"
+    from skills.router import skill_for
+    current_skill = skill_for(character, active_goal)
     observation_text = "\n".join(f"- {item}" for item in observations or []) or "- 暂无"
     observation_section = (
         f"【本轮观察】\n{observation_text}\n"
@@ -124,6 +126,9 @@ def build_action_prompt(
 
 【世界设定】
 {lore_text}
+
+【当前职业指导】
+{current_skill}
 
 【当前状态】
 世界时间：{WORLD_STATE["time"]}

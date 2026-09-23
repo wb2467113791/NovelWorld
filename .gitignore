@@ -18,3 +18,7 @@ __pycache__/
 # Maven build and local dependency cache
 .m2/
 world-service/target/
+
+# V3 Web build dependencies and output
+web/node_modules/
+web/dist/

@@ -32,7 +32,7 @@ def recipients_for_event(
     characters: Mapping[str, Character],
 ) -> list[str]:
     """按事件类别确定能感知事件的角色，返回不重复的姓名。"""
-    recipients = [event["actor"]]
+    recipients = [event["actor"]] if event["actor"] in characters else []
 
     if event["type"] in {"talk", "give_item"} and event["target"] is not None:
         recipients.append(event["target"])
@@ -40,6 +40,11 @@ def recipients_for_event(
         recipients.extend(
             name for name, character in characters.items()
             if name != event["actor"] and character.location == event["location"]
+        )
+    elif event["type"] == "director":
+        recipients.extend(
+            name for name, character in characters.items()
+            if character.location == event["location"]
         )
 
     return recipients

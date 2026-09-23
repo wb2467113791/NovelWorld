@@ -40,7 +40,7 @@ def print_next_tick(
     """执行一轮，并展示这一轮实际新增的事件。"""
     event_count_before = len(WORLD_STATE["events"])
     memory_ids_before = {
-        name: {id(entry) for entry in character.memory.recent_entries()}
+        name: {entry.id for entry in character.memory.recent_entries()}
         for name, character in WORLD_STATE["characters"].items()
     }
     result = scheduler.run_tick(decide_action)
@@ -61,7 +61,7 @@ def print_next_tick(
             print(f"模型解释：{reason}")
     for name, character in WORLD_STATE["characters"].items():
         for entry in character.memory.recent_entries():
-            if id(entry) not in memory_ids_before[name] and entry.importance >= 4:
+            if entry.id not in memory_ids_before[name] and entry.importance >= 4:
                 print(f"重要记忆（{name}）：{entry.content}")
     return result
 
@@ -86,9 +86,9 @@ class WorldSession:
 
     def __init__(self, decide_action: Callable[[Character], str], *,
                  save_path: Path | None = None, index: ChromaIndex | None = None,
-                 scheduler_state: dict | None = None) -> None:
+                 scheduler_state: dict | None = None, director=None) -> None:
         self.decide_action = decide_action
-        self.scheduler = WorldTickScheduler()
+        self.scheduler = WorldTickScheduler(director=director)
         if scheduler_state is not None:
             self.scheduler.restore(scheduler_state)
         self.completed_ticks = self.scheduler.snapshot()["tick_count"]

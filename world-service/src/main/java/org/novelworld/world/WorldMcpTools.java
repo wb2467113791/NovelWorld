@@ -4,6 +4,8 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Map;
+import java.util.LinkedHashMap;
+import java.util.UUID;
 import org.springframework.ai.mcp.annotation.McpTool;
 import org.springframework.ai.mcp.annotation.McpToolParam;
 import org.springframework.stereotype.Component;
@@ -97,6 +99,39 @@ public class WorldMcpTools {
         }
         store.update(worldId, world);
         return String.valueOf(world.get("revision"));
+    }
+
+    @McpTool(name = "introduce_world_event", description = "Director 只添加可调查的世界事件，不操纵 NPC 行为")
+    @SuppressWarnings("unchecked")
+    public synchronized String introduceWorldEvent(
+            @McpToolParam(description = "世界 ID") String worldId,
+            @McpToolParam(description = "stagnation、participation 或 conflict") String category,
+            @McpToolParam(description = "事件发生的合法地点") String location,
+            @McpToolParam(description = "触发事件的 Tick 数") int tickCount) {
+        var observations = Map.of(
+                "stagnation", "一张匿名纸条提到失踪案当晚的客栈后门；内容尚待核实。",
+                "participation", "有人提及近期去向不明的货箱；传闻尚待核实。",
+                "conflict", "县衙与商会互相质疑的告示被贴出；双方说法尚待核实。"
+        );
+        String observation = observations.get(category);
+        if (observation == null) throw new IllegalArgumentException("未知 Director 事件类别");
+        if (tickCount < 1) throw new IllegalArgumentException("Tick 数无效");
+        var world = store.load(worldId);
+        if (!((List<?>) world.get("locations")).contains(location)) throw new IllegalArgumentException("地点不存在：" + location);
+        String objectName = "新线索" + (((List<?>) world.get("events")).size() + 1);
+        var objects = (Map<String, Object>) world.get("inspectable_objects");
+        var place = (Map<String, Object>) objects.computeIfAbsent(location, ignored -> new LinkedHashMap<String, Object>());
+        place.put(objectName, observation);
+        var event = new LinkedHashMap<String, Object>();
+        event.put("id", UUID.randomUUID().toString().replace("-", ""));
+        event.put("timestamp", world.get("time")); event.put("type", "director");
+        event.put("actor", "世界"); event.put("target", null); event.put("location", location);
+        event.put("payload", Map.of("category", category, "object_name", objectName, "observation", observation, "tick_count", tickCount));
+        event.put("description", location + "出现了可调查的" + objectName + "。" + observation);
+        ((List<Object>) world.get("events")).add(event);
+        store.update(worldId, world);
+        store.queueEvent(worldId, event);
+        return json(event);
     }
 
     @McpTool(name = "advance_world_time", description = "由 Java 推进世界时钟并持久化")

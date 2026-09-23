@@ -10,6 +10,7 @@ EVENT_IMPORTANCE = {
     "talk": 3,
     "relationship": 4,
     "give_item": 3,
+    "director": 4,
 }
 
 
@@ -61,6 +62,9 @@ def summarize_event(event: Event, observer: str) -> str:
             f"我对{target}的关系值从{payload['old_value']}"
             f"变为{payload['new_value']}。"
         )
+
+    if kind == "director":
+        return f"我在{location}注意到：{event['description']}"
 
     # narration 是 NPC 本轮未执行工具时的文字，本身没有更多结构化细节。
     return event["description"]

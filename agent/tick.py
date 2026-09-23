@@ -14,9 +14,10 @@ REFLECTION_INTERVAL = 3
 class WorldTickScheduler:
     """按固定顺序轮流选择体力大于 0 的角色。"""
 
-    def __init__(self) -> None:
+    def __init__(self, director=None) -> None:
         self._next_index = 0
         self._tick_count = 0
+        self.director = director
 
     def snapshot(self) -> dict[str, int]:
         return {"next_index": self._next_index, "tick_count": self._tick_count}
@@ -55,7 +56,8 @@ class WorldTickScheduler:
         event_count_before = len(WORLD_STATE["events"])
         action_result = decide_action(character)
 
-        if len(WORLD_STATE["events"]) == event_count_before:
+        narrated = len(WORLD_STATE["events"]) == event_count_before
+        if narrated:
             record_event(
                 "narration",
                 character.name,
@@ -64,6 +66,13 @@ class WorldTickScheduler:
 
         advance_world_time(TICK_MINUTES)
         self._tick_count += 1
+        if self.director is not None:
+            # 先持久化本轮叙述，保证后续 Director 事件的时间线顺序。
+            from tools.remote_world import active_backend
+            backend = active_backend()
+            if narrated and backend is not None:
+                backend.save_agent_state(self.snapshot())
+            self.director.maybe_inject(self._tick_count)
         if self._tick_count % REFLECTION_INTERVAL == 0:
             for current_character in WORLD_STATE["characters"].values():
                 reflect_on_new_memories(

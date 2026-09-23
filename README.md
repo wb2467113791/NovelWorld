@@ -1,6 +1,31 @@
-# NovelWorld V2
+# NovelWorld V3
 
 NovelWorld 是一个用于学习 Agent 工程的动态叙事世界引擎。三个 NPC 各自拥有目标、已知事实、短期记忆和关系；他们轮流行动，经由工具改变同一个世界。V1.5 在 V1 闭环上加入角色独立的长期记忆、世界设定检索和世界存档。
+
+## V3：Skills、Director 与实时 Web 观测台
+
+V3 在 V2 的 Java 世界服务上增加三层：
+
+- **按需加载的职业 Skill**：`skills/` 保存调查、交涉、交易、隐瞒和休整指导；`skills/router.py` 每次只给当前 NPC 加载一份。Skill 是模型的行动指导，不是 Python 或 Java 的执行权限。
+- **Director（导演）**：`agent/director.py` 检测连续无行动、角色参与不足和长期缺少交谈冲突；有冷却时间。它只请求 Java 生成一条可调查的环境事件，不能替 NPC 移动、说话或改变关系。事件只进入现场角色的记忆。
+- **实时 Web UI**：React 界面显示时间线、NPC 状态、关系图与所选角色的独立记忆。FastAPI 通过 SSE 推送 Tick 后的世界快照，支持暂停、单步、运行 10/20 Tick 和调整间隔。FastAPI 负责本机运行控制；世界业务变化仍由 Java MCP 工具执行。
+
+V3 正常运行需要先按下方 V2 步骤启动 MySQL、Redis 和 Java 服务。然后在项目根目录安装 Python 依赖、构建界面并启动单进程控制器：
+
+```powershell
+.venv\Scripts\python -m pip install -r requirements.txt
+cd web
+npm install
+npm run build
+cd ..
+.venv\Scripts\python -m uvicorn web_api:app --host 127.0.0.1 --port 8000
+```
+
+在浏览器打开 `http://127.0.0.1:8000`。开发界面可在 `web/` 运行 `npm run dev`，访问 `http://127.0.0.1:5173`；Vite 将 `/api` 转发到本机 8000 端口。Web 控制器只支持单个 Uvicorn worker，且仅监听本机，不包含账号系统。若只想查看本地存档的界面，可设置 `NOVELWORLD_BACKEND=local` 后启动 Web API；这个模式不验证 Java MCP 链路。
+
+**无需模型费用的固定验收**：运行 `.venv\Scripts\python demo_v3.py`。它在新世界中运行 3 个无行动 Tick，Director 通过真实 MCP 添加可调查线索；演示确认只有现场角色获得对应记忆。它不会调用 LLM。真实 Web 的“下一 Tick”“运行 10/20 Tick”会使用 `llm_client.py` 中现有模型配置，单 Tick 最多 6 次模型请求；Director 和页面查看本身不调用模型。实际费用取决于模型输出和服务商计价。
+
+手动检查顺序：打开页面应看到 3 名 NPC 和初始时间；点击“下一 Tick”后时间推进 5 分钟，时间线出现执行过的工具事件或无行动叙述；切换角色应只显示该角色自己的记忆；连续运行后“暂停”应在当前 Tick 完成后生效。模型选择的具体 Tool Call 不固定，以事件时间线和 Java 存档中的状态变化为准。
 
 ## V2：Java 世界服务 + MCP
 

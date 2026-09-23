@@ -53,8 +53,7 @@ class RemoteWorld:
             return json.loads(self._call("get_world", {"worldId": self.world_id}))
 
     def execute(self, name: str, arguments: dict, acting_character: str | None) -> str:
-        from world.persistence import restore_snapshot
-        from world.state import WORLD_STATE, remember_event
+        from world.state import remember_event
 
         response = json.loads(self._call("execute_world_tool", {
             "worldId": self.world_id,
@@ -65,9 +64,37 @@ class RemoteWorld:
         event = response["event"]
         if event:
             # 服务端已写入业务状态与事件；重新读取后只补 Python 专属的角色记忆。
-            restore_snapshot(json.loads(self._call("get_world", {"worldId": self.world_id})))
+            self._refresh_business_state()
             remember_event(event)
         return response["output"]
+
+    def _refresh_business_state(self) -> None:
+        from world.persistence import restore_snapshot, snapshot_world
+        from world.state import WORLD_STATE
+        remote = json.loads(self._call("get_world", {"worldId": self.world_id}))
+        if WORLD_STATE.get("world_id") == self.world_id:
+            local = snapshot_world()
+            for name, character in remote["characters"].items():
+                character["memory"] = local["characters"][name]["memory"]
+                character["semantic_memory"] = local["characters"][name]["semantic_memory"]
+            remote_ids = {event["id"] for event in remote["events"]}
+            remote["events"].extend(
+                event for event in local["events"]
+                if event["id"] not in remote_ids and event["type"] == "narration"
+            )
+        restore_snapshot(remote)
+
+    def introduce_event(self, category: str, location: str, tick_count: int) -> dict:
+        from world.state import WORLD_STATE, remember_event
+        event = json.loads(self._call("introduce_world_event", {
+            "worldId": self.world_id,
+            "category": category,
+            "location": location,
+            "tickCount": tick_count,
+        }))
+        self._refresh_business_state()
+        remember_event(event)
+        return event
 
     def advance_time(self, minutes: int) -> str:
         return self._call("advance_world_time", {"worldId": self.world_id, "minutes": minutes})
