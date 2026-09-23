@@ -57,7 +57,8 @@ public class WorldMcpTools {
         var world = store.load(worldId);
         var arguments = parse(argumentsJson);
         String actorKey = Map.of("get_character", "character", "inspect", "character", "talk", "speaker",
-                "update_relationship", "character", "move_character", "character", "give_item", "giver").get(name);
+                "update_relationship", "character", "move_character", "character", "give_item", "giver",
+                "rest_character", "character").get(name);
         if (actorKey != null && !actingCharacter.equals(arguments.get(actorKey)))
             throw new IllegalArgumentException(actingCharacter + "不能通过" + name + "替其他角色行动");
         int before = ((List<?>) world.get("events")).size();

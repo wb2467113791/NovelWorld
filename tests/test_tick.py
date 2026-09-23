@@ -42,7 +42,7 @@ class WorldTickSchedulerTest(unittest.TestCase):
 
         self.assertEqual(chosen_names, ["林默", "苏晚", "赵无极", "林默"])
 
-    def test_character_with_no_energy_is_skipped(self):
+    def test_character_with_no_energy_keeps_turn(self):
         WORLD_STATE["characters"]["苏晚"].energy = 0
         scheduler = WorldTickScheduler()
 
@@ -51,16 +51,21 @@ class WorldTickSchedulerTest(unittest.TestCase):
             for _ in range(3)
         ]
 
-        self.assertEqual(chosen_names, ["林默", "赵无极", "林默"])
+        self.assertEqual(chosen_names, ["林默", "苏晚", "赵无极"])
 
-    def test_scheduler_rejects_tick_when_everyone_has_no_energy(self):
+    def test_scheduler_recovers_when_everyone_has_no_energy(self):
         for character in WORLD_STATE["characters"].values():
             character.energy = 0
 
         scheduler = WorldTickScheduler()
 
-        with self.assertRaisesRegex(RuntimeError, "没有可行动的角色"):
-            scheduler.choose_next_character()
+        def unexpected_model_call(character):
+            self.fail("零体力休息不应调用模型")
+
+        results = scheduler.run_ticks(3, unexpected_model_call)
+        self.assertEqual([item["character"] for item in results], ["林默", "苏晚", "赵无极"])
+        self.assertEqual([character.energy for character in WORLD_STATE["characters"].values()], [20, 20, 20])
+        self.assertEqual([event["type"] for event in WORLD_STATE["events"][-3:]], ["rest"] * 3)
 
     def test_run_tick_passes_selected_character_to_decider(self):
         scheduler = WorldTickScheduler()

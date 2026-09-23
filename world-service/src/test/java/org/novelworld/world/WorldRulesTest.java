@@ -64,4 +64,23 @@ class WorldRulesTest {
         assertDoesNotThrow(() -> rules.apply(world, "talk", Map.of(
                 "speaker", "林默", "listener", "苏晚", "message", "我看过账簿。")));
     }
+
+    @Test void energyCostsAndRestAreEnforcedWithoutPartialMutation() {
+        var world = world();
+        var lin = (Map<String, Object>) ((Map<?, ?>) world.get("characters")).get("林默");
+        rules.apply(world, "move_character", Map.of("character", "林默", "location", "客栈"));
+        assertEquals(85, lin.get("energy"));
+        lin.put("energy", 2);
+        int events = ((List<?>) world.get("events")).size();
+        assertThrows(IllegalArgumentException.class, () -> rules.apply(world, "move_character", Map.of("character", "林默", "location", "县衙")));
+        assertEquals("客栈", lin.get("location"));
+        assertEquals(2, lin.get("energy"));
+        assertEquals(events, ((List<?>) world.get("events")).size());
+        rules.apply(world, "rest_character", Map.of("character", "林默"));
+        assertEquals(22, lin.get("energy"));
+        lin.put("energy", 95);
+        rules.apply(world, "rest_character", Map.of("character", "林默"));
+        assertEquals(100, lin.get("energy"));
+        assertThrows(IllegalArgumentException.class, () -> rules.apply(world, "rest_character", Map.of("character", "林默")));
+    }
 }

@@ -20,6 +20,7 @@ def tool_call(name: str, arguments: str, call_id: str):
 
 class AgentGraphTest(unittest.TestCase):
     def setUp(self):
+        self.original_energy = {name: character.energy for name, character in CHARACTERS.items()}
         self.original_locations = {
             name: character.location for name, character in CHARACTERS.items()
         }
@@ -30,6 +31,7 @@ class AgentGraphTest(unittest.TestCase):
 
     def tearDown(self):
         for name, character in CHARACTERS.items():
+            character.energy = self.original_energy[name]
             character.location = self.original_locations[name]
             character.memory.entries[:] = self.original_memories[name]
         WORLD_STATE["events"][:] = self.original_events

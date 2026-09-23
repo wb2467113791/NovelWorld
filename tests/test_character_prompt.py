@@ -12,6 +12,7 @@ from world.state import WORLD_STATE
 
 class CharacterPromptTest(unittest.TestCase):
     def setUp(self):
+        self.original_energy = {name: character.energy for name, character in CHARACTERS.items()}
         self.original_memories = {
             name: character.memory.recent_entries()
             for name, character in CHARACTERS.items()
@@ -19,6 +20,7 @@ class CharacterPromptTest(unittest.TestCase):
 
     def tearDown(self):
         for name, entries in self.original_memories.items():
+            CHARACTERS[name].energy = self.original_energy[name]
             CHARACTERS[name].memory.entries[:] = entries
 
     def test_prompt_contains_current_character_identity_and_private_knowledge(self):

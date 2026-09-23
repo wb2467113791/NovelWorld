@@ -10,6 +10,7 @@ EVENT_IMPORTANCE = {
     "talk": 3,
     "relationship": 4,
     "give_item": 3,
+    "rest": 1,
     "director": 4,
 }
 
@@ -62,6 +63,9 @@ def summarize_event(event: Event, observer: str) -> str:
             f"我对{target}的关系值从{payload['old_value']}"
             f"变为{payload['new_value']}。"
         )
+
+    if kind == "rest":
+        return event["description"] if observer != actor else f"我休息后体力恢复到{payload['energy_after']}。"
 
     if kind == "director":
         return f"我在{location}注意到：{event['description']}"

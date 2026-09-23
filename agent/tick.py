@@ -4,6 +4,7 @@ from collections.abc import Callable
 
 from characters.model import Character
 from memory.reflection import reflect_on_new_memories
+from tools.world_tools import execute_tool
 from world.state import WORLD_STATE, advance_world_time, record_event
 
 
@@ -12,7 +13,7 @@ REFLECTION_INTERVAL = 3
 
 
 class WorldTickScheduler:
-    """按固定顺序轮流选择体力大于 0 的角色。"""
+    """按固定顺序轮流选择角色；零体力角色在轮到时自动休息。"""
 
     def __init__(self, director=None) -> None:
         self._next_index = 0
@@ -34,17 +35,11 @@ class WorldTickScheduler:
         self._tick_count = tick_count
 
     def choose_next_character(self) -> Character:
-        """返回下一名可行动角色；没有可行动角色时抛出异常。"""
+        """返回下一名角色，保证零体力角色仍有恢复机会。"""
         characters = list(WORLD_STATE["characters"].values())
-
-        for _ in characters:
-            character = characters[self._next_index]
-            self._next_index = (self._next_index + 1) % len(characters)
-
-            if character.energy > 0:
-                return character
-
-        raise RuntimeError("当前没有可行动的角色")
+        character = characters[self._next_index]
+        self._next_index = (self._next_index + 1) % len(characters)
+        return character
 
     def run_tick(
         self,
@@ -54,7 +49,11 @@ class WorldTickScheduler:
         character = self.choose_next_character()
         tick_time = WORLD_STATE["time"]
         event_count_before = len(WORLD_STATE["events"])
-        action_result = decide_action(character)
+        if character.energy == 0:
+            action_result = execute_tool("rest_character", {"character": character.name},
+                                         acting_character=character.name)
+        else:
+            action_result = decide_action(character)
 
         narrated = len(WORLD_STATE["events"]) == event_count_before
         if narrated:

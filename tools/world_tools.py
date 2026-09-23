@@ -11,6 +11,27 @@ REVIEW_CLAIM = re.compile(
     r"(?:我|本人)(?:已|已经)?(?:看过|查过|翻过|过目|调查过|核对过|看了|查了|调查了)"
 )
 READ_ONLY_TOOLS = frozenset({"get_world_time", "get_character"})
+ENERGY_COSTS = {
+    "move_character": 5,
+    "inspect": 3,
+    "talk": 2,
+    "give_item": 2,
+    "update_relationship": 1,
+}
+REST_GAIN = 20
+MAX_ENERGY = 100
+
+
+def require_energy(character: str, action: str) -> None:
+    cost = ENERGY_COSTS[action]
+    if WORLD_STATE["characters"][character].energy < cost:
+        raise ValueError(f"{character}体力不足，执行{action}需要{cost}点体力")
+
+
+def spend_energy(character: str, action: str) -> None:
+    WORLD_STATE["characters"][character].energy -= ENERGY_COSTS[action]
+
+
 OBJECT_ALIASES = {
     "住客登记簿": ("住客登记簿", "登记簿"),
     "后门": ("后门",),
@@ -96,6 +117,8 @@ def inspect(character: str, object_name: str | None = None) -> str:
     if last_inspection is not None and last_inspection["payload"].get("observation") == observation:
         subject = object_name or location
         raise ValueError(f"{character}已调查过{subject}，目前没有新发现")
+    require_energy(character, "inspect")
+    spend_energy(character, "inspect")
     record_event(
         "inspect", character, result,
         location=location,
@@ -129,6 +152,8 @@ def talk(speaker: str, listener: str, message: str) -> str:
     if unverified_object:
         raise ValueError(f"{speaker}尚未调查{unverified_object}，不能声称已经查看")
 
+    require_energy(speaker, "talk")
+    spend_energy(speaker, "talk")
     result = f"{speaker}对{listener}说：“{message}”"
     record_event(
         "talk", speaker, result,
@@ -157,6 +182,8 @@ def update_relationship(character: str, target: str, change: int) -> str:
     relationships = characters[character].relationships
     old_value = relationships.get(target, 0)
     new_value = max(-100, min(100, old_value + change))
+    require_energy(character, "update_relationship")
+    spend_energy(character, "update_relationship")
     relationships[target] = new_value
 
     result = f"{character}对{target}的关系值从{old_value}变为{new_value}。"
@@ -180,6 +207,8 @@ def move_character(character: str, location: str) -> str:
         raise ValueError(f"地点不存在：{location}")
 
     old_location = characters[character].location
+    require_energy(character, "move_character")
+    spend_energy(character, "move_character")
 
     if old_location == location:
         result = f"{character}已经在{location}。"
@@ -218,6 +247,8 @@ def give_item(giver: str, receiver: str, item: str) -> str:
     if location != characters[receiver].location:
         raise ValueError(f"{giver}和{receiver}不在同一地点，无法交付物品")
 
+    require_energy(giver, "give_item")
+    spend_energy(giver, "give_item")
     giver_items.remove(item)
     characters[receiver].items.append(item)
     result = f"{giver}在{location}把{item}交给了{receiver}。"
@@ -225,6 +256,22 @@ def give_item(giver: str, receiver: str, item: str) -> str:
         "give_item", giver, result,
         target=receiver, location=location, payload={"item": item},
     )
+    return result
+
+
+def rest_character(character: str) -> str:
+    """休息一轮，恢复体力并留下可观察的事件。"""
+    characters = WORLD_STATE["characters"]
+    if character not in characters:
+        raise ValueError(f"角色不存在：{character}")
+    current = characters[character]
+    if current.energy >= MAX_ENERGY:
+        raise ValueError(f"{character}体力已满，无需休息")
+    before = current.energy
+    current.energy = min(MAX_ENERGY, before + REST_GAIN)
+    result = f"{character}休息后体力从{before}恢复到{current.energy}。"
+    record_event("rest", character, result, location=current.location,
+                 payload={"energy_before": before, "energy_after": current.energy})
     return result
 
 
@@ -353,6 +400,16 @@ TOOL_SCHEMAS = [
             "required": ["giver", "receiver", "item"],
         },
     },
+    {
+        "type": "function",
+        "name": "rest_character",
+        "description": "休息一轮，恢复20点体力，上限100。移动消耗5点，调查3点，对话和交付2点，修改关系1点。体力不足时应休息。",
+        "parameters": {
+            "type": "object",
+            "properties": {"character": {"type": "string", "description": "休息的角色名称。"}},
+            "required": ["character"],
+        },
+    },
 ]
 
 
@@ -373,6 +430,7 @@ TOOL_FUNCTIONS = {
     "update_relationship": update_relationship,
     "move_character": move_character,
     "give_item": give_item,
+    "rest_character": rest_character,
 }
 
 
@@ -383,6 +441,7 @@ TOOL_ACTOR_ARGUMENTS = {
     "update_relationship": "character",
     "move_character": "character",
     "give_item": "giver",
+    "rest_character": "character",
 }
 
 

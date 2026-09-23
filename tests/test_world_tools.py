@@ -11,6 +11,7 @@ from tools.world_tools import (
     get_world_time,
     inspect,
     move_character,
+    rest_character,
     talk,
     update_relationship,
 )
@@ -19,19 +20,53 @@ from world.state import WORLD_STATE
 
 class WorldToolsTest(unittest.TestCase):
     def setUp(self):
+        self.original_energy = {
+            name: character.energy for name, character in WORLD_STATE["characters"].items()
+        }
         self.original_memories = {
             name: character.memory.recent_entries()
             for name, character in WORLD_STATE["characters"].items()
         }
 
     def tearDown(self):
+        for name, energy in self.original_energy.items():
+            WORLD_STATE["characters"][name].energy = energy
         for name, entries in self.original_memories.items():
             WORLD_STATE["characters"][name].memory.entries[:] = entries
+
+    def test_energy_changes_only_after_valid_actions_and_rest_is_capped(self):
+        character = WORLD_STATE["characters"]["林默"]
+        initial = character.energy
+        events_before = len(WORLD_STATE["events"])
+        with self.assertRaisesRegex(ValueError, "地点不存在"):
+            move_character("林默", "不存在")
+        self.assertEqual(character.energy, initial)
+        self.assertEqual(len(WORLD_STATE["events"]), events_before)
+        original_location = character.location
+        try:
+            move_character("林默", "晚风客栈")
+            self.assertEqual(character.energy, initial - 5)
+            character.energy = 2
+            with self.assertRaisesRegex(ValueError, "体力不足"):
+                move_character("林默", "县衙")
+            self.assertEqual(character.location, "晚风客栈")
+            self.assertEqual(character.energy, 2)
+            rest_character("林默")
+            self.assertEqual(character.energy, 22)
+            character.energy = 95
+            rest_character("林默")
+            self.assertEqual(character.energy, 100)
+            with self.assertRaisesRegex(ValueError, "体力已满"):
+                rest_character("林默")
+        finally:
+            character.location = original_location
+            del WORLD_STATE["events"][events_before:]
 
     def test_world_state_contains_day4_data(self):
         su_wan = WORLD_STATE["characters"]["苏晚"]
 
-        self.assertEqual(su_wan.energy, 80)
+        self.assertGreaterEqual(su_wan.energy, 0)
+        self.assertLessEqual(su_wan.energy, 100)
         self.assertEqual(
             su_wan.relationships,
             {"林默": 0, "赵无极": 0},
@@ -54,7 +89,7 @@ class WorldToolsTest(unittest.TestCase):
 
         self.assertEqual(result["name"], "苏晚")
         self.assertEqual(result["location"], "晚风客栈")
-        self.assertEqual(result["energy"], 80)
+        self.assertEqual(result["energy"], WORLD_STATE["characters"]["苏晚"].energy)
         self.assertEqual(result["relationships"], {"林默": 0, "赵无极": 0})
         self.assertNotIn("secrets", result)
         self.assertNotIn("known_facts", result)

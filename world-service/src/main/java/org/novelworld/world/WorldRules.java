@@ -11,6 +11,9 @@ import org.springframework.stereotype.Component;
 public class WorldRules {
     private static final Pattern REVIEW_CLAIM = Pattern.compile("(?:我|本人)(?:已|已经)?(?:看过|查过|翻过|过目|调查过|核对过|看了|查了|调查了)");
     private static final Map<String, String> OBJECT_ALIASES = Map.of("住客登记簿", "登记簿", "柴房门锁", "柴房");
+    private static final Map<String, Integer> ENERGY_COSTS = Map.of(
+            "move_character", 5, "inspect", 3, "talk", 2,
+            "give_item", 2, "update_relationship", 1);
     private final ObjectMapper mapper;
 
     public WorldRules(ObjectMapper mapper) { this.mapper = mapper; }
@@ -27,6 +30,11 @@ public class WorldRules {
         Object result = map(world.get("characters")).get(name);
         if (result == null) throw new IllegalArgumentException("角色不存在：" + name);
         return map(result);
+    }
+    private static void requireEnergy(Map<String, Object> person, String actor, String action) {
+        int cost = ENERGY_COSTS.get(action);
+        if (((Number) person.get("energy")).intValue() < cost)
+            throw new IllegalArgumentException(actor + "体力不足，执行" + action + "需要" + cost + "点体力");
     }
 
     public String apply(Map<String, Object> world, String name, Map<String, Object> args) {
@@ -45,6 +53,7 @@ public class WorldRules {
                 actor = str(args, "character"); location = str(args, "location");
                 if (!list(world.get("locations")).contains(location)) throw new IllegalArgumentException("地点不存在：" + location);
                 var person = character(world, actor);
+                requireEnergy(person, actor, name);
                 String old = (String) person.put("location", location);
                 result = old.equals(location) ? actor + "已经在" + location + "。" : actor + "从" + old + "移动到" + location + "。";
                 type = "move"; target = null; payload = Map.of("from", old, "to", location);
@@ -71,6 +80,7 @@ public class WorldRules {
                             throw new IllegalArgumentException(actor + "尚未调查" + objectName + "，不能声称已经查看");
                     }
                 }
+                requireEnergy(speaker, actor, name);
                 result = actor + "对" + target + "说：“" + message + "”";
                 type = "talk"; payload = Map.of("message", message);
                 break;
@@ -83,6 +93,7 @@ public class WorldRules {
                 location = (String) giver.get("location");
                 if (!location.equals(receiver.get("location"))) throw new IllegalArgumentException("双方不在同一地点");
                 if (!list(giver.get("items")).contains(item)) throw new IllegalArgumentException(actor + "不拥有物品：" + item);
+                requireEnergy(giver, actor, name);
                 list(giver.get("items")).remove(item); list(receiver.get("items")).add(item);
                 result = actor + "在" + location + "把" + item + "交给了" + target + "。";
                 type = "give_item"; payload = Map.of("item", item);
@@ -97,6 +108,7 @@ public class WorldRules {
                 var relationships = map(person.get("relationships"));
                 int old = ((Number) relationships.getOrDefault(target, 0)).intValue();
                 int next = Math.max(-100, Math.min(100, old + number.intValue()));
+                requireEnergy(person, actor, name);
                 relationships.put(target, next);
                 location = (String) person.get("location");
                 result = actor + "对" + target + "的关系值从" + old + "变为" + next + "。";
@@ -116,13 +128,29 @@ public class WorldRules {
                             && location.equals(event.get("location")) && java.util.Objects.equals(object, previous.get("object_name"))
                             && observation.equals(previous.get("observation"))) throw new IllegalArgumentException("已调查过，目前没有新发现");
                 }
+                requireEnergy(person, actor, name);
                 result = actor + "调查了" + location + (object == null ? "" : "的" + object) + "：" + observation;
                 type = "inspect"; target = null;
                 payload = new java.util.HashMap<>(); payload.put("observation", observation);
                 if (object != null) payload.put("object_name", object);
                 break;
             }
+            case "rest_character": {
+                actor = str(args, "character"); var person = character(world, actor);
+                int before = ((Number) person.get("energy")).intValue();
+                if (before >= 100) throw new IllegalArgumentException(actor + "体力已满，无需休息");
+                int after = Math.min(100, before + 20);
+                person.put("energy", after);
+                location = (String) person.get("location"); target = null;
+                result = actor + "休息后体力从" + before + "恢复到" + after + "。";
+                type = "rest"; payload = Map.of("energy_before", before, "energy_after", after);
+                break;
+            }
             default: throw new IllegalArgumentException("未知工具：" + name);
+        }
+        if (ENERGY_COSTS.containsKey(name)) {
+            var person = character(world, actor);
+            person.put("energy", ((Number) person.get("energy")).intValue() - ENERGY_COSTS.get(name));
         }
         var event = new java.util.LinkedHashMap<String, Object>();
         event.put("id", UUID.randomUUID().toString().replace("-", ""));

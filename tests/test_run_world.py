@@ -11,6 +11,7 @@ from world.state import WORLD_STATE
 
 class RunWorldTest(unittest.TestCase):
     def setUp(self):
+        self.original_energy = {name: character.energy for name, character in CHARACTERS.items()}
         self.original_time = WORLD_STATE["time"]
         self.original_events = WORLD_STATE["events"].copy()
         self.original_locations = {
@@ -28,6 +29,7 @@ class RunWorldTest(unittest.TestCase):
         WORLD_STATE["time"] = self.original_time
         WORLD_STATE["events"][:] = self.original_events
         for name, character in CHARACTERS.items():
+            character.energy = self.original_energy[name]
             character.location = self.original_locations[name]
             character.relationships.clear()
             character.relationships.update(self.original_relationships[name])
