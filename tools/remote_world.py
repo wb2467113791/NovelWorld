@@ -52,6 +52,29 @@ class RemoteWorld:
             self._call("create_world", {"snapshotJson": json.dumps(local_snapshot, ensure_ascii=False)})
             return json.loads(self._call("get_world", {"worldId": self.world_id}))
 
+    def load(self) -> dict:
+        """只读取已存在的世界，切换时不能把本地存档误导入为新世界。"""
+        return json.loads(self._call("get_world", {"worldId": self.world_id}))
+
+    def sync_events(self) -> int:
+        """只在 Java 出现新事件时刷新状态，供事件调度器读取人为干预。"""
+        from world.state import WORLD_STATE
+
+        cursor = len(WORLD_STATE["events"])
+        added = 0
+        while True:
+            page = json.loads(self._call("get_world_events", {
+                "worldId": self.world_id, "afterIndex": cursor,
+            }))
+            events = page["events"]
+            added += len(events)
+            if not events or len(events) < 100:
+                break
+            cursor = page["next_cursor"]
+        if added:
+            self._refresh_business_state()
+        return added
+
     def execute(self, name: str, arguments: dict, acting_character: str | None) -> str:
         from world.state import remember_event
 
@@ -70,7 +93,7 @@ class RemoteWorld:
 
     def _refresh_business_state(self) -> None:
         from world.persistence import restore_snapshot, snapshot_world
-        from world.state import WORLD_STATE
+        from world.state import WORLD_STATE, reconcile_event_memories
         remote = json.loads(self._call("get_world", {"worldId": self.world_id}))
         if WORLD_STATE.get("world_id") == self.world_id:
             local = snapshot_world()
@@ -83,15 +106,23 @@ class RemoteWorld:
                 if event["id"] not in remote_ids and event["type"] == "narration"
             )
         restore_snapshot(remote)
+        reconcile_event_memories()
 
-    def introduce_event(self, category: str, location: str, tick_count: int) -> dict:
+    def introduce_event(self, category: str, location: str, tick_count: int,
+                        observation: str | None = None) -> dict:
         from world.state import WORLD_STATE, remember_event
-        event = json.loads(self._call("introduce_world_event", {
+        arguments = {
             "worldId": self.world_id,
             "category": category,
             "location": location,
             "tickCount": tick_count,
-        }))
+        }
+        if observation is not None:
+            arguments["observation"] = observation
+        event = json.loads(self._call(
+            "introduce_narrative_event" if observation is not None else "introduce_world_event",
+            arguments,
+        ))
         self._refresh_business_state()
         remember_event(event)
         return event

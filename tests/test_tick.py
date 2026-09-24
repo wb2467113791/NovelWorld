@@ -2,7 +2,7 @@ import unittest
 
 from agent.tick import WorldTickScheduler
 from tools.world_tools import inspect, move_character
-from world.state import WORLD_STATE
+from world.state import WORLD_STATE, record_event
 
 
 class WorldTickSchedulerTest(unittest.TestCase):
@@ -42,6 +42,54 @@ class WorldTickSchedulerTest(unittest.TestCase):
 
         self.assertEqual(chosen_names, ["林默", "苏晚", "赵无极", "林默"])
 
+    def test_event_scheduler_waits_without_loop_and_wakes_only_witness(self):
+        scheduler = WorldTickScheduler(event_driven=True)
+        calls = []
+        def decide(character):
+            calls.append(character.name)
+            return "等待"
+
+        scheduler.run_ticks(3, decide)
+        self.assertEqual(len(WORLD_STATE["events"]), len(self.original_events))
+        idle = scheduler.run_tick(decide)
+        self.assertEqual(idle["character"], "世界")
+        self.assertEqual(len(calls), 3)
+        location = WORLD_STATE["characters"]["苏晚"].location
+        expected = [name for name, character in WORLD_STATE["characters"].items()
+                    if character.location == location]
+        record_event("director", "世界", "出现新线索", location=location)
+        scheduler.run_ticks(len(expected), decide)
+        self.assertEqual(calls[3:], expected)
+        scheduler.run_tick(decide)
+        self.assertEqual(len(calls), 3 + len(expected))
+
+    def test_new_event_takes_priority_over_opening_goal_queue(self):
+        scheduler = WorldTickScheduler(event_driven=True)
+        location = WORLD_STATE["characters"]["苏晚"].location
+        record_event("intervention", "世界", "客栈出现新线索", location=location)
+        self.assertEqual(scheduler.run_tick(lambda character: "等待")["character"], "苏晚")
+
+    def test_event_scheduler_restores_pending_and_cursor(self):
+        scheduler = WorldTickScheduler(event_driven=True)
+        scheduler.run_tick(lambda character: "等待")
+        saved = scheduler.snapshot()
+        restored = WorldTickScheduler(event_driven=True)
+        restored.restore(saved)
+        self.assertEqual(restored.snapshot(), saved)
+        self.assertEqual(restored.run_tick(lambda character: "等待")["character"], "苏晚")
+
+    def test_handled_event_is_not_replayed_after_restart(self):
+        scheduler = WorldTickScheduler(event_driven=True)
+        scheduler.run_ticks(3, lambda character: "等待")
+        record_event("intervention", "世界", "现场出现新线索",
+                     location=WORLD_STATE["characters"]["苏晚"].location)
+        calls = []
+        scheduler.run_tick(lambda character: calls.append(character.name) or "等待")
+        restored = WorldTickScheduler(event_driven=True)
+        restored.restore(scheduler.snapshot())
+        restored.run_tick(lambda character: calls.append(character.name) or "等待")
+        self.assertEqual(calls, ["苏晚"])
+
     def test_character_with_no_energy_keeps_turn(self):
         WORLD_STATE["characters"]["苏晚"].energy = 0
         scheduler = WorldTickScheduler()
@@ -66,6 +114,26 @@ class WorldTickSchedulerTest(unittest.TestCase):
         self.assertEqual([item["character"] for item in results], ["林默", "苏晚", "赵无极"])
         self.assertEqual([character.energy for character in WORLD_STATE["characters"].values()], [20, 20, 20])
         self.assertEqual([event["type"] for event in WORLD_STATE["events"][-3:]], ["rest"] * 3)
+
+    def test_failure_before_action_keeps_same_character_turn(self):
+        scheduler = WorldTickScheduler()
+        with self.assertRaisesRegex(RuntimeError, "模型暂不可用"):
+            scheduler.run_tick(lambda _: (_ for _ in ()).throw(RuntimeError("模型暂不可用")))
+        self.assertEqual(scheduler.snapshot(), {"next_index": 0, "tick_count": 0})
+        self.assertEqual(scheduler.run_tick(lambda _: "稍后再试")["character"], "林默")
+
+    def test_failure_after_committed_action_finishes_tick_once(self):
+        scheduler = WorldTickScheduler()
+
+        def action_then_failure(_):
+            move_character("林默", "晚风客栈")
+            raise RuntimeError("模型总结失败")
+
+        result = scheduler.run_tick(action_then_failure)
+        self.assertIn("行动已发生", result["action_result"])
+        self.assertEqual(scheduler.snapshot(), {"next_index": 1, "tick_count": 1})
+        self.assertEqual(WORLD_STATE["events"][-1]["type"], "move")
+        self.assertEqual(scheduler.run_tick(lambda _: "下一轮")["character"], "苏晚")
 
     def test_run_tick_passes_selected_character_to_decider(self):
         scheduler = WorldTickScheduler()

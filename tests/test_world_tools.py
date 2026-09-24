@@ -385,6 +385,7 @@ class WorldToolsTest(unittest.TestCase):
                     "location": "县衙",
                     "payload": {"from": "晚风客栈", "to": "县衙"},
                     "description": result,
+                    "perceived_by": ["苏晚", "林默"],
                 },
             )
             self.assertIn("我从晚风客栈来到县衙。", WORLD_STATE["characters"]["苏晚"].memory.recent())

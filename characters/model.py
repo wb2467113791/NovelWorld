@@ -17,6 +17,8 @@ class Character:
     goals: list[str]
     location: str
     energy: int
+    hp: int = 100
+    status: str = "normal"
     secrets: list[str] = field(default_factory=list)
     known_facts: list[str] = field(default_factory=list)
     relationships: dict[str, int] = field(default_factory=dict)

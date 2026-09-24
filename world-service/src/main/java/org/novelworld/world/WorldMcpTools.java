@@ -48,6 +48,41 @@ public class WorldMcpTools {
         return json(store.load(worldId));
     }
 
+    @McpTool(name = "get_world_events", description = "按事件序号读取已提交事件；返回下一游标")
+    public String getWorldEvents(@McpToolParam(description = "世界 ID") String worldId,
+                                 @McpToolParam(description = "已读取的事件数量") int afterIndex) {
+        var events = (List<?>) store.load(worldId).get("events");
+        if (afterIndex < 0 || afterIndex > events.size()) throw new IllegalArgumentException("事件游标无效");
+        int end = Math.min(events.size(), afterIndex + 100);
+        return json(Map.of("events", events.subList(afterIndex, end), "next_cursor", end));
+    }
+
+    /** 人只设定可观察的环境线索，不能指定 NPC 的下一步行动。 */
+    @SuppressWarnings("unchecked")
+    public synchronized Map<String, Object> injectWorldEvent(String worldId, String location,
+                                                               String objectName, String observation) {
+        if (objectName == null || objectName.isBlank() || observation == null || observation.isBlank()
+                || objectName.length() > 80 || observation.length() > 1000)
+            throw new IllegalArgumentException("线索名称或内容无效");
+        var world = store.load(worldId);
+        if (!((List<?>) world.get("locations")).contains(location)) throw new IllegalArgumentException("地点不存在：" + location);
+        var objects = (Map<String, Object>) world.get("inspectable_objects");
+        var place = (Map<String, Object>) objects.computeIfAbsent(location, ignored -> new LinkedHashMap<String, Object>());
+        if (place.containsKey(objectName)) throw new IllegalArgumentException("该地点已有同名线索");
+        place.put(objectName, observation);
+        var event = new LinkedHashMap<String, Object>();
+        event.put("id", UUID.randomUUID().toString().replace("-", ""));
+        event.put("timestamp", world.get("time")); event.put("type", "intervention");
+        event.put("actor", "世界"); event.put("target", null); event.put("location", location);
+        event.put("perceived_by", WorldRules.perceivedBy(world, "director", "世界", null, location));
+        event.put("payload", Map.of("object_name", objectName, "observation", observation));
+        event.put("description", location + "出现了可调查的" + objectName + "。" + observation);
+        ((List<Object>) world.get("events")).add(event);
+        store.update(worldId, world);
+        store.queueEvent(worldId, event);
+        return event;
+    }
+
     @McpTool(name = "execute_world_tool", description = "由 Java 校验并执行角色行动，返回结果及新增事件")
     public synchronized String executeWorldTool(
             @McpToolParam(description = "世界 ID") String worldId,
@@ -58,7 +93,7 @@ public class WorldMcpTools {
         var arguments = parse(argumentsJson);
         String actorKey = Map.of("get_character", "character", "inspect", "character", "talk", "speaker",
                 "update_relationship", "character", "move_character", "character", "give_item", "giver",
-                "rest_character", "character").get(name);
+                "rest_character", "character", "world_action", "actor").get(name);
         if (actorKey != null && !actingCharacter.equals(arguments.get(actorKey)))
             throw new IllegalArgumentException(actingCharacter + "不能通过" + name + "替其他角色行动");
         int before = ((List<?>) world.get("events")).size();
@@ -116,17 +151,35 @@ public class WorldMcpTools {
         );
         String observation = observations.get(category);
         if (observation == null) throw new IllegalArgumentException("未知 Director 事件类别");
+        return introduceNarrativeEvent(worldId, category, location, observation, tickCount);
+    }
+
+    @McpTool(name = "introduce_narrative_event", description = "由规则触发的 Director 提议环境线索，Java 校验并结算")
+    @SuppressWarnings("unchecked")
+    public synchronized String introduceNarrativeEvent(
+            @McpToolParam(description = "世界 ID") String worldId,
+            @McpToolParam(description = "stagnation、participation 或 conflict") String category,
+            @McpToolParam(description = "事件发生的合法地点") String location,
+            @McpToolParam(description = "新的可调查线索内容") String observation,
+            @McpToolParam(description = "触发事件的 Tick 数") int tickCount) {
+        if (!List.of("stagnation", "participation", "conflict").contains(category))
+            throw new IllegalArgumentException("未知 Director 事件类别");
+        if (observation == null || observation.isBlank() || observation.length() > 1000)
+            throw new IllegalArgumentException("Director 线索内容无效");
         if (tickCount < 1) throw new IllegalArgumentException("Tick 数无效");
         var world = store.load(worldId);
         if (!((List<?>) world.get("locations")).contains(location)) throw new IllegalArgumentException("地点不存在：" + location);
-        String objectName = "新线索" + (((List<?>) world.get("events")).size() + 1);
         var objects = (Map<String, Object>) world.get("inspectable_objects");
         var place = (Map<String, Object>) objects.computeIfAbsent(location, ignored -> new LinkedHashMap<String, Object>());
+        int sequence = ((List<?>) world.get("events")).size() + 1;
+        while (place.containsKey("新线索" + sequence)) sequence++;
+        String objectName = "新线索" + sequence;
         place.put(objectName, observation);
         var event = new LinkedHashMap<String, Object>();
         event.put("id", UUID.randomUUID().toString().replace("-", ""));
         event.put("timestamp", world.get("time")); event.put("type", "director");
         event.put("actor", "世界"); event.put("target", null); event.put("location", location);
+        event.put("perceived_by", WorldRules.perceivedBy(world, "director", "世界", null, location));
         event.put("payload", Map.of("category", category, "object_name", objectName, "observation", observation, "tick_count", tickCount));
         event.put("description", location + "出现了可调查的" + objectName + "。" + observation);
         ((List<Object>) world.get("events")).add(event);

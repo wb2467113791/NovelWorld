@@ -7,6 +7,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from characters.model import Character
+from lore.catalog import load_lore
 from memory.episodic import EpisodicArchive, MemoryEntry
 from memory.semantic import SemanticFact, SemanticMemory
 from memory.short_term import ShortTermMemory
@@ -66,7 +67,8 @@ def _character_from_dict(data: dict) -> Character:
         superseded_event_ids=set(semantic_data["superseded_event_ids"]),
     )
     ordinary_fields = {
-        item.name: data[item.name]
+        item.name: (data.get(item.name, 100 if item.name == "hp" else "normal")
+                    if item.name in {"hp", "status"} else data[item.name])
         for item in fields(Character)
         if item.name not in {"memory", "semantic_memory"}
     }
@@ -82,6 +84,7 @@ def snapshot_world(*, scheduler_state: dict | None = None) -> dict:
         "locations": WORLD_STATE["locations"],
         "inspectables": WORLD_STATE["inspectables"],
         "inspectable_objects": WORLD_STATE["inspectable_objects"],
+        "lore": WORLD_STATE["lore"],
         "events": WORLD_STATE["events"],
         "characters": {
             name: _character_to_dict(character)
@@ -105,6 +108,8 @@ def restore_snapshot(snapshot: dict) -> dict:
         key: snapshot[key]
         for key in ("world_id", "time", "locations", "inspectables", "inspectable_objects", "events")
     }
+    # V1 存档没有独立 lore；仅旧存档沿用当时的默认设定。
+    restored["lore"] = snapshot.get("lore", [asdict(entry) for entry in load_lore()])
     restored["characters"] = characters
     WORLD_STATE.clear()
     WORLD_STATE.update(restored)

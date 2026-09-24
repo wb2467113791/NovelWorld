@@ -86,9 +86,10 @@ class WorldSession:
 
     def __init__(self, decide_action: Callable[[Character], str], *,
                  save_path: Path | None = None, index: ChromaIndex | None = None,
-                 scheduler_state: dict | None = None, director=None) -> None:
+                 scheduler_state: dict | None = None, director=None,
+                 event_driven: bool = False) -> None:
         self.decide_action = decide_action
-        self.scheduler = WorldTickScheduler(director=director)
+        self.scheduler = WorldTickScheduler(director=director, event_driven=event_driven)
         if scheduler_state is not None:
             self.scheduler.restore(scheduler_state)
         self.completed_ticks = self.scheduler.snapshot()["tick_count"]
@@ -171,6 +172,9 @@ def main() -> None:
         from world.persistence import restore_snapshot, snapshot_world
         backend = RemoteWorld(WORLD_STATE["world_id"])
         scheduler_state = restore_snapshot(backend.open(snapshot_world(scheduler_state=scheduler_state)))
+        from world.state import reconcile_event_memories
+        if reconcile_event_memories():
+            backend.save_agent_state(scheduler_state)
         use_backend(backend)
     index = ChromaIndex(WORLD_STATE["world_id"])
     index.sync_world(WORLD_STATE["characters"])

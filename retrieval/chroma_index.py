@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from characters.model import Character
-from lore.catalog import load_lore
+from world.state import WORLD_STATE
 from memory.retrieval import eligible_archived_entries
 from retrieval.text import bigrams, text_vector
 
@@ -72,10 +72,10 @@ class ChromaIndex:
         self._sync_collection(self.memories, documents, where={"owner": character.name})
 
     def sync_lore(self) -> None:
-        """世界设定只从人工维护的资料重建，不混入角色私有经历。"""
+        """只索引当前世界存档中的设定，不混入其他开局的资料。"""
         documents = {
-            entry.id: (entry.text, {"category": entry.category, "audience": entry.audience})
-            for entry in load_lore()
+            entry["id"]: (entry["text"], {"category": entry["category"], "audience": entry["audience"]})
+            for entry in WORLD_STATE["lore"]
         }
         self._sync_collection(self.lore, documents)
 

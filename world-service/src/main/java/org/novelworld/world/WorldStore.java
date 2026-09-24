@@ -2,6 +2,7 @@ package org.novelworld.world;
 
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
+import java.util.List;
 import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -45,6 +46,10 @@ public class WorldStore {
     public void insert(String worldId, Map<String, Object> snapshot) {
         jdbc.update("INSERT INTO world_saves(world_id, snapshot, revision) VALUES (?, ?, 0)", worldId, json(snapshot));
         cache(worldId, snapshot);
+    }
+
+    public List<String> listWorldIds() {
+        return jdbc.queryForList("SELECT world_id FROM world_saves ORDER BY world_id", String.class);
     }
 
     public void update(String worldId, Map<String, Object> snapshot) {

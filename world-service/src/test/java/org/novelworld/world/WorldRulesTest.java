@@ -30,6 +30,30 @@ class WorldRulesTest {
         return world;
     }
 
+    @Test void attackIsValidatedBeforeDamageAndRecordsWitnesses() {
+        var world = world();
+        assertThrows(IllegalArgumentException.class, () -> rules.apply(world, "world_action",
+                Map.of("action", "attack", "actor", "林默", "target", "苏晚")));
+        assertEquals(0, ((List<?>) world.get("events")).size());
+        rules.apply(world, "move_character", Map.of("character", "林默", "location", "客栈"));
+        rules.apply(world, "world_action", Map.of("action", "attack", "actor", "林默", "target", "苏晚"));
+        var su = (Map<?, ?>) ((Map<?, ?>) world.get("characters")).get("苏晚");
+        assertEquals(80, su.get("hp"));
+        assertEquals("injured", su.get("status"));
+        var event = (Map<?, ?>) ((List<?>) world.get("events")).get(1);
+        assertEquals(List.of("林默", "苏晚"), event.get("perceived_by"));
+    }
+
+    @Test void followingRequiresWitnessedDeparture() {
+        var world = world();
+        assertThrows(IllegalArgumentException.class, () -> rules.apply(world, "world_action",
+                Map.of("action", "follow", "actor", "苏晚", "target", "林默")));
+        rules.apply(world, "move_character", Map.of("character", "林默", "location", "客栈"));
+        rules.apply(world, "move_character", Map.of("character", "林默", "location", "县衙"));
+        rules.apply(world, "world_action", Map.of("action", "follow", "actor", "苏晚", "target", "林默"));
+        assertEquals("县衙", ((Map<?, ?>) ((Map<?, ?>) world.get("characters")).get("苏晚")).get("location"));
+    }
+
     @Test void movementAndEventAreReal() {
         var world = world();
         assertThrows(IllegalArgumentException.class, () -> rules.apply(world, "move_character", Map.of("character", "林默", "location", "远山")));
@@ -37,6 +61,7 @@ class WorldRulesTest {
         rules.apply(world, "move_character", Map.of("character", "林默", "location", "客栈"));
         assertEquals("客栈", ((Map<?, ?>) ((Map<?, ?>) world.get("characters")).get("林默")).get("location"));
         assertEquals(1, ((List<?>) world.get("events")).size());
+        assertEquals(List.of("林默", "苏晚"), ((Map<?, ?>) ((List<?>) world.get("events")).get(0)).get("perceived_by"));
     }
 
     @Test void inventoryRequiresOwnershipAndColocation() {

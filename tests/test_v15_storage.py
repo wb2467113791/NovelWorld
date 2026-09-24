@@ -10,7 +10,7 @@ from characters.prompt import build_character_prompt
 from lore.catalog import retrieve_lore
 from run_world import WorldSession
 from world.persistence import load_world, save_world, start_new_world
-from world.state import WORLD_STATE, record_event
+from world.state import WORLD_STATE, record_event, reconcile_event_memories
 
 
 class V15StorageTest(unittest.TestCase):
@@ -60,10 +60,27 @@ class V15StorageTest(unittest.TestCase):
                 raise RuntimeError("模型响应中断")
 
             session = WorldSession(failing_decision, save_path=path)
-            with self.assertRaisesRegex(RuntimeError, "模型响应中断"):
-                session.next_tick()
+            result = session.next_tick()
+            self.assertIn("行动已发生", result["action_result"])
             load_world(path)
             self.assertEqual(WORLD_STATE["events"][-1]["description"], "工具执行后的事件")
+            self.assertEqual(session.completed_ticks, 1)
+
+    def test_replay_restores_only_original_witnesses_once(self):
+        lin = WORLD_STATE["characters"]["林默"]
+        su = WORLD_STATE["characters"]["苏晚"]
+        zhao = WORLD_STATE["characters"]["赵无极"]
+        lin.location = su.location
+        event = record_event("move", "林默", "林默来到客栈", location=su.location,
+                             payload={"from": "县衙", "to": su.location})
+        self.assertEqual(event["perceived_by"], ["林默", "苏晚"])
+        lin.memory.entries.clear()
+        su.memory.entries.clear()
+        zhao.location = su.location  # 事件之后才到场，不能补看旧事件。
+        self.assertEqual(reconcile_event_memories(), 2)
+        self.assertEqual(reconcile_event_memories(), 0)
+        self.assertTrue(any(entry.source_event_id == event["id"] for entry in su.memory.recent_entries()))
+        self.assertFalse(any(entry.source_event_id == event["id"] for entry in zhao.memory.recent_entries()))
 
     def test_chroma_rebuild_and_world_isolation(self):
         from retrieval.chroma_index import ChromaIndex

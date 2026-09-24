@@ -11,6 +11,29 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class WorldMcpToolsTest {
+    @Test void interventionIsVisibleOnlyAtItsLocationAndReadableByCursor() {
+        var store = mock(WorldStore.class);
+        var world = new HashMap<String, Object>();
+        world.put("time", "08:15");
+        world.put("revision", 0);
+        world.put("locations", List.of("客栈", "县衙"));
+        world.put("inspectable_objects", new HashMap<String, Object>());
+        world.put("events", new ArrayList<>());
+        world.put("characters", Map.of("甲", Map.of("location", "客栈"), "乙", Map.of("location", "县衙")));
+        when(store.load("test-world")).thenReturn(world);
+        var tools = new WorldMcpTools(store, new WorldRules(new ObjectMapper()), new ObjectMapper());
+
+        assertThrows(IllegalArgumentException.class,
+                () -> tools.injectWorldEvent("test-world", "王宫", "信", "内容"));
+        assertEquals(0, ((List<?>) world.get("events")).size());
+        var event = tools.injectWorldEvent("test-world", "客栈", "信", "失踪者留下的字迹");
+        assertEquals(List.of("甲"), event.get("perceived_by"));
+        assertEquals("intervention", event.get("type"));
+        assertTrue(tools.getWorldEvents("test-world", 0).contains("失踪者留下的字迹"));
+        assertTrue(tools.getWorldEvents("test-world", 1).contains("\"events\":[]"));
+        verify(store).update(eq("test-world"), same(world));
+    }
+
     @Test void directorAddsInspectableEventWithoutMovingAnyone() {
         var store = mock(WorldStore.class);
         var world = new HashMap<String, Object>();

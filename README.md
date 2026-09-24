@@ -6,11 +6,24 @@ NovelWorld 是一个用于学习 Agent 工程的动态叙事世界引擎。三�
 
 V3 在 V2 的 Java 世界服务上增加三层：
 
+```mermaid
+flowchart TB
+  B[React 浏览器] -->|HTTP / SSE| J[Spring Boot Web + World Backend]
+  J --> M[(MySQL 世界快照)]
+  J --> R[(Redis 缓存)]
+  J -->|本机 HTTP 调度| P[Python Agent Runtime]
+  P --> G[LangGraph NPC Agents]
+  P --> D[规则型 Director]
+  G --> C[Memory RAG / Lore RAG / Skills]
+  G -->|MCP 工具调用| J
+  D -->|MCP 世界事件| J
+```
+
 - **按需加载的职业 Skill**：`skills/` 保存调查、交涉、交易、隐瞒和休整指导；`skills/router.py` 每次只给当前 NPC 加载一份。Skill 是模型的行动指导，不是 Python 或 Java 的执行权限。
 - **Director（导演）**：`agent/director.py` 检测连续无行动、角色参与不足和长期缺少交谈冲突；有冷却时间。它只请求 Java 生成一条可调查的环境事件，不能替 NPC 移动、说话或改变关系。事件只进入现场角色的记忆。
-- **实时 Web UI**：React 界面显示时间线、NPC 状态、关系图与所选角色的独立记忆。FastAPI 通过 SSE 推送 Tick 后的世界快照，支持暂停、单步、运行 10/20 Tick 和调整间隔。FastAPI 负责本机运行控制；世界业务变化仍由 Java MCP 工具执行。
+- **实时 Web UI**：浏览器只访问 Spring Boot 的页面、控制 API 和 SSE。Spring Boot 从自己的世界存档提供状态，向本机 Python Agent Runtime 下发 Tick 指令；Python 通过 MCP 请求 Java 执行行动。
 
-V3 正常运行需要先按下方 V2 步骤启动 MySQL、Redis 和 Java 服务。然后在项目根目录安装 Python 依赖、构建界面并启动单进程控制器：
+V3 正常运行需要先启动 MySQL、Redis，再启动 Java 服务。然后在项目根目录安装 Python 依赖、构建界面并启动内部 Agent Runtime：
 
 ```powershell
 .venv\Scripts\python -m pip install -r requirements.txt
@@ -18,14 +31,22 @@ cd web
 npm install
 npm run build
 cd ..
-.venv\Scripts\python -m uvicorn web_api:app --host 127.0.0.1 --port 8000
+.venv\Scripts\python -m uvicorn web_api:app --host 127.0.0.1 --port 8001
 ```
 
-在浏览器打开 `http://127.0.0.1:8000`。开发界面可在 `web/` 运行 `npm run dev`，访问 `http://127.0.0.1:5173`；Vite 将 `/api` 转发到本机 8000 端口。Web 控制器只支持单个 Uvicorn worker，且仅监听本机，不包含账号系统。若只想查看本地存档的界面，可设置 `NOVELWORLD_BACKEND=local` 后启动 Web API；这个模式不验证 Java MCP 链路。
+在浏览器打开 `http://127.0.0.1:8080`。开发界面可在 `web/` 运行 `npm run dev`，访问 `http://127.0.0.1:5173`；Vite 将 `/api` 转发到 Spring Boot 的 8080 端口。Python 的 8001 端口仅供 Java 内部控制，必须只监听本机并只启动一个 Uvicorn worker。Java 从 `web/dist` 提供构建后的静态文件；若工作目录不同，可用 `NOVELWORLD_WEB_DIST` 指向该目录。可在启动 Java 前设置 `NOVELWORLD_WEB_PASSWORD`（及可选 `NOVELWORLD_WEB_USER`，默认 `author`）启用浏览器 Basic Auth；未设置时仅适合本机可信使用。MCP 和 Python 内部端口仍应只监听本机。
+
+同一 `world_id` 同时只运行一个 Python Agent Runtime；不要让 Web Runtime 和 `run_world.py --v2` 同时推进同一个世界。Java 保存权威世界状态，Python 会在重启时按事件 ID 补写缺失记忆，且只向事件发生时记录的知情者补写。
 
 **无需模型费用的固定验收**：运行 `.venv\Scripts\python demo_v3.py`。它在新世界中运行 3 个无行动 Tick，Director 通过真实 MCP 添加可调查线索；演示确认只有现场角色获得对应记忆。它不会调用 LLM。真实 Web 的“下一 Tick”“运行 10/20 Tick”会使用 `llm_client.py` 中现有模型配置，单 Tick 最多 6 次模型请求；Director 和页面查看本身不调用模型。实际费用取决于模型输出和服务商计价。
 
 手动检查顺序：打开页面应看到 3 名 NPC 和初始时间；点击“下一 Tick”后时间推进 5 分钟，时间线出现执行过的工具事件或无行动叙述；切换角色应只显示该角色自己的记忆；连续运行后“暂停”应在当前 Tick 完成后生效。模型选择的具体 Tool Call 不固定，以事件时间线和 Java 存档中的状态变化为准。
+
+**可编辑开局**：页面底部“开局工坊”从 Spring Boot 读取默认模板。作者可以修改角色人设、目标、独立知识与秘密、关系、物品、地点、时间、初始线索及带可见范围的世界设定；右侧先预览，再创建。模板草稿保存在当前浏览器，世界快照保存在 Java 的 MySQL。创建会生成新的世界 ID，不覆盖旧世界；在“已保存的世界”中点击“切换到此世界”后，观测台和 Python Runtime 才转向它。创建与切换均要求当前世界已暂停。旧存档缺少独立世界设定字段时会沿用原默认设定；新世界只检索自己存档中的设定。编辑、预览、创建和切换不调用模型；点击运行或下一 Tick 才可能产生模型 API 费用。
+
+**自主事件调度**：Web Runtime 开局依次给 NPC 一次基于目标的行动机会；之后只唤醒新事件发生时的知情者，新事件优先于尚未执行的开局目标，每 Tick 最多运行一名 NPC，连锁反应深度最多 3 层。等待和无待处理事件只推进时间，不生成叙述事件，也不调用 NPC 模型。事件游标与待唤醒队列随世界存档保存，重启后继续处理；Java 的 `get_world_events` MCP 工具和 `/api/world-events?after=0` 接口按游标读取事件，SSE 同时推送带 ID 的 `world-event`。页面“向世界投放线索”由 Java 校验地点与内容并记录发生时的知情者，下一 Tick 才由相关 NPC 自行反应。Director 规则触发且冷却结束时会使用现有模型提出一条环境线索；模型请求失败时改用固定线索。该请求可能产生额外 API 费用。扩展动作中的攻击、用药、逃跑、跟随与场景互动由 Java 按确定性规则结算；药物需名称含“药”，跟随需目击目标最近一次离开。旧存档缺少生命值和状态时按 100 / normal 读取。
+
+完整人工验收顺序见 [自主世界完整验收流程](docs/NovelWorld_自主世界完整验收流程.md)。
 
 角色行动会真实改变体力：移动消耗 5 点、调查 3 点、对话或交付物品 2 点、修改关系 1 点。`rest_character` 休息一轮恢复 20 点，上限 100；体力不足的行动会被拒绝，不产生事件或扣体力。角色轮到 Tick 时若体力为 0，Python 调度器自动调用休息工具，不请求模型；其他体力较低时模型可以主动选择休息。模型只选择工具，体力数值由 Python 本地工具或 Java 世界服务修改。
 
@@ -43,14 +64,18 @@ flowchart LR
   P --> K[角色记忆 / Chroma 检索]
 ```
 
-本机需要 Java 17、Maven、Docker Compose 和 Python 3.11+。本仓库的 Java 服务默认只监听 `127.0.0.1:8080`，Docker 将 MySQL/Redis 端口也只映射到本机。启动步骤：
+本机需要 Java 17、Maven、Docker Compose 和 Python 3.11+。本仓库的 Java 服务默认只监听 `127.0.0.1:8080`，Docker 将项目 MySQL/Redis 分别映射到本机 `3307`/`6380`，以避开已有服务。启动步骤：
 
 ```powershell
 docker compose up -d
+docker compose ps # mysql、redis 应显示 running/healthy
 $env:JAVA_HOME='C:\Program Files\Java\jdk-17.0.2' # 按本机实际安装路径调整
-cd world-service
-mvn spring-boot:run
+$env:Path="$env:JAVA_HOME\bin;$env:Path"
+mvn -version # 必须显示 Java 17
+mvn -f .\world-service\pom.xml '-Dmaven.test.skip=true' 'org.springframework.boot:spring-boot-maven-plugin:4.1.1:run'
 ```
+
+若 Maven 最后只显示 `Process terminated with exit code: 1`，向前查看第一条 `Caused by`。`Access denied for user 'novelworld'` 通常表示连接到了已有 MySQL，或项目数据卷中的账号密码与当前配置不同；先用 `docker compose ps` 确认项目容器运行，不要删除数据卷。若本机 `3307`/`6380` 也已占用，可调整 `compose.yaml` 的宿主机端口，并通过 `NOVELWORLD_JDBC_URL` / `NOVELWORLD_REDIS_PORT` 指向新端口。
 
 另开终端，在项目根目录安装 Python 依赖并运行：
 
@@ -62,7 +87,7 @@ mvn spring-boot:run
 
 `demo_v2.py` 使用新世界 ID，通过真实 MCP 连接验证移动、无权交付被拒绝、事件记忆和存档读取；不调用模型，不产生 API 费用。`run_world.py --v2` 使用原有世界存档的 ID：服务端若已有该世界，以 MySQL 中的状态为准；若没有，首次导入本地 `data/world.json`。运行 `next` 或 `run 10` 会调用当前 `llm_client.py` 配置的真实模型，产生 API 费用。停止服务不删除 MySQL 数据；下次启动仍可恢复世界。`run_world.py` 不带 `--v2` 时继续使用 V1.5 的本地工具和存档。
 
-服务提供 `create_world`、`get_world`、`execute_world_tool`、`advance_world_time`、`save_agent_state` 五个 MCP 工具。`execute_world_tool` 支持查询时间/角色、调查、交谈、移动、交付物品和更新关系。Java 每次成功行动只追加一条事件，失败请求不写状态；存档的 revision 防止并发覆盖。MySQL 当前保存完整 JSON 快照，Redis 用作可重建的热缓存及事件队列；这是 V2 的最小可运行存储设计，尚未把各实体拆为独立关系表。MCP 接口供可信的本机 Python Runtime 使用，没有远程用户认证；部署到其他机器前需要加认证与访问控制。
+服务提供 `create_world`、`get_world`、`execute_world_tool`、`advance_world_time`、`save_agent_state`、`introduce_world_event` 六个 MCP 工具。`execute_world_tool` 支持查询时间/角色、调查、交谈、移动、交付物品、更新关系和休息。Java 每次成功行动只追加一条事件，失败请求不写状态；存档的 revision 防止并发覆盖。MySQL 当前保存完整 JSON 快照，Redis 用作可重建的热缓存及事件队列；这是 V2 的最小可运行存储设计，尚未把各实体拆为独立关系表。MCP 接口供可信的本机 Python Runtime 使用，没有远程用户认证；部署到其他机器前需要加认证与访问控制。
 
 Java 验证：`mvn -f world-service/pom.xml test`。Python 验证：`.venv\Scripts\python -m unittest discover -s tests -q`。在本机 Docker 守护进程不可用时，可以用 Maven 的测试类路径及 H2 内存库启动服务验证 MCP 链路；这种验证不覆盖 MySQL/Redis 的实际部署行为。
 
@@ -73,7 +98,7 @@ Java 验证：`mvn -f world-service/pom.xml test`。Python 验证：`.venv\Scrip
 - 近期记忆保留 5 条，溢出的亲历事件进入该角色自己的情节档案。每条记录保留来源事件 ID、时间和重要性。每 3 Tick 的反思只处理新增经历；反思不会直接改变世界状态。
 - Python 从成功执行的 `inspect` 事件建立该角色的最新调查事实；同一对象的新观察会取代旧事实。其他角色的调查不会自动成为本人的知识。关系的当前数值仍以 `Character.relationships` 为准。
 - Chroma 的 `npc_memories` 和 `world_lore` 是分开的本地索引。检索先按角色或设定可见范围过滤，再限制条数与字符数；Prompt 中分别显示历史经历和世界设定。这里使用无需下载模型的中文字符片段哈希向量，能匹配相近字词，但同义词召回能力有限；不会调用 Embedding API。
-- `data/world.json` 同时保存世界 ID、角色状态、事件、记忆和 Tick 调度位置。Chroma 索引位于 `data/chroma/<world_id>`，可由存档与 `lore/world_lore.json` 重建。`data/` 已被 Git 忽略。启动 `main.py` 或 `run_world.py` 时会继续现有存档；首次运行会创建存档。要开启完全独立的世界，可在 Python 中调用 `world.persistence.start_new_world()`，并保存到新的路径。
+- `data/world.json` 同时保存世界 ID、角色状态、事件、记忆、世界设定和 Tick 调度位置。Chroma 索引位于 `data/chroma/<world_id>`，可由该世界的存档重建；`lore/world_lore.json` 仅为旧存档提供默认设定。`data/` 已被 Git 忽略。启动 `main.py` 或 `run_world.py` 时会继续现有存档；首次运行会创建存档。要开启完全独立的世界，可在 Python 中调用 `world.persistence.start_new_world()`，并保存到新的路径。
 - 模型只决定回复和工具请求；Python 负责权限过滤、工具执行、事实写入与存档。检索到的文字本身不会生成世界事件。
 
 无需 API 的固定对照：

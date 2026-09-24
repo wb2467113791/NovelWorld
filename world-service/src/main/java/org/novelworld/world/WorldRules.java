@@ -32,12 +32,29 @@ public class WorldRules {
         return map(result);
     }
     private static void requireEnergy(Map<String, Object> person, String actor, String action) {
+        if ("unconscious".equals(person.get("status"))) throw new IllegalArgumentException(actor + "失去行动能力");
         int cost = ENERGY_COSTS.get(action);
         if (((Number) person.get("energy")).intValue() < cost)
             throw new IllegalArgumentException(actor + "体力不足，执行" + action + "需要" + cost + "点体力");
     }
+    static List<String> perceivedBy(Map<String, Object> world, String type, String actor,
+                                    String target, String location) {
+        var recipients = new java.util.ArrayList<String>();
+        var characters = map(world.get("characters"));
+        if (characters.containsKey(actor)) recipients.add(actor);
+        if (("talk".equals(type) || "give_item".equals(type)) && target != null && characters.containsKey(target))
+            recipients.add(target);
+        if (List.of("move", "flee", "follow", "attack", "interact", "director").contains(type)) {
+            for (var entry : characters.entrySet()) {
+                if (!recipients.contains(entry.getKey()) && location.equals(map(entry.getValue()).get("location")))
+                    recipients.add(entry.getKey());
+            }
+        }
+        return recipients;
+    }
 
     public String apply(Map<String, Object> world, String name, Map<String, Object> args) {
+        if ("world_action".equals(name)) return applyWorldAction(world, args);
         String actor, target, location, result;
         Map<String, Object> payload;
         String type;
@@ -156,6 +173,131 @@ public class WorldRules {
         event.put("id", UUID.randomUUID().toString().replace("-", ""));
         event.put("timestamp", world.get("time")); event.put("type", type);
         event.put("actor", actor); event.put("target", target); event.put("location", location);
+        var witnesses = perceivedBy(world, type, actor, target, location);
+        if ("move".equals(type)) {
+            String departure = (String) payload.get("from");
+            for (var entry : map(world.get("characters")).entrySet()) {
+                if (departure.equals(map(entry.getValue()).get("location")) && !witnesses.contains(entry.getKey()))
+                    witnesses.add(entry.getKey());
+            }
+        }
+        event.put("perceived_by", witnesses);
+        event.put("payload", payload); event.put("description", result);
+        list(world.get("events")).add(event);
+        return result;
+    }
+
+    /** 新动作首版均使用确定性规则；模型只能提出意图。 */
+    private String applyWorldAction(Map<String, Object> world, Map<String, Object> args) {
+        String action = str(args, "action");
+        String actor = str(args, "actor");
+        var person = character(world, actor);
+        String location = (String) person.get("location");
+        String target = null;
+        String result;
+        int cost;
+        var payload = new java.util.LinkedHashMap<String, Object>();
+        Map<String, Object> other = null;
+        int hpAfter = 0;
+        String oldLocation = location;
+        switch (action) {
+            case "attack": {
+                target = str(args, "target");
+                if (actor.equals(target)) throw new IllegalArgumentException("不能攻击自己");
+                other = character(world, target);
+                if (!location.equals(other.get("location"))) throw new IllegalArgumentException("攻击目标不在同一地点");
+                if ("unconscious".equals(other.get("status"))) throw new IllegalArgumentException("目标已失去行动能力");
+                cost = 10;
+                hpAfter = Math.max(0, ((Number) other.getOrDefault("hp", 100)).intValue() - 20);
+                payload.put("damage", 20); payload.put("hp_after", hpAfter);
+                result = actor + "攻击了" + target + "，造成20点伤害。";
+                break;
+            }
+            case "use_item": {
+                String item = str(args, "item");
+                if (!list(person.get("items")).contains(item)) throw new IllegalArgumentException(actor + "不拥有物品：" + item);
+                if (!item.contains("药")) throw new IllegalArgumentException("该物品没有已定义的使用规则：" + item);
+                if (((Number) person.getOrDefault("hp", 100)).intValue() >= 100)
+                    throw new IllegalArgumentException("生命值已满，无需使用药物");
+                cost = 2;
+                hpAfter = Math.min(100, ((Number) person.getOrDefault("hp", 100)).intValue() + 20);
+                payload.put("item", item); payload.put("hp_after", hpAfter);
+                result = actor + "使用" + item + "，生命值恢复至" + hpAfter + "。";
+                break;
+            }
+            case "flee": {
+                String destination = str(args, "location");
+                if (!list(world.get("locations")).contains(destination) || destination.equals(location))
+                    throw new IllegalArgumentException("逃离地点无效");
+                cost = 7;
+                payload.put("from", location); payload.put("to", destination);
+                result = actor + "从" + location + "逃到了" + destination + "。";
+                location = destination;
+                break;
+            }
+            case "follow": {
+                target = str(args, "target");
+                if (actor.equals(target)) throw new IllegalArgumentException("不能跟随自己");
+                other = character(world, target);
+                String destination = (String) other.get("location");
+                if (destination.equals(location)) throw new IllegalArgumentException("目标尚未离开当前地点");
+                boolean seenDeparture = false;
+                var history = list(world.get("events"));
+                for (int i = history.size() - 1; i >= 0; i--) {
+                    var event = map(history.get(i));
+                    if (!List.of("move", "flee", "follow").contains(event.get("type")) || !target.equals(event.get("actor")))
+                        continue;
+                    var movement = map(event.get("payload"));
+                    seenDeparture = oldLocation.equals(movement.get("from"))
+                            && destination.equals(movement.get("to"))
+                            && list(event.getOrDefault("perceived_by", List.of())).contains(actor);
+                    break;
+                }
+                if (!seenDeparture) throw new IllegalArgumentException("角色没有目击目标离开，无法跟随");
+                cost = 5;
+                payload.put("from", location); payload.put("to", destination);
+                result = actor + "跟随" + target + "来到" + destination + "。";
+                location = destination;
+                break;
+            }
+            case "interact": {
+                String objectName = str(args, "object_name");
+                var objects = map(world.get("inspectable_objects"));
+                if (!map(objects.getOrDefault(location, Map.of())).containsKey(objectName))
+                    throw new IllegalArgumentException("当前位置没有这个互动对象：" + objectName);
+                cost = 2;
+                payload.put("object_name", objectName);
+                result = actor + "与" + location + "的" + objectName + "互动。";
+                break;
+            }
+            default: throw new IllegalArgumentException("未知行动：" + action);
+        }
+        int energy = ((Number) person.get("energy")).intValue();
+        if ("unconscious".equals(person.get("status"))) throw new IllegalArgumentException(actor + "失去行动能力");
+        if (energy < cost) throw new IllegalArgumentException(actor + "体力不足，执行" + action + "需要" + cost + "点体力");
+        person.put("energy", energy - cost);
+        if ("attack".equals(action)) {
+            other.put("hp", hpAfter);
+            other.put("status", hpAfter == 0 ? "unconscious" : "injured");
+        } else if ("use_item".equals(action)) {
+            person.put("hp", hpAfter);
+            if (hpAfter == 100) person.put("status", "normal");
+            list(person.get("items")).remove(payload.get("item"));
+        } else if ("flee".equals(action) || "follow".equals(action)) {
+            person.put("location", location);
+        }
+        var event = new java.util.LinkedHashMap<String, Object>();
+        event.put("id", UUID.randomUUID().toString().replace("-", ""));
+        event.put("timestamp", world.get("time")); event.put("type", action);
+        event.put("actor", actor); event.put("target", target); event.put("location", location);
+        var witnesses = perceivedBy(world, action, actor, target, location);
+        if ("flee".equals(action) || "follow".equals(action)) {
+            for (var entry : map(world.get("characters")).entrySet()) {
+                if (oldLocation.equals(map(entry.getValue()).get("location")) && !witnesses.contains(entry.getKey()))
+                    witnesses.add(entry.getKey());
+            }
+        }
+        event.put("perceived_by", witnesses);
         event.put("payload", payload); event.put("description", result);
         list(world.get("events")).add(event);
         return result;

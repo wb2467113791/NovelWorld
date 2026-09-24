@@ -33,6 +33,8 @@ class V3DirectorAndSkillTests(unittest.TestCase):
         self.assertEqual(event["type"], "director")
         self.assertEqual(event["actor"], "世界")
         self.assertEqual(event["location"], "晚风客栈")
+        self.assertEqual(WORLD_STATE["inspectable_objects"]["晚风客栈"][event["payload"]["object_name"]],
+                         event["payload"]["observation"])
         self.assertEqual(positions, {name: person.location for name, person in WORLD_STATE["characters"].items()})
         self.assertTrue(WORLD_STATE["characters"]["苏晚"].memory.recent_entries())
         self.assertTrue(any(entry.source_event_id == event["id"] for entry in WORLD_STATE["characters"]["苏晚"].memory.recent_entries()))
@@ -48,6 +50,19 @@ class V3DirectorAndSkillTests(unittest.TestCase):
         for actor in ("林默", "苏晚", "赵无极") * 2:
             record_event("inspect", actor, f"{actor}调查", payload={"observation": "周围"})
         self.assertEqual(Director().choose_event(6)[0], "conflict")
+
+    def test_director_proposal_runs_only_when_rule_triggers(self):
+        calls = []
+        director = Director(propose_event=lambda category, location: calls.append((category, location)) or "门边出现一封信")
+        self.assertIsNone(director.maybe_inject(1))
+        self.assertEqual(calls, [])
+        for actor in ("林默", "苏晚", "赵无极"):
+            record_event("narration", actor, f"{actor}没有行动")
+        event = director.maybe_inject(3)
+        self.assertEqual(calls, [("stagnation", "晚风客栈")])
+        self.assertEqual(event["payload"]["observation"], "门边出现一封信")
+        self.assertIsNone(director.maybe_inject(4))
+        self.assertEqual(len(calls), 1)
 
 
 if __name__ == "__main__":

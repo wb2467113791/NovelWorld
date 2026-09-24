@@ -1,7 +1,7 @@
 """定义可供时间线和角色感知使用的结构化世界事件。"""
 
 from collections.abc import Mapping
-from typing import Any, TypedDict
+from typing import Any, NotRequired, TypedDict
 
 from characters.model import Character
 
@@ -25,6 +25,8 @@ class Event(TypedDict):
     timestamp: str
     # 供现有短期记忆和剧情日志阅读的中文描述。
     description: str
+    # 事件发生时的实际知情者，供重启后安全地补写记忆。
+    perceived_by: NotRequired[list[str]]
 
 
 def recipients_for_event(
@@ -32,16 +34,18 @@ def recipients_for_event(
     characters: Mapping[str, Character],
 ) -> list[str]:
     """按事件类别确定能感知事件的角色，返回不重复的姓名。"""
+    if "perceived_by" in event:
+        return [name for name in event["perceived_by"] if name in characters]
     recipients = [event["actor"]] if event["actor"] in characters else []
 
     if event["type"] in {"talk", "give_item"} and event["target"] is not None:
         recipients.append(event["target"])
-    elif event["type"] == "move":
+    elif event["type"] in {"move", "flee", "follow", "attack", "interact"}:
         recipients.extend(
             name for name, character in characters.items()
             if name != event["actor"] and character.location == event["location"]
         )
-    elif event["type"] == "director":
+    elif event["type"] in {"director", "intervention"}:
         recipients.extend(
             name for name, character in characters.items()
             if character.location == event["location"]

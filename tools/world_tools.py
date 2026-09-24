@@ -220,11 +220,21 @@ def move_character(character: str, location: str) -> str:
 
     characters[character].location = location
     result = f"{character}从{old_location}移动到{location}。"
-    record_event(
+    event = record_event(
         "move", character, result,
         location=location, payload={"from": old_location, "to": location},
     )
+    _remember_departure_witnesses(event, old_location)
     return result
+
+
+def _remember_departure_witnesses(event: dict, origin: str) -> None:
+    from world.state import remember_event
+    event["perceived_by"] = list(dict.fromkeys(event["perceived_by"] + [
+        name for name, character in WORLD_STATE["characters"].items()
+        if character.location == origin
+    ]))
+    remember_event(event)
 
 
 def give_item(giver: str, receiver: str, item: str) -> str:
@@ -272,6 +282,86 @@ def rest_character(character: str) -> str:
     result = f"{character}休息后体力从{before}恢复到{current.energy}。"
     record_event("rest", character, result, location=current.location,
                  payload={"energy_before": before, "energy_after": current.energy})
+    return result
+
+
+def wait() -> str:
+    """NPC 明确选择等待，不修改世界也不产生事件。"""
+    return "等待"
+
+
+def world_action(action: str, actor: str, target: str | None = None,
+                 item: str | None = None, location: str | None = None,
+                 object_name: str | None = None) -> str:
+    """本地模式的确定性扩展动作；Web 模式由 Java 结算同一意图。"""
+    characters = WORLD_STATE["characters"]
+    if actor not in characters:
+        raise ValueError(f"角色不存在：{actor}")
+    person = characters[actor]
+    if person.status == "unconscious":
+        raise ValueError(f"{actor}失去行动能力")
+    origin = person.location
+    payload = {}
+    if action == "attack":
+        if target == actor or target not in characters:
+            raise ValueError("攻击目标无效")
+        other = characters[target]
+        if other.location != origin or other.status == "unconscious":
+            raise ValueError("攻击目标不在同一地点或已失去行动能力")
+        cost = 10
+        result = f"{actor}攻击了{target}，造成20点伤害。"
+    elif action == "use_item":
+        if not item or item not in person.items:
+            raise ValueError(f"{actor}不拥有物品：{item}")
+        if "药" not in item or person.hp >= 100:
+            raise ValueError("该物品没有可用规则，或生命值已满")
+        cost = 2
+        result = f"{actor}使用{item}，生命值恢复至{min(100, person.hp + 20)}。"
+    elif action == "flee":
+        if location not in WORLD_STATE["locations"] or location == origin:
+            raise ValueError("逃离地点无效")
+        cost = 7
+        payload = {"from": origin, "to": location}
+        result = f"{actor}从{origin}逃到了{location}。"
+    elif action == "follow":
+        if target == actor or target not in characters:
+            raise ValueError("跟随目标无效")
+        location = characters[target].location
+        latest = next((event for event in reversed(WORLD_STATE["events"])
+                       if event["type"] in {"move", "flee", "follow"} and event["actor"] == target), None)
+        if location == origin or latest is None or latest["payload"].get("from") != origin \
+                or latest["payload"].get("to") != location or actor not in latest.get("perceived_by", []):
+            raise ValueError("角色没有目击目标离开，无法跟随")
+        cost = 5
+        payload = {"from": origin, "to": location}
+        result = f"{actor}跟随{target}来到{location}。"
+    elif action == "interact":
+        if not object_name or object_name not in WORLD_STATE["inspectable_objects"].get(origin, {}):
+            raise ValueError("当前位置没有这个互动对象")
+        cost = 2
+        payload = {"object_name": object_name}
+        result = f"{actor}与{origin}的{object_name}互动。"
+    else:
+        raise ValueError(f"未知行动：{action}")
+    if person.energy < cost:
+        raise ValueError(f"{actor}体力不足，执行{action}需要{cost}点体力")
+    person.energy -= cost
+    if action == "attack":
+        other.hp = max(0, other.hp - 20)
+        other.status = "unconscious" if other.hp == 0 else "injured"
+        payload = {"damage": 20, "hp_after": other.hp}
+    elif action == "use_item":
+        person.items.remove(item)
+        person.hp = min(100, person.hp + 20)
+        if person.hp == 100:
+            person.status = "normal"
+        payload = {"item": item, "hp_after": person.hp}
+    elif action in {"flee", "follow"}:
+        person.location = location
+    event = record_event(action, actor, result, target=target,
+                         location=person.location, payload=payload)
+    if action in {"flee", "follow"}:
+        _remember_departure_witnesses(event, origin)
     return result
 
 
@@ -410,6 +500,23 @@ TOOL_SCHEMAS = [
             "required": ["character"],
         },
     },
+    {
+        "type": "function", "name": "wait",
+        "description": "本轮明确等待，不改变世界，不产生事件，也不再行动。",
+        "parameters": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "type": "function", "name": "world_action",
+        "description": "提出攻击、使用药物、逃跑、跟随或与场景对象互动的意图；由世界规则结算。",
+        "parameters": {"type": "object", "properties": {
+            "action": {"type": "string", "enum": ["attack", "use_item", "flee", "follow", "interact"]},
+            "actor": {"type": "string"},
+            "target": {"type": "string"},
+            "item": {"type": "string"},
+            "location": {"type": "string"},
+            "object_name": {"type": "string"},
+        }, "required": ["action", "actor"]},
+    },
 ]
 
 
@@ -423,6 +530,8 @@ NPC_ACTION_TOOL_SCHEMAS = [
 
 # 工具注册表负责把模型返回的工具名称映射到真正的 Python 函数。
 TOOL_FUNCTIONS = {
+    "wait": wait,
+    "world_action": world_action,
     "get_world_time": get_world_time,
     "get_character": get_character,
     "inspect": inspect,
@@ -435,6 +544,7 @@ TOOL_FUNCTIONS = {
 
 
 TOOL_ACTOR_ARGUMENTS = {
+    "world_action": "actor",
     "get_character": "character",
     "inspect": "character",
     "talk": "speaker",
@@ -465,6 +575,9 @@ def execute_tool(
         raise ValueError(
             f"{acting_character}不能通过{name}替其他角色行动"
         )
+
+    if name == "wait":
+        return wait()
 
     from tools.remote_world import active_backend
     backend = active_backend()

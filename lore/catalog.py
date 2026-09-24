@@ -30,7 +30,11 @@ def load_lore(path: Path = LORE_PATH) -> list[LoreEntry]:
 
 
 def visible_lore(character_name: str, entries: list[LoreEntry] | None = None) -> list[LoreEntry]:
-    source = load_lore() if entries is None else entries
+    if entries is None:
+        from world.state import WORLD_STATE
+        source = [LoreEntry(**item) for item in WORLD_STATE["lore"]]
+    else:
+        source = entries
     return [entry for entry in source if entry.visible_to(character_name)]
 
 

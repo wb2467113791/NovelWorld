@@ -5,6 +5,7 @@ from typing import Any, NotRequired, TypedDict
 from characters.model import Character
 from memory.retrieval import recent_memory_texts, retrieve_character_memory
 from lore.catalog import retrieve_lore
+from agent.perception import observe
 
 
 class AgentState(TypedDict):
@@ -19,6 +20,8 @@ class AgentState(TypedDict):
     # 本轮开始时按目标检索出的历史经历与调查事实快照。
     retrieved_context: list[str]
     lore_context: list[str]
+    # 本轮开始时按角色可见范围生成的现场观察。
+    perception: list[str]
     # 本轮工具返回的观察结果，供后续模型决策查看。
     observations: list[str]
     # 已执行的工具轮数，用来限制 Agent Loop 的最大轮数。
@@ -64,6 +67,7 @@ def create_initial_agent_state(
         "memories": recent_memory_texts(character),
         "retrieved_context": (index.retrieve_memory(character, query) if index else retrieve_character_memory(character, query)),
         "lore_context": (index.retrieve_lore(character.name, query) if index else retrieve_lore(character.name, query)),
+        "perception": observe(character),
         "observations": [],
         "step": 0,
         "pending_tool_calls": [],
