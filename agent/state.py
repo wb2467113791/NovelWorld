@@ -1,10 +1,9 @@
 """定义单个 NPC LangGraph 流程中传递的状态。"""
 
-from typing import Any, NotRequired, TypedDict
+from typing import Any, TypedDict
 
 from characters.model import Character
-from memory.retrieval import recent_memory_texts, retrieve_character_memory
-from lore.catalog import retrieve_lore
+from memory.retrieval import recent_memory_texts
 from agent.perception import observe
 
 
@@ -48,25 +47,22 @@ class ToolResult(ToolCall):
     """工具执行结果，保留调用信息以便回传给 Responses API。"""
 
     output: str
-    # 执行前的位置，供 Eval 区分在不同地点进行的调查。
-    location_before: NotRequired[str]
 
 
 def create_initial_agent_state(
     character: Character,
-    goal: str | None = None,
-    index: Any | None = None,
+    index: Any,
 ) -> AgentState:
     """根据角色当前信息创建一次全新的 Agent 流程状态。"""
-    active_goal = goal or character.goals[0]
+    active_goal = character.goals[0]
     query = f"{active_goal} {character.location}"
 
     return {
         "npc_id": character.name,
         "goal": active_goal,
         "memories": recent_memory_texts(character),
-        "retrieved_context": (index.retrieve_memory(character, query) if index else retrieve_character_memory(character, query)),
-        "lore_context": (index.retrieve_lore(character.name, query) if index else retrieve_lore(character.name, query)),
+        "retrieved_context": index.retrieve_memory(character, query),
+        "lore_context": index.retrieve_lore(character.name, query),
         "perception": observe(character),
         "observations": [],
         "step": 0,

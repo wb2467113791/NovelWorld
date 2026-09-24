@@ -21,7 +21,7 @@ class WorldMcpToolsTest {
         world.put("events", new ArrayList<>());
         world.put("characters", Map.of("甲", Map.of("location", "客栈"), "乙", Map.of("location", "县衙")));
         when(store.load("test-world")).thenReturn(world);
-        var tools = new WorldMcpTools(store, new WorldRules(new ObjectMapper()), new ObjectMapper());
+        var tools = new WorldMcpTools(store, new WorldRules(), new ObjectMapper());
 
         assertThrows(IllegalArgumentException.class,
                 () -> tools.injectWorldEvent("test-world", "王宫", "信", "内容"));
@@ -44,15 +44,14 @@ class WorldMcpToolsTest {
         world.put("events", new ArrayList<>());
         world.put("characters", Map.of("苏晚", Map.of("location", "晚风客栈")));
         when(store.load("test-world")).thenReturn(world);
-        var tools = new WorldMcpTools(store, new WorldRules(new ObjectMapper()), new ObjectMapper());
+        var tools = new WorldMcpTools(store, new WorldRules(), new ObjectMapper());
 
-        String json = tools.introduceWorldEvent("test-world", "stagnation", "晚风客栈", 3);
+        String json = tools.introduceNarrativeEvent("test-world", "stagnation", "晚风客栈", "匿名纸条", 3);
 
         assertTrue(json.contains("director"));
         assertEquals(1, ((List<?>) world.get("events")).size());
         assertFalse(((Map<?, ?>) ((Map<?, ?>) world.get("inspectable_objects")).get("晚风客栈")).isEmpty());
         assertEquals("晚风客栈", ((Map<?, ?>) ((Map<?, ?>) world.get("characters")).get("苏晚")).get("location"));
         verify(store).update(eq("test-world"), same(world));
-        verify(store).queueEvent(eq("test-world"), anyMap());
     }
 }

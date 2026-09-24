@@ -1,6 +1,5 @@
 package org.novelworld.world;
 
-import tools.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -14,9 +13,6 @@ public class WorldRules {
     private static final Map<String, Integer> ENERGY_COSTS = Map.of(
             "move_character", 5, "inspect", 3, "talk", 2,
             "give_item", 2, "update_relationship", 1);
-    private final ObjectMapper mapper;
-
-    public WorldRules(ObjectMapper mapper) { this.mapper = mapper; }
     @SuppressWarnings("unchecked")
     private static Map<String, Object> map(Object value) { return (Map<String, Object>) value; }
     @SuppressWarnings("unchecked")
@@ -59,13 +55,6 @@ public class WorldRules {
         Map<String, Object> payload;
         String type;
         switch (name) {
-            case "get_world_time": return (String) world.get("time");
-            case "get_character": {
-                var person = character(world, str(args, "character"));
-                return mapper.writeValueAsString(Map.of("name", person.get("name"), "role", person.get("role"),
-                        "location", person.get("location"), "energy", person.get("energy"),
-                        "relationships", person.get("relationships")));
-            }
             case "move_character": {
                 actor = str(args, "character"); location = str(args, "location");
                 if (!list(world.get("locations")).contains(location)) throw new IllegalArgumentException("地点不存在：" + location);

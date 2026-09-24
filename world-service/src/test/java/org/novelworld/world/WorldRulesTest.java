@@ -5,12 +5,11 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
-import tools.jackson.databind.ObjectMapper;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class WorldRulesTest {
-    private final WorldRules rules = new WorldRules(new ObjectMapper());
+    private final WorldRules rules = new WorldRules();
 
     private Map<String, Object> world() {
         var lin = new HashMap<String, Object>();

@@ -62,7 +62,7 @@ public class WorldTemplateService {
             characters.put(name, character);
         });
         world.put("characters", characters);
-        world.put("scheduler", Map.of("next_index", 0, "tick_count", 0));
+        world.put("scheduler", Map.of("tick_count", 0));
         store.insert(worldId, world);
         return worldId;
     }

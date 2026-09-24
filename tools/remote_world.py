@@ -1,4 +1,4 @@
-"""V2 模式：Python 通过 MCP 请求 Java 世界服务执行工具。"""
+"""Python Agent Runtime 通过 MCP 请求 Java 世界服务执行工具。"""
 
 import asyncio
 import json
@@ -109,7 +109,7 @@ class RemoteWorld:
         reconcile_event_memories()
 
     def introduce_event(self, category: str, location: str, tick_count: int,
-                        observation: str | None = None) -> dict:
+                        observation: str) -> dict:
         from world.state import WORLD_STATE, remember_event
         arguments = {
             "worldId": self.world_id,
@@ -117,12 +117,8 @@ class RemoteWorld:
             "location": location,
             "tickCount": tick_count,
         }
-        if observation is not None:
-            arguments["observation"] = observation
-        event = json.loads(self._call(
-            "introduce_narrative_event" if observation is not None else "introduce_world_event",
-            arguments,
-        ))
+        arguments["observation"] = observation
+        event = json.loads(self._call("introduce_narrative_event", arguments))
         self._refresh_business_state()
         remember_event(event)
         return event

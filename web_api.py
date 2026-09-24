@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from agent.director import Director
-from run_world import WorldSession, make_graph_decide_action
+from agent.session import WorldSession, make_graph_decide_action
 from world.persistence import DEFAULT_SAVE_PATH, load_world, restore_snapshot, save_world, snapshot_world
 from world.state import WORLD_STATE
 
@@ -56,7 +56,7 @@ class WorldController:
         return WorldSession(
             make_graph_decide_action(self._request_model, index),
             save_path=DEFAULT_SAVE_PATH, index=index, scheduler_state=scheduler_state,
-            director=Director(propose_event=self._propose_director_event), event_driven=True,
+            director=Director(propose_event=self._propose_director_event),
         )
 
     def initialize(self) -> None:

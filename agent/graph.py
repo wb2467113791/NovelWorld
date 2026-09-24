@@ -4,12 +4,11 @@ import json
 from collections.abc import Callable
 from typing import Any, Literal
 
-from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 
 from agent.state import AgentState, ToolCall, ToolResult
 from characters.prompt import build_action_prompt
-from tools.world_tools import READ_ONLY_TOOLS, execute_tool, unverified_inspection_claim
+from tools.world_tools import execute_tool, unverified_inspection_claim
 from world.state import WORLD_STATE
 
 
@@ -49,13 +48,11 @@ def execute_pending_tools(state: AgentState) -> dict:
     """执行模型提出的工具请求，并记录实际结果或可读错误。"""
     new_results: list[ToolResult] = []
     action_done = any(
-        result["name"] not in READ_ONLY_TOOLS
-        and not result["output"].startswith("工具错误：")
+        not result["output"].startswith("工具错误：")
         for result in state["tool_results"]
     )
 
     for call in state["pending_tool_calls"]:
-        location_before = WORLD_STATE["characters"][state["npc_id"]].location
         if action_done:
             output = "工具错误：本轮已完成一次行动，请在下一 Tick 再行动"
         else:
@@ -68,10 +65,10 @@ def execute_pending_tools(state: AgentState) -> dict:
                 )
             except (TypeError, ValueError) as error:
                 output = f"工具错误：{error}"
-            if call["name"] not in READ_ONLY_TOOLS and not output.startswith("工具错误："):
+            if not output.startswith("工具错误："):
                 action_done = True
 
-        new_results.append({**call, "output": output, "location_before": location_before})
+        new_results.append({**call, "output": output})
 
     return {
         "pending_tool_calls": [],
@@ -98,23 +95,18 @@ def route_after_model_decision(state: AgentState) -> Literal["tools", "finish"]:
 
 def build_agent_loop_graph(
     request_model: Callable[[list[dict[str, Any]], bool], Any],
-    max_tool_rounds: int = DEFAULT_MAX_TOOL_ROUNDS,
-    checkpointer: BaseCheckpointSaver | None = None,
 ):
-    """构建模型 → 工具 → 模型的循环，可选保存流程检查点。"""
-    if max_tool_rounds < 1:
-        raise ValueError("max_tool_rounds 必须至少为 1")
+    """构建模型 → 工具 → 模型的循环。"""
 
     def model_decision(state: AgentState) -> dict:
         conversation = state["conversation"] or [
             {"role": "user", "content": build_model_prompt(state)}
         ]
         action_done = any(
-            result["name"] not in READ_ONLY_TOOLS
-            and not result["output"].startswith("工具错误：")
+            not result["output"].startswith("工具错误：")
             for result in state["tool_results"]
         )
-        allow_tools = state["step"] < max_tool_rounds and not action_done
+        allow_tools = state["step"] < DEFAULT_MAX_TOOL_ROUNDS and not action_done
         response = request_model(conversation, allow_tools)
         tool_calls = _extract_tool_calls(response) if allow_tools else []
         call_messages = [
@@ -147,4 +139,4 @@ def build_agent_loop_graph(
         {"tools": "execute_pending_tools", "finish": END},
     )
     builder.add_edge("execute_pending_tools", "model_decision")
-    return builder.compile(checkpointer=checkpointer)
+    return builder.compile()

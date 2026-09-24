@@ -1,17 +1,14 @@
 """把角色可见信息整理成 Prompt。"""
 
 from characters.model import Character
-from memory.retrieval import recent_memory_texts, retrieve_character_memory
-from lore.catalog import retrieve_lore
-from typing import Any
 from world.state import WORLD_STATE
 
 
 def _build_character_context(
     character: Character,
-    memories: list[str] | None = None,
+    memories: list[str],
 ) -> str:
-    """组装对话模式和自主行动模式共用的角色可见信息。"""
+    """组装当前 NPC 的独立角色视角。"""
     goals = "；".join(character.goals)
     secrets = "；".join(character.secrets) or "暂无"
     known_facts = "；".join(character.known_facts) or "暂无"
@@ -20,8 +17,7 @@ def _build_character_context(
         f"对{target}的关系值为{value}"
         for target, value in character.relationships.items()
     ) or "暂无"
-    visible_memories = recent_memory_texts(character) if memories is None else memories
-    memory_text = "\n".join(f"- {memory}" for memory in visible_memories) or "- 暂无"
+    memory_text = "\n".join(f"- {memory}" for memory in memories) or "- 暂无"
 
     return f"""
 【角色设定】
@@ -40,81 +36,25 @@ def _build_character_context(
 """.strip()
 
 
-def build_character_prompt(
-    character: Character,
-    user_input: str,
-    index: Any | None = None,
-) -> str:
-    """对话模式：NPC 根据角色信息回答【用户】输入。"""
-    character_context = _build_character_context(character)
-    retrieved_context = (index.retrieve_memory(character, user_input) if index else retrieve_character_memory(character, user_input))
-    lore_context = (index.retrieve_lore(character.name, user_input) if index else retrieve_lore(character.name, user_input))
-    retrieved_text = "\n".join(f"- {item}" for item in retrieved_context) or "- 暂无"
-    lore_text = "\n".join(f"- {item}" for item in lore_context) or "- 暂无"
-
-    return f"""
-你正在进行角色扮演。
-
-{character_context}
-
-【检索到的旧记忆与调查事实】
-{retrieved_text}
-
-【世界设定】
-{lore_text}
-
-【用户】
-{user_input}
-
-【要求】
-请根据角色设定，以{character.name}的身份回答用户。
-角色知道自己的秘密，但不能主动轻易泄露。
-只能使用上面提供的信息，不要猜测或声称知道其他角色的秘密。
-要与其他角色真正交谈时，请调用 talk 工具；只有工具成功执行才算交谈发生。
-不要声称位置、关系或事件发生了未经工具执行的变化。
-不要告诉用户你是 AI 或语言模型。
-回答自然、简短，符合人物性格。
-"""
-
-
-def build_prompt_for_character(character_name: str, user_input: str, index: Any | None = None) -> str:
-    """从世界状态读取唯一的角色对象，构建独立视角 Prompt。"""
-    character = WORLD_STATE["characters"].get(character_name)
-    if character is None:
-        raise ValueError(f"角色不存在：{character_name}")
-
-    return build_character_prompt(character, user_input, index=index)
-
-
 def build_action_prompt(
     character: Character,
     *,
-    active_goal: str | None = None,
-    memories: list[str] | None = None,
-    retrieved_context: list[str] | None = None,
-    lore_context: list[str] | None = None,
-    observations: list[str] | None = None,
+    active_goal: str,
+    memories: list[str],
+    retrieved_context: list[str],
+    lore_context: list[str],
+    observations: list[str],
 ) -> str:
     """自主行动模式：NPC 没有用户输入，根据自身上下文决定下一步。"""
     character_context = _build_character_context(character, memories)
-    active_goal = active_goal or character.goals[0]
-    if retrieved_context is None:
-        retrieved_context = retrieve_character_memory(
-            character, f"{active_goal} {character.location}"
-        )
     retrieved_text = "\n".join(f"- {item}" for item in retrieved_context) or "- 暂无"
-    if lore_context is None:
-        lore_context = retrieve_lore(character.name, f"{active_goal} {character.location}")
     lore_text = "\n".join(f"- {item}" for item in lore_context) or "- 暂无"
     local_objects = "、".join(WORLD_STATE["inspectable_objects"].get(character.location, {})) or "暂无"
     active_goal_text = f"当前目标：{active_goal}\n"
     from skills.router import skill_for
     current_skill = skill_for(character, active_goal)
-    observation_text = "\n".join(f"- {item}" for item in observations or []) or "- 暂无"
-    observation_section = (
-        f"【本轮观察】\n{observation_text}\n"
-        if observations is not None else ""
-    )
+    observation_text = "\n".join(f"- {item}" for item in observations) or "- 暂无"
+    observation_section = f"【本轮观察】\n{observation_text}\n"
 
     return f"""
 你是正在 NovelWorld 中自主行动的角色。
@@ -148,12 +88,3 @@ def build_action_prompt(
 每个 Tick 最多成功执行一个行动。完成后根据工具结果结束本轮，不要重复调查没有变化的内容。
 最终回复请另起一行写“原因：……”，用一句简短的话说明你为何采取这一步；只依据你已知的信息和工具结果。
 """
-
-
-def build_action_prompt_for_character(character_name: str) -> str:
-    """从世界状态读取角色，为一次自主行动构建 Prompt。"""
-    character = WORLD_STATE["characters"].get(character_name)
-    if character is None:
-        raise ValueError(f"角色不存在：{character_name}")
-
-    return build_action_prompt(character)

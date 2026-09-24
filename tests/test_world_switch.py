@@ -6,7 +6,6 @@ from unittest.mock import Mock, patch
 
 from tools.remote_world import active_backend, use_backend
 from web_api import WorldController
-from lore.catalog import retrieve_lore
 from world.persistence import restore_snapshot, snapshot_world
 from world.state import WORLD_STATE
 
@@ -25,23 +24,23 @@ class WorldSwitchTest(unittest.TestCase):
     def test_switch_loads_independent_world_and_restores_old_on_failure(self):
         controller = WorldController()
         old_scheduler = Mock()
-        old_scheduler.snapshot.return_value = {"next_index": 1, "tick_count": 4}
+        old_scheduler.snapshot.return_value = {"tick_count": 4}
         old_session = SimpleNamespace(scheduler=old_scheduler, completed_ticks=4)
         controller.session = old_session
         old_backend = Mock()
         use_backend(old_backend)
 
-        old_snapshot = deepcopy(snapshot_world(scheduler_state={"next_index": 1, "tick_count": 4}))
+        old_snapshot = deepcopy(snapshot_world(scheduler_state={"tick_count": 4}))
         new_world = deepcopy(old_snapshot)
         new_world["world_id"] = "another_world"
-        new_world["scheduler"] = {"next_index": 0, "tick_count": 0}
+        new_world["scheduler"] = {"tick_count": 0}
         new_world["characters"]["林默"]["goals"] = ["寻找一封信"]
         new_world["lore"] = [{"id": "new-lore", "category": "地理",
                               "audience": "public", "text": "新的世界设定"}]
         new_backend = Mock()
         new_backend.load.return_value = new_world
         new_session = SimpleNamespace(scheduler=Mock(), completed_ticks=0)
-        new_session.scheduler.snapshot.return_value = {"next_index": 0, "tick_count": 0}
+        new_session.scheduler.snapshot.return_value = {"tick_count": 0}
 
         with patch("tools.remote_world.RemoteWorld", return_value=new_backend), \
                 patch("web_api.save_world"), \
@@ -51,7 +50,7 @@ class WorldSwitchTest(unittest.TestCase):
         self.assertEqual(WORLD_STATE["characters"]["林默"].goals, ["寻找一封信"])
         self.assertEqual(WORLD_STATE["lore"][0]["text"], "新的世界设定")
         self.assertIs(active_backend(), new_backend)
-        old_backend.save_agent_state.assert_called_once_with({"next_index": 1, "tick_count": 4})
+        old_backend.save_agent_state.assert_called_once_with({"tick_count": 4})
 
         old_remote = Mock()
         old_remote.load.return_value = old_snapshot
@@ -101,8 +100,7 @@ class WorldSwitchTest(unittest.TestCase):
         opening["lore"] = [{"id": "new-place", "category": "地理",
                             "audience": "public", "text": "南港有一座灯塔"}]
         restore_snapshot(opening)
-        self.assertTrue(retrieve_lore("林默", "南港灯塔"))
-        self.assertFalse(retrieve_lore("林默", "县衙卷宗"))
+        self.assertEqual([entry["text"] for entry in WORLD_STATE["lore"]], ["南港有一座灯塔"])
 
 
 if __name__ == "__main__":

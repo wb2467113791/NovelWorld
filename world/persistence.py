@@ -4,14 +4,13 @@ import json
 from copy import deepcopy
 from dataclasses import asdict, fields
 from pathlib import Path
-from uuid import uuid4
 
 from characters.model import Character
 from lore.catalog import load_lore
 from memory.episodic import EpisodicArchive, MemoryEntry
 from memory.semantic import SemanticFact, SemanticMemory
 from memory.short_term import ShortTermMemory
-from world.state import INITIAL_WORLD_STATE, WORLD_STATE
+from world.state import WORLD_STATE
 
 
 SAVE_VERSION = 1
@@ -90,7 +89,7 @@ def snapshot_world(*, scheduler_state: dict | None = None) -> dict:
             name: _character_to_dict(character)
             for name, character in WORLD_STATE["characters"].items()
         },
-        "scheduler": scheduler_state or {"next_index": 0, "tick_count": 0},
+        "scheduler": scheduler_state or {"tick_count": 0},
     }
 
 
@@ -130,10 +129,3 @@ def load_world(path: Path = DEFAULT_SAVE_PATH) -> dict:
     """先完整解析存档，再一次性替换当前世界；返回调度进度。"""
     snapshot = json.loads(Path(path).read_text(encoding="utf-8"))
     return restore_snapshot(snapshot)
-
-
-def start_new_world() -> None:
-    """显式新建世界时隔离旧存档和旧世界的检索索引。"""
-    WORLD_STATE.clear()
-    WORLD_STATE.update(deepcopy(INITIAL_WORLD_STATE))
-    WORLD_STATE["world_id"] = uuid4().hex

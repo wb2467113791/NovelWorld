@@ -1,6 +1,5 @@
 """保存 NovelWorld 当前的世界状态。"""
 
-from copy import deepcopy
 from dataclasses import asdict
 from uuid import uuid4
 
@@ -32,9 +31,6 @@ WORLD_STATE = {
     "events": [],
 }
 
-INITIAL_WORLD_STATE = deepcopy(WORLD_STATE)
-
-
 def advance_world_time(minutes: int) -> str:
     """把世界时间向前推进指定分钟，并返回新时间。"""
     if minutes < 1:
@@ -42,41 +38,10 @@ def advance_world_time(minutes: int) -> str:
 
     from tools.remote_world import active_backend
     backend = active_backend()
-    if backend is not None:
-        WORLD_STATE["time"] = backend.advance_time(minutes)
-        return WORLD_STATE["time"]
-
-    hour, minute = map(int, WORLD_STATE["time"].split(":"))
-    total_minutes = (hour * 60 + minute + minutes) % (24 * 60)
-    new_hour, new_minute = divmod(total_minutes, 60)
-    WORLD_STATE["time"] = f"{new_hour:02d}:{new_minute:02d}"
+    if backend is None:
+        raise RuntimeError("世界服务尚未连接")
+    WORLD_STATE["time"] = backend.advance_time(minutes)
     return WORLD_STATE["time"]
-
-
-def record_event(
-    event_type: str,
-    actor: str,
-    description: str,
-    *,
-    target: str | None = None,
-    location: str | None = None,
-    payload: dict | None = None,
-) -> Event:
-    """记录世界行为，并让相关角色保存这段经历。"""
-    event: Event = {
-        "id": uuid4().hex,
-        "timestamp": WORLD_STATE["time"],
-        "type": event_type,
-        "actor": actor,
-        "target": target,
-        "location": location or WORLD_STATE["characters"][actor].location,
-        "payload": payload if payload is not None else {},
-        "description": description,
-    }
-    event["perceived_by"] = recipients_for_event(event, WORLD_STATE["characters"])
-    WORLD_STATE["events"].append(event)
-    remember_event(event)
-    return event
 
 
 def remember_event(event: Event) -> None:

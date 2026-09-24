@@ -70,11 +70,6 @@ public class WorldStore {
         cache(worldId, snapshot);
     }
 
-    public void queueEvent(String worldId, Map<String, Object> event) {
-        try { redis.opsForList().rightPush("world:" + worldId + ":events", json(event)); }
-        catch (RuntimeException ignored) { /* Event is durably stored in MySQL snapshot. */ }
-    }
-
     private void cache(String worldId, Map<String, Object> snapshot) {
         try { redis.opsForValue().set("world:" + worldId, json(snapshot)); }
         catch (RuntimeException ignored) { /* Cache is rebuilt from MySQL. */ }

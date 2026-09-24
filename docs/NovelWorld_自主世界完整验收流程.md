@@ -23,7 +23,7 @@
    .\.venv\Scripts\python.exe -m uvicorn web_api:app --host 127.0.0.1 --port 8001
    ```
 
-   等待终端显示 `Application startup complete`，并保持终端运行。只启动一个 Python Runtime，且不要同时运行 `run_world.py --v2`。此时尚未执行 Tick，也不会调用模型。
+   等待终端显示 `Application startup complete`，并保持终端运行。只启动一个 Python Runtime，避免两个进程同时推进同一世界。此时尚未执行 Tick，也不会调用模型。
 6. 在第三个终端运行 `Invoke-RestMethod http://127.0.0.1:8001/internal/status` 和 `Invoke-RestMethod http://127.0.0.1:8080/api/world`；两条命令都应返回同一个 `world_id`。再打开 `http://127.0.0.1:8080`。页面应显示世界 ID、时间、角色状态，连接状态为“实时连接中”。浏览器只访问 Spring Boot 的 8080 端口。
 
 若页面提示“运行中断：Service Unavailable”或 `/api/world` 返回 503，先检查第 5 步的 Python 终端是否仍在运行，以及 `8001/internal/status` 是否可访问。8080 的 Java 服务可以正常显示页面，但缺少 8001 的 Runtime 时无法查询调度状态。若两个端口都正常，查看 Python 终端的具体错误信息；不要仅凭 Maven 最后的 `exit code: 1` 判断原因。
@@ -61,10 +61,10 @@
 2. 在同一个终端运行以下**无模型费用**的调度测试：
 
    ```powershell
-   .\.venv\Scripts\python.exe -m unittest tests.test_tick.WorldTickSchedulerTest.test_event_scheduler_waits_without_loop_and_wakes_only_witness tests.test_tick.WorldTickSchedulerTest.test_new_event_takes_priority_over_opening_goal_queue tests.test_tick.WorldTickSchedulerTest.test_handled_event_is_not_replayed_after_restart -v
+   .\.venv\Scripts\python.exe -m unittest tests.test_current_runtime.CurrentRuntimeTest.test_event_scheduler_wakes_only_witness_and_wait_does_not_loop tests.test_current_runtime.CurrentRuntimeTest.test_snapshot_replay_preserves_original_witnesses -v
    ```
 
-   预期三个测试均为 `ok`。它们分别确认：开局行动机会耗尽后，等待不生成事件循环；新事件只唤醒目击者并优先于开局队列；重启调度器不会重复处理已消费的事件。真实 NPC 是否选择 `wait` 由模型决定，不需要为了验收反复付费碰运气。
+   预期两个测试均为 `ok`。它们确认：开局行动机会耗尽后，等待不生成事件循环；新事件只唤醒当时的知情者；恢复事件记忆不会重复补写或泄漏给后来到场的人。真实 NPC 是否选择 `wait` 由模型决定，不需要为了验收反复付费碰运气。
 3. 还可以验证**人为事件**的非法地点被 Java 拒绝：记录 `$count = (Invoke-RestMethod http://127.0.0.1:8080/api/world).event_count`，然后运行下列命令。预期请求报 `400`；再次查询 `event_count` 仍等于 `$count`。
 
    ```powershell
@@ -78,10 +78,10 @@
 1. 先用确定性测试确认 Director 的触发边界，在项目根目录运行：
 
    ```powershell
-   .\.venv\Scripts\python.exe -m unittest tests.test_v3_director_skills.V3DirectorAndSkillTests.test_director_proposal_runs_only_when_rule_triggers tests.test_v3_director_skills.V3DirectorAndSkillTests.test_director_event_reaches_only_characters_at_location -v
+   .\.venv\Scripts\python.exe -m unittest tests.test_current_runtime.CurrentRuntimeTest.test_director_only_proposes_after_rule_and_never_moves_npc -v
    ```
 
-   预期两个测试均为 `ok`：规则未触发时不请求提议；触发后只添加发生地的可调查环境线索，不替 NPC 写台词。真实运行时至少到第 3 Tick 才可能触发，且取决于事件历史；**没有满足条件时不出现 Director 事件也是正确结果**。若时间线出现“世界事件”，用 `$page = Invoke-RestMethod 'http://127.0.0.1:8080/api/world-events?after=0'` 查找 `type` 为 `director` 的事件，核对 `payload.object_name`、`location`、`perceived_by`，不要期待固定文案。
+   预期该测试为 `ok`：规则未触发时不请求提议；触发后只向世界服务提出环境线索，不替 NPC 移动。真实运行时至少到第 3 Tick 才可能触发，且取决于事件历史；**没有满足条件时不出现 Director 事件也是正确结果**。若时间线出现“世界事件”，用 `$page = Invoke-RestMethod 'http://127.0.0.1:8080/api/world-events?after=0'` 查找 `type` 为 `director` 的事件，核对 `payload.object_name`、`location`、`perceived_by`，不要期待固定文案。
 2. 在页面把“间隔”滑块设为 `2s`，点“运行 10 Tick”，看到“世界状态”变为“运行中”后点“Ⅱ 暂停”。等待它显示“已暂停”，记下世界时间和 Tick 数；再等约 5 秒并刷新页面，两个值应保持不变。暂停会等待正在进行的 Tick 结束，所以点暂停后 Tick 数可能再增加 1。
 3. 用第三个终端记录暂停后的状态：
 

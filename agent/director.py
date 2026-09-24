@@ -1,6 +1,8 @@
 """以可解释的规则检测叙事停滞，并只向世界注入环境事件。"""
 
-from world.state import WORLD_STATE, record_event
+from collections.abc import Callable
+
+from world.state import WORLD_STATE
 
 
 DIRECTOR_COOLDOWN = 6
@@ -12,7 +14,7 @@ DEFAULT_OBSERVATIONS = {
 
 
 class Director:
-    def __init__(self, propose_event=None) -> None:
+    def __init__(self, propose_event: Callable[[str, str], str]) -> None:
         self.propose_event = propose_event
         prior = next((event for event in reversed(WORLD_STATE["events"])
                       if event["type"] == "director"), None)
@@ -43,26 +45,16 @@ class Director:
             return None
         category, location = selected
         observation = DEFAULT_OBSERVATIONS[category]
-        if self.propose_event is not None:
-            try:
-                proposed = self.propose_event(category, location)
-                if isinstance(proposed, str) and proposed.strip():
-                    observation = proposed.strip()[:1000]
-            except Exception as error:
-                print(f"Director 模型请求失败，改用固定环境线索：{error}")
+        try:
+            proposed = self.propose_event(category, location)
+            if isinstance(proposed, str) and proposed.strip():
+                observation = proposed.strip()[:1000]
+        except Exception as error:
+            print(f"Director 模型请求失败，改用固定环境线索：{error}")
         from tools.remote_world import active_backend
         backend = active_backend()
-        if backend is not None:
-            event = backend.introduce_event(category, location, tick_count,
-                                            observation if self.propose_event is not None else None)
-        else:
-            object_name = f"新线索{len(WORLD_STATE['events']) + 1}"
-            WORLD_STATE["inspectable_objects"].setdefault(location, {})[object_name] = observation
-            event = record_event(
-                "director", "世界", f"{location}出现了可调查的{object_name}。{observation}",
-                location=location,
-                payload={"category": category, "object_name": object_name,
-                         "observation": observation, "tick_count": tick_count},
-            )
+        if backend is None:
+            raise RuntimeError("Director 需要已连接的世界服务")
+        event = backend.introduce_event(category, location, tick_count, observation)
         self.last_event_tick = tick_count
         return event

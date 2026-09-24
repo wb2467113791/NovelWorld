@@ -79,7 +79,6 @@ public class WorldMcpTools {
         event.put("description", location + "出现了可调查的" + objectName + "。" + observation);
         ((List<Object>) world.get("events")).add(event);
         store.update(worldId, world);
-        store.queueEvent(worldId, event);
         return event;
     }
 
@@ -91,7 +90,7 @@ public class WorldMcpTools {
             @McpToolParam(description = "当前行动角色") String actingCharacter) {
         var world = store.load(worldId);
         var arguments = parse(argumentsJson);
-        String actorKey = Map.of("get_character", "character", "inspect", "character", "talk", "speaker",
+        String actorKey = Map.of("inspect", "character", "talk", "speaker",
                 "update_relationship", "character", "move_character", "character", "give_item", "giver",
                 "rest_character", "character", "world_action", "actor").get(name);
         if (actorKey != null && !actingCharacter.equals(arguments.get(actorKey)))
@@ -102,7 +101,6 @@ public class WorldMcpTools {
         if (((List<?>) world.get("events")).size() != before) {
             event = ((List<?>) world.get("events")).get(before);
             store.update(worldId, world);
-            store.queueEvent(worldId, (Map<String, Object>) event);
         }
         return json(Map.of("output", output, "event", event == null ? Map.of() : event, "revision", world.get("revision")));
     }
@@ -137,23 +135,6 @@ public class WorldMcpTools {
         return String.valueOf(world.get("revision"));
     }
 
-    @McpTool(name = "introduce_world_event", description = "Director 只添加可调查的世界事件，不操纵 NPC 行为")
-    @SuppressWarnings("unchecked")
-    public synchronized String introduceWorldEvent(
-            @McpToolParam(description = "世界 ID") String worldId,
-            @McpToolParam(description = "stagnation、participation 或 conflict") String category,
-            @McpToolParam(description = "事件发生的合法地点") String location,
-            @McpToolParam(description = "触发事件的 Tick 数") int tickCount) {
-        var observations = Map.of(
-                "stagnation", "一张匿名纸条提到失踪案当晚的客栈后门；内容尚待核实。",
-                "participation", "有人提及近期去向不明的货箱；传闻尚待核实。",
-                "conflict", "县衙与商会互相质疑的告示被贴出；双方说法尚待核实。"
-        );
-        String observation = observations.get(category);
-        if (observation == null) throw new IllegalArgumentException("未知 Director 事件类别");
-        return introduceNarrativeEvent(worldId, category, location, observation, tickCount);
-    }
-
     @McpTool(name = "introduce_narrative_event", description = "由规则触发的 Director 提议环境线索，Java 校验并结算")
     @SuppressWarnings("unchecked")
     public synchronized String introduceNarrativeEvent(
@@ -184,7 +165,6 @@ public class WorldMcpTools {
         event.put("description", location + "出现了可调查的" + objectName + "。" + observation);
         ((List<Object>) world.get("events")).add(event);
         store.update(worldId, world);
-        store.queueEvent(worldId, event);
         return json(event);
     }
 

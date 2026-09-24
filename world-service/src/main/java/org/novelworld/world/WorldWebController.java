@@ -121,20 +121,11 @@ public class WorldWebController {
         var emitter = new SseEmitter(0L);
         CompletableFuture.runAsync(() -> {
             String previous = null;
-            String previousWorld = null;
-            int eventCursor = 0;
             int idleSeconds = 0;
             try {
                 while (true) {
                     var status = runtime.status();
                     var saved = savedWorld(status);
-                    String worldId = (String) saved.get("world_id");
-                    var journal = list(saved.get("events"));
-                    if (!worldId.equals(previousWorld)) {
-                        previousWorld = worldId;
-                        eventCursor = Math.max(0, journal.size() - 80);
-                        previous = null;
-                    }
                     String json = mapper.writeValueAsString(publicWorld(saved, status));
                     if (!json.equals(previous)) {
                         emitter.send(SseEmitter.event().name("state").data(json));
@@ -143,11 +134,6 @@ public class WorldWebController {
                     } else if (++idleSeconds >= 15) {
                         emitter.send(SseEmitter.event().comment("keepalive"));
                         idleSeconds = 0;
-                    }
-                    while (eventCursor < journal.size()) {
-                        emitter.send(SseEmitter.event().name("world-event")
-                                .id(worldId + ":" + eventCursor).data(mapper.writeValueAsString(journal.get(eventCursor))));
-                        eventCursor++;
                     }
                     Thread.sleep(1000);
                 }
