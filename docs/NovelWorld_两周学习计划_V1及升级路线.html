@@ -128,7 +128,7 @@ footer{margin-top:60px;color:var(--muted);font-size:13px}
                     Spring Boot
         ┌──────────────────┼───────────────────┐
         │ World / NPC / Event / Save / Auth   │
-        │ MySQL / Redis / MCP Server          │
+        │ MySQL / MCP Server                  │
         └──────────────────┬───────────────────┘
                            │ MCP / HTTP
                            ▼
@@ -155,7 +155,7 @@ footer{margin-top:60px;color:var(--muted);font-size:13px}
 <table>
 <tr><th>必须做</th><th>两周内先不做</th></tr>
 <tr><td>3 个 NPC、Goal、短期 Memory、独立 Knowledge、Tool Calling、World State、多 Agent Tick、基础剧情日志</td>
-<td>MCP、复杂 RAG、向量库、Redis、MySQL、完整 Web UI、复杂 Director、账号系统、K8s、微服务</td></tr>
+<td>MCP、复杂 RAG、向量库、MySQL、完整 Web UI、复杂 Director、账号系统、K8s、微服务</td></tr>
 </table>
 <p><b>V1 成功标准：</b>启动世界后，即使用户不输入，三个角色也会根据自身目标和已知信息采取行动，并让关系、位置、事件和记忆持续变化。</p>
 </section>
@@ -352,11 +352,11 @@ NPC > 我是晚风客栈老板苏晚……</pre>
 </div>
 
 <div class="card phase">
-<h3>V2｜Spring Boot + MySQL / Redis + MCP（约 2 周）</h3>
+<h3>V2｜Spring Boot + MySQL + MCP（约 2 周）</h3>
 <p><b>真实问题：</b>Python Agent Runtime 不该直接承担全部业务和持久化。</p>
 <ul>
 <li>Spring Boot：World / NPC / Event / Save / Inventory / Relationship。</li>
-<li>MySQL：持久化；Redis：World State、session、event queue、热状态。</li>
+<li>MySQL：保存权威世界快照、事件和调度进度。</li>
 <li>Java 侧实现 MCP Server，暴露地图、人物、物品、时间、事件能力。</li>
 <li>Python 侧 MCP Client 调用世界能力。</li>
 </ul>
@@ -366,7 +366,7 @@ NPC > 我是晚风客栈老板苏晚……</pre>
         │
 Spring Boot MCP Server
         │
- MySQL / Redis</pre>
+      MySQL</pre>
 </div>
 
 <div class="card phase">
@@ -420,7 +420,7 @@ Spring Boot MCP Server
 <tr><td>Vector DB</td><td>❌</td><td>V1.5</td><td>Memory / Lore 检索</td></tr>
 <tr><td>MCP</td><td>❌</td><td>V2</td><td>Agent 与外部世界能力标准化解耦</td></tr>
 <tr><td>Spring Boot</td><td>可选</td><td>V2</td><td>业务、持久化、Java 工程能力</td></tr>
-<tr><td>MySQL / Redis</td><td>❌</td><td>V2</td><td>持久化与热状态</td></tr>
+<tr><td>MySQL</td><td>❌</td><td>V2</td><td>持久化世界状态</td></tr>
 <tr><td>Agent Skills</td><td>❌</td><td>V2.5</td><td>动态加载程序性能力</td></tr>
 <tr><td>SSE / WebSocket</td><td>❌</td><td>V3</td><td>实时展示世界运行</td></tr>
 <tr><td>Eval</td><td>基础</td><td>系统化</td><td>证明系统真的更好</td></tr>
@@ -446,16 +446,18 @@ Spring Boot MCP Server
 </section>
 
 <section id="resume" class="section">
-<h2>9. 最终简历写法</h2>
+<h2>9. 当前项目简历写法</h2>
 <div class="card">
-<h3>NovelWorld｜基于 Multi-Agent 与长期记忆的动态叙事世界引擎</h3>
+<h3>NovelWorld｜自主叙事多 Agent 世界引擎（个人项目）</h3>
+<p><b>技术栈：</b>Java、Spring Boot、Python、LangGraph、React、MySQL、Chroma、MCP、SSE</p>
 <ul>
-<li>基于 LangGraph 构建多智能体运行时，为 NPC 建立独立 Goal、Knowledge、Memory 与 Relationship State，实现角色基于世界事件自主规划、工具调用和状态更新。</li>
-<li>设计分层长期记忆与双路检索体系，将 Episodic Memory 与 World Lore 分离，通过 Retrieval 控制上下文长度并减少角色知识泄漏。</li>
-<li>基于 Spring Boot 构建世界状态服务，并通过 MCP Server 暴露地图、人物、物品和事件等标准化能力，实现 Python Agent Runtime 与 Java 业务层解耦。</li>
-<li>设计 Agent Skills 动态加载机制和 World Rule Guardrail，并通过 Knowledge Leakage、Goal Consistency、Invalid Action 等指标构建 Agent Eval。</li>
+<li>设计由 NPC 自主推动的持久叙事世界：角色依据各自目标、知识与记忆行动；用户通过 React 页面观察时间线、推进 Tick 和投放事件，支持编辑开局及多世界独立存档。</li>
+<li>以 Spring Boot 作为网页入口和权威世界服务；Python LangGraph Agent 通过 MCP 请求 Java 世界工具，Java 规则服务校验并结算行动、记录事件，将世界快照持久化到 MySQL，避免仅凭模型文本修改状态。</li>
+<li>实现基于 Chroma 的角色视角 RAG：使用独立文本向量模型索引历史记忆与可见设定，按记忆归属和设定可见范围检索，再将少量结果加入 NPC Prompt，避免提供完整世界信息。</li>
+<li>实现可跨 Tick 推进的调查 Skill：根据角色已知线索、本人调查事实及已提交事件规划移动、调查与询问步骤；仅在对应工具行动成功后续排角色，防止重复调查。</li>
+<li>实现事件驱动调度，按事件发生时的知情者唤醒 NPC；Director 在规则判定剧情停滞时提议环境线索，由 Java 校验后写入世界；通过 SSE 向页面推送世界状态与时间线。</li>
 </ul>
-<p class="small">只有真实做完对应版本后，再把对应条目写进简历。</p>
+<p class="small">以上描述以当前实现为准；模型决策、程序调度和 Java 规则结算分别承担不同职责。</p>
 </div>
 </section>
 

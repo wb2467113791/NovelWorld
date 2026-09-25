@@ -47,6 +47,8 @@ public class WorldTemplateService {
         world.put("locations", copy(template.get("locations")));
         world.put("inspectables", copy(template.get("inspectables")));
         world.put("inspectable_objects", copy(template.get("inspectable_objects")));
+        world.put("concealable_objects", copy(template.getOrDefault("concealable_objects", Map.of())));
+        world.put("concealed_objects", new LinkedHashMap<String, Object>());
         world.put("lore", copy(template.getOrDefault("lore", List.of())));
         world.put("events", new ArrayList<>());
         var characters = new LinkedHashMap<String, Object>();
@@ -92,6 +94,16 @@ public class WorldTemplateService {
             for (var object : map(place.getValue(), "地点线索 " + place.getKey()).entrySet()) {
                 text(object.getKey(), "线索名称");
                 text(object.getValue(), "线索内容");
+            }
+        }
+        var concealable = map(template.getOrDefault("concealable_objects", Map.of()), "concealable_objects");
+        for (var place : concealable.entrySet()) {
+            if (!locationSet.contains(place.getKey())) throw new IllegalArgumentException("可藏匿线索地点不存在");
+            var available = map(objects.getOrDefault(place.getKey(), Map.of()), "地点线索 " + place.getKey());
+            for (String objectName : textList(place.getValue(), "可藏匿线索", false)) {
+                if (!available.containsKey(objectName)) throw new IllegalArgumentException("可藏匿线索不存在：" + objectName);
+                if (available.containsKey(objectName + "被移动的痕迹"))
+                    throw new IllegalArgumentException("可藏匿线索与痕迹名称冲突：" + objectName);
             }
         }
 

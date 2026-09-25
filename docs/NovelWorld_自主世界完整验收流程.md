@@ -5,7 +5,7 @@
 ## 1. 启动前检查
 
 1. 在项目根目录运行 `git status --short`，确认自己的修改仍在；不要删除 `data/`、`.env` 或已有数据库。
-2. 启动 Docker Desktop 后运行 `docker compose up -d` 和 `docker compose ps`，确认 MySQL 与 Redis 正常。项目使用本机端口 3307/6380，避免误连已有 MySQL/Redis。Java 使用 JDK 17。
+2. 启动 Docker Desktop 后运行 `docker compose up -d` 和 `docker compose ps`，确认 MySQL 正常。项目使用本机端口 3307，避免误连已有 MySQL。Java 使用 JDK 17。
 3. 在 `web/` 执行 `npm install`、`npm run build`。
 4. 在**项目根目录**的 PowerShell 终端先确认 Maven 使用 JDK 17，再显式指定 `pom.xml` 与插件坐标启动 Spring Boot：
 
@@ -91,7 +91,7 @@
    $savedIds = @($saved.events | ForEach-Object id)
    ```
 
-   在**运行 Python Runtime 的终端**按 `Ctrl+C`，只停止 8001；保持 Java、MySQL、Redis 运行。此时页面可能暂时报 503。按第 1 节第 5 步的命令重新启动 Python，等 `Application startup complete`，刷新页面。然后运行：
+   在**运行 Python Runtime 的终端**按 `Ctrl+C`，只停止 8001；保持 Java、MySQL 运行。此时页面可能暂时报 503。按第 1 节第 5 步的命令重新启动 Python，等 `Application startup complete`，刷新页面。然后运行：
 
    ```powershell
    $restored = Invoke-RestMethod http://127.0.0.1:8080/api/world

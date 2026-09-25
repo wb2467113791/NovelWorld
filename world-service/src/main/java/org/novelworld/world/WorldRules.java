@@ -3,6 +3,7 @@ package org.novelworld.world;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.LinkedHashMap;
 import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
 
@@ -12,7 +13,8 @@ public class WorldRules {
     private static final Map<String, String> OBJECT_ALIASES = Map.of("住客登记簿", "登记簿", "柴房门锁", "柴房");
     private static final Map<String, Integer> ENERGY_COSTS = Map.of(
             "move_character", 5, "inspect", 3, "talk", 2,
-            "give_item", 2, "update_relationship", 1);
+            "give_item", 2, "update_relationship", 1,
+            "conceal_clue", 3, "recover_clue", 3);
     @SuppressWarnings("unchecked")
     private static Map<String, Object> map(Object value) { return (Map<String, Object>) value; }
     @SuppressWarnings("unchecked")
@@ -40,7 +42,8 @@ public class WorldRules {
         if (characters.containsKey(actor)) recipients.add(actor);
         if (("talk".equals(type) || "give_item".equals(type)) && target != null && characters.containsKey(target))
             recipients.add(target);
-        if (List.of("move", "flee", "follow", "attack", "interact", "director").contains(type)) {
+        if (List.of("move", "flee", "follow", "attack", "interact", "director",
+                "conceal", "recover").contains(type)) {
             for (var entry : characters.entrySet()) {
                 if (!recipients.contains(entry.getKey()) && location.equals(map(entry.getValue()).get("location")))
                     recipients.add(entry.getKey());
@@ -128,8 +131,19 @@ public class WorldRules {
                 Object observation = object == null ? map(world.get("inspectables")).get(location)
                         : map(map(world.get("inspectable_objects")).getOrDefault(location, Map.of())).get(object);
                 if (observation == null) throw new IllegalArgumentException("地点或对象无法调查");
-                for (Object raw : list(world.get("events"))) {
-                    var event = map(raw); var previous = map(event.get("payload"));
+                var history = list(world.get("events"));
+                int latestConceal = -1;
+                if (object instanceof String traceName && traceName.endsWith("被移动的痕迹")) {
+                    String originalName = traceName.substring(0, traceName.length() - "被移动的痕迹".length());
+                    for (int index = 0; index < history.size(); index++) {
+                        var event = map(history.get(index));
+                        if ("conceal".equals(event.get("type")) && location.equals(event.get("location"))
+                                && originalName.equals(map(event.get("payload")).get("object_name")))
+                            latestConceal = index;
+                    }
+                }
+                for (int index = latestConceal + 1; index < history.size(); index++) {
+                    var event = map(history.get(index)); var previous = map(event.get("payload"));
                     if ("inspect".equals(event.get("type")) && actor.equals(event.get("actor"))
                             && location.equals(event.get("location")) && java.util.Objects.equals(object, previous.get("object_name"))
                             && observation.equals(previous.get("observation"))) throw new IllegalArgumentException("已调查过，目前没有新发现");
@@ -139,6 +153,67 @@ public class WorldRules {
                 type = "inspect"; target = null;
                 payload = new java.util.HashMap<>(); payload.put("observation", observation);
                 if (object != null) payload.put("object_name", object);
+                break;
+            }
+            case "conceal_clue": {
+                actor = str(args, "character"); String objectName = str(args, "object_name");
+                var person = character(world, actor);
+                location = (String) person.get("location");
+                var allowed = map(world.getOrDefault("concealable_objects", Map.of()));
+                Object names = allowed.getOrDefault(location, List.of());
+                if (!(names instanceof List<?>) || !((List<?>) names).contains(objectName))
+                    throw new IllegalArgumentException("该对象不能藏匿");
+                var place = map(map(world.get("inspectable_objects")).getOrDefault(location, Map.of()));
+                Object observation = place.get(objectName);
+                if (!(observation instanceof String)) throw new IllegalArgumentException("线索已不在现场");
+                String traceName = objectName + "被移动的痕迹";
+                if (place.containsKey(traceName)) throw new IllegalArgumentException("现场已有同名痕迹");
+                requireEnergy(person, actor, name);
+                var hidden = map(world.computeIfAbsent("concealed_objects", ignored -> new LinkedHashMap<String, Object>()));
+                var hiddenPlace = map(hidden.computeIfAbsent(location, ignored -> new LinkedHashMap<String, Object>()));
+                if (hiddenPlace.containsKey(objectName)) throw new IllegalArgumentException("线索已被藏匿");
+                hiddenPlace.put(objectName, Map.of("observation", observation, "trace_name", traceName,
+                        "concealed_by", actor, "concealed_at_event_count", list(world.get("events")).size()));
+                place.remove(objectName);
+                place.put(traceName, "此处有物件被移走的痕迹，原线索内容无法直接查看。");
+                target = null; type = "conceal";
+                payload = Map.of("object_name", objectName, "trace_name", traceName);
+                result = actor + "藏起了" + location + "的" + objectName + "，现场留下异常痕迹。";
+                break;
+            }
+            case "recover_clue": {
+                actor = str(args, "character"); String objectName = str(args, "object_name");
+                var person = character(world, actor);
+                location = (String) person.get("location");
+                var hidden = map(world.getOrDefault("concealed_objects", Map.of()));
+                var hiddenPlace = map(hidden.getOrDefault(location, Map.of()));
+                Object raw = hiddenPlace.get(objectName);
+                if (!(raw instanceof Map<?, ?>)) throw new IllegalArgumentException("现场没有可找回的线索");
+                var clue = map(raw);
+                String traceName = (String) clue.get("trace_name");
+                var place = map(map(world.get("inspectable_objects")).getOrDefault(location, Map.of()));
+                if (!place.containsKey(traceName) || place.containsKey(objectName))
+                    throw new IllegalArgumentException("线索状态已变化");
+                int concealedAt = ((Number) clue.get("concealed_at_event_count")).intValue();
+                boolean examined = false;
+                var events = list(world.get("events"));
+                for (int index = concealedAt + 1; index < events.size(); index++) {
+                    var event = map(events.get(index));
+                    if ("inspect".equals(event.get("type")) && actor.equals(event.get("actor"))
+                            && location.equals(event.get("location"))
+                            && traceName.equals(map(event.get("payload")).get("object_name"))) {
+                        examined = true;
+                        break;
+                    }
+                }
+                if (!examined) throw new IllegalArgumentException("需先亲自调查异常痕迹");
+                requireEnergy(person, actor, name);
+                place.remove(traceName);
+                place.put(objectName, clue.get("observation"));
+                hiddenPlace.remove(objectName);
+                target = null; type = "recover";
+                payload = Map.of("object_name", objectName);
+                result = actor + "循着痕迹找回了" + location + "的" + objectName + "。";
                 break;
             }
             case "rest_character": {

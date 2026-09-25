@@ -5,7 +5,6 @@ import java.util.Map;
 import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import tools.jackson.databind.ObjectMapper;
@@ -26,7 +25,7 @@ class WorldTemplateServiceTest {
         source.setURL("jdbc:h2:mem:opening-test;DB_CLOSE_DELAY=-1");
         var jdbc = new JdbcTemplate(source);
         jdbc.execute("CREATE TABLE IF NOT EXISTS world_saves (world_id VARCHAR(64) PRIMARY KEY, snapshot CLOB NOT NULL, revision BIGINT NOT NULL)");
-        var store = new WorldStore(jdbc, mock(StringRedisTemplate.class), new ObjectMapper());
+        var store = new WorldStore(jdbc, new ObjectMapper());
         var service = new WorldTemplateService(store, new ObjectMapper());
         var original = service.defaultTemplate();
         var changed = service.defaultTemplate();
@@ -45,6 +44,27 @@ class WorldTemplateServiceTest {
         store.update(firstId, firstWorld);
         assertEquals(1, store.load(firstId).get("revision"));
         assertEquals("08:00", store.load(secondId).get("time"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void concealedClueStaysInItsOwnWorld() {
+        var source = new JdbcDataSource();
+        source.setURL("jdbc:h2:mem:conceal-isolation;DB_CLOSE_DELAY=-1");
+        var jdbc = new JdbcTemplate(source);
+        jdbc.execute("CREATE TABLE IF NOT EXISTS world_saves (world_id VARCHAR(64) PRIMARY KEY, snapshot CLOB NOT NULL, revision BIGINT NOT NULL)");
+        var store = new WorldStore(jdbc, new ObjectMapper());
+        var service = new WorldTemplateService(store, new ObjectMapper());
+        String firstId = service.createWorld(service.defaultTemplate());
+        String secondId = service.createWorld(service.defaultTemplate());
+        var first = store.load(firstId);
+        new WorldRules().apply(first, "conceal_clue", Map.of("character", "苏晚", "object_name", "住客登记簿"));
+        store.update(firstId, first);
+        assertFalse(((Map<?, ?>) ((Map<?, ?>) store.load(firstId).get("inspectable_objects"))
+                .get("晚风客栈")).containsKey("住客登记簿"));
+        assertTrue(((Map<?, ?>) ((Map<?, ?>) store.load(secondId).get("inspectable_objects"))
+                .get("晚风客栈")).containsKey("住客登记簿"));
+        assertTrue(((Map<?, ?>) store.load(secondId).get("concealed_objects")).isEmpty());
     }
 
     @Test
@@ -72,6 +92,9 @@ class WorldTemplateServiceTest {
         assertEquals(java.util.List.of("寻找遗失的信"),
                 ((Map<?, ?>) ((Map<?, ?>) newWorld.get("characters")).get("林默")).get("goals"));
         assertTrue(((java.util.List<?>) newWorld.get("events")).isEmpty());
+        assertEquals(java.util.List.of("住客登记簿"),
+                ((Map<?, ?>) newWorld.get("concealable_objects")).get("晚风客栈"));
+        assertTrue(((Map<?, ?>) newWorld.get("concealed_objects")).isEmpty());
         assertFalse(((java.util.List<?>) newWorld.get("lore")).isEmpty());
         assertTrue(((java.util.List<?>) ((Map<?, ?>) ((Map<?, ?>) ((Map<?, ?>) newWorld.get("characters"))
                 .get("林默")).get("memory")).get("entries")).isEmpty());
@@ -97,6 +120,9 @@ class WorldTemplateServiceTest {
         ((java.util.List<Map<String, Object>>) invalidLore.get("lore")).get(0)
                 .put("audience", "不存在的角色");
         assertThrows(IllegalArgumentException.class, () -> service.createWorld(invalidLore));
+        var invalidConcealable = service.defaultTemplate();
+        invalidConcealable.put("concealable_objects", Map.of("晚风客栈", java.util.List.of("不存在的线索")));
+        assertThrows(IllegalArgumentException.class, () -> service.createWorld(invalidConcealable));
         verifyNoInteractions(store);
     }
 
@@ -140,13 +166,12 @@ class WorldTemplateServiceTest {
     }
 
     @Test
-    void deletingSavedWorldRemovesOnlyItsRecordAndCache() {
+    void deletingSavedWorldRemovesOnlyItsRecord() {
         var source = new JdbcDataSource();
         source.setURL("jdbc:h2:mem:delete-world-test;DB_CLOSE_DELAY=-1");
         var jdbc = new JdbcTemplate(source);
         jdbc.execute("CREATE TABLE world_saves (world_id VARCHAR(64) PRIMARY KEY, snapshot CLOB NOT NULL, revision BIGINT NOT NULL)");
-        var redis = mock(StringRedisTemplate.class);
-        var store = new WorldStore(jdbc, redis, new ObjectMapper());
+        var store = new WorldStore(jdbc, new ObjectMapper());
         var service = new WorldTemplateService(store, new ObjectMapper());
         String removedId = service.createWorld(service.defaultTemplate());
         String keptId = service.createWorld(service.defaultTemplate());
@@ -156,7 +181,6 @@ class WorldTemplateServiceTest {
         assertEquals(java.util.List.of(keptId), store.listWorldIds());
         assertThrows(IllegalArgumentException.class, () -> store.load(removedId));
         assertEquals(keptId, store.load(keptId).get("world_id"));
-        verify(redis).delete("world:" + removedId);
     }
 
     @Test

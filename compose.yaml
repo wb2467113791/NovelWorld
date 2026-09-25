@@ -12,11 +12,5 @@ services:
       test: ["CMD-SHELL", "mysqladmin ping -h localhost -u novelworld -pnovelworld"]
       interval: 5s
       retries: 20
-  redis:
-    image: redis:7.4-alpine
-    ports: ["127.0.0.1:6380:6379"]
-    volumes: ["novelworld_redis:/data"]
-    command: ["redis-server", "--appendonly", "yes"]
 volumes:
   novelworld_mysql:
-  novelworld_redis:

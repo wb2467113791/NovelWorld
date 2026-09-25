@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from agent.director import Director
-from agent.graph import build_agent_loop_graph
+from agent.graph import build_agent_loop_graph, execute_pending_tools
 from agent.session import WorldSession
 from agent.state import create_initial_agent_state
 from agent.tick import WorldTickScheduler
@@ -67,6 +67,61 @@ class CurrentRuntimeTest(unittest.TestCase):
         self.assertEqual([allowed for _, allowed in requests], [True, False])
         self.assertEqual(requests[1][0][-1]["type"], "function_call_output")
         self.assertEqual(WORLD_STATE["characters"]["林默"].location, "县衙")
+
+    def test_failed_skill_tool_refreshes_plan_without_claiming_progress(self):
+        su = WORLD_STATE["characters"]["苏晚"]
+        responses = iter([
+            SimpleNamespace(output=[SimpleNamespace(type="function_call", name="conceal_clue",
+                arguments='{"character":"苏晚","object_name":"住客登记簿"}', call_id="hide-1")], output_text=""),
+            SimpleNamespace(output=[], output_text="线索已变化，我先等待。"),
+        ])
+        requests = []
+        backend = Mock()
+
+        def reject_changed_clue(*_):
+            WORLD_STATE["inspectable_objects"][su.location].pop("住客登记簿")
+            raise ValueError("线索已不在现场")
+
+        backend.execute.side_effect = reject_changed_clue
+        index = Mock()
+        index.retrieve_memory.return_value = []
+        index.retrieve_lore.return_value = []
+
+        def request_model(conversation, allow_tools):
+            requests.append((list(conversation), allow_tools))
+            return next(responses)
+
+        before = len(WORLD_STATE["events"])
+        with patch("tools.remote_world.active_backend", return_value=backend):
+            result = build_agent_loop_graph(request_model).invoke(create_initial_agent_state(su, index))
+        self.assertEqual(result["final_answer"], "线索已变化，我先等待。")
+        self.assertEqual(len(WORLD_STATE["events"]), before)
+        self.assertIn("线索已不在现场", result["tool_results"][0]["output"])
+        self.assertIn("当前无可执行 Skill 步骤", requests[1][0][-1]["content"])
+        self.assertTrue(requests[1][1])
+
+    def test_old_snapshot_without_concealment_fields_restores(self):
+        snapshot = deepcopy(snapshot_world())
+        snapshot.pop("concealable_objects")
+        snapshot.pop("concealed_objects")
+        restore_snapshot(snapshot)
+        self.assertEqual(WORLD_STATE["concealable_objects"], {})
+        self.assertEqual(WORLD_STATE["concealed_objects"], {})
+
+    def test_same_failed_tool_is_not_sent_to_java_twice_in_one_tick(self):
+        index = Mock()
+        index.retrieve_memory.return_value = []
+        index.retrieve_lore.return_value = []
+        state = create_initial_agent_state(WORLD_STATE["characters"]["苏晚"], index)
+        call = {"name": "conceal_clue", "arguments": '{"character":"苏晚","object_name":"住客登记簿"}',
+                "call_id": "retry"}
+        state["pending_tool_calls"] = [call]
+        state["tool_results"] = [{**call, "call_id": "first", "output": "工具错误：线索已不在现场"}]
+        backend = Mock()
+        with patch("tools.remote_world.active_backend", return_value=backend):
+            result = execute_pending_tools(state)
+        backend.execute.assert_not_called()
+        self.assertIn("相同调用已失败", result["tool_results"][-1]["output"])
 
     def test_event_scheduler_wakes_only_witness_and_wait_does_not_loop(self):
         backend = Mock()

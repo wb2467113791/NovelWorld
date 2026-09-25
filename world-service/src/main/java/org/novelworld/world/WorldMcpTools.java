@@ -68,7 +68,10 @@ public class WorldMcpTools {
         if (!((List<?>) world.get("locations")).contains(location)) throw new IllegalArgumentException("地点不存在：" + location);
         var objects = (Map<String, Object>) world.get("inspectable_objects");
         var place = (Map<String, Object>) objects.computeIfAbsent(location, ignored -> new LinkedHashMap<String, Object>());
-        if (place.containsKey(objectName)) throw new IllegalArgumentException("该地点已有同名线索");
+        var hidden = (Map<String, Object>) world.getOrDefault("concealed_objects", Map.of());
+        var hiddenPlace = (Map<String, Object>) hidden.getOrDefault(location, Map.of());
+        if (place.containsKey(objectName) || hiddenPlace.containsKey(objectName))
+            throw new IllegalArgumentException("该地点已有同名线索");
         place.put(objectName, observation);
         var event = new LinkedHashMap<String, Object>();
         event.put("id", UUID.randomUUID().toString().replace("-", ""));
@@ -92,7 +95,8 @@ public class WorldMcpTools {
         var arguments = parse(argumentsJson);
         String actorKey = Map.of("inspect", "character", "talk", "speaker",
                 "update_relationship", "character", "move_character", "character", "give_item", "giver",
-                "rest_character", "character", "world_action", "actor").get(name);
+                "rest_character", "character", "world_action", "actor",
+                "conceal_clue", "character", "recover_clue", "character").get(name);
         if (actorKey != null && !actingCharacter.equals(arguments.get(actorKey)))
             throw new IllegalArgumentException(actingCharacter + "不能通过" + name + "替其他角色行动");
         int before = ((List<?>) world.get("events")).size();

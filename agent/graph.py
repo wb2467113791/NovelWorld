@@ -55,6 +55,13 @@ def execute_pending_tools(state: AgentState) -> dict:
     for call in state["pending_tool_calls"]:
         if action_done:
             output = "工具错误：本轮已完成一次行动，请在下一 Tick 再行动"
+        elif any(
+            previous["name"] == call["name"]
+            and previous["arguments"] == call["arguments"]
+            and previous["output"].startswith("工具错误：")
+            for previous in state["tool_results"] + new_results
+        ):
+            output = "工具错误：本轮相同调用已失败，请改选其他行动或等待"
         else:
             try:
                 arguments = json.loads(call["arguments"])
@@ -70,20 +77,28 @@ def execute_pending_tools(state: AgentState) -> dict:
 
         new_results.append({**call, "output": output})
 
+    conversation = state["conversation"] + [
+        {
+            "type": "function_call_output",
+            "call_id": result["call_id"],
+            "output": result["output"],
+        }
+        for result in new_results
+    ]
+    if any(result["output"].startswith("工具错误：") for result in new_results):
+        from skills.router import skill_for
+        character = WORLD_STATE["characters"][state["npc_id"]]
+        updated = skill_for(character, state["goal"])
+        conversation.append({"role": "user", "content":
+            "工具未成功。重新考虑当前可执行步骤；不要重复相同的失败调用。"
+            + (f"\n{updated}" if updated else "\n当前无可执行 Skill 步骤，可等待或处理其他可见事件。")})
     return {
         "pending_tool_calls": [],
         "tool_results": state["tool_results"] + new_results,
         "observations": state["observations"] + [
             result["output"] for result in new_results
         ],
-        "conversation": state["conversation"] + [
-            {
-                "type": "function_call_output",
-                "call_id": result["call_id"],
-                "output": result["output"],
-            }
-            for result in new_results
-        ],
+        "conversation": conversation,
         "step": state["step"] + (1 if new_results else 0),
     }
 

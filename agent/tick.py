@@ -25,8 +25,11 @@ class WorldTickScheduler:
         self._pending: list[dict] = [{"name": name, "depth": 0} for name in WORLD_STATE["characters"]]
 
     def snapshot(self) -> dict:
+        from skills.router import skill_view
         return {"tick_count": self._tick_count, "event_cursor": self._event_cursor,
-                "pending": list(self._pending), "current_depth": self._current_depth}
+                "pending": list(self._pending), "current_depth": self._current_depth,
+                "skill_views": {name: view for name, character in WORLD_STATE["characters"].items()
+                                if (view := skill_view(character)) is not None}}
 
     def restore(self, state: dict) -> None:
         tick_count = state["tick_count"]
@@ -88,6 +91,10 @@ class WorldTickScheduler:
         self._collect_events()
         scheduled = self._pending.pop(0) if self._pending else None
         character = WORLD_STATE["characters"][scheduled["name"]] if scheduled else None
+        from skills.investigation.workflow import completed_step
+        from skills.router import current_step
+
+        skill_step = current_step(character, character.goals[0]) if character and character.goals else None
         self._current_depth = scheduled["depth"] if scheduled else 0
         tick_time = WORLD_STATE["time"]
         event_count_before = len(WORLD_STATE["events"])
@@ -122,6 +129,17 @@ class WorldTickScheduler:
                     current_character.memory,
                     superseded_event_ids=current_character.semantic_memory.superseded_event_ids,
                 )
+
+        # 只在角色真实完成一步调查行动后安排下一步；计划本身不产生世界事件。
+        if character is not None and any(
+            completed_step(skill_step, event, character.name)
+            for event in WORLD_STATE["events"][event_count_before:]
+        ):
+            current = WORLD_STATE["characters"][character.name]
+            if current_step(current, current.goals[0]) and not any(
+                item["name"] == current.name for item in self._pending
+            ):
+                self._pending.append({"name": current.name, "depth": 0})
 
         return {
             "time": tick_time,

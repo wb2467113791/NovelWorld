@@ -27,11 +27,16 @@ class WorldWebControllerTest {
                 Map.entry("memory", Map.of("entries", List.of(Map.of("content", "见过林默")), "archive", List.of())),
                 Map.entry("semantic_memory", Map.of("facts", List.of(Map.of("observation", "门锁生锈")))));
         when(store.load("w1")).thenReturn(Map.of("world_id", "w1", "time", "08:10",
-                "locations", List.of("客栈"), "characters", Map.of("苏晚", person), "events", List.of()));
+                "locations", List.of("客栈"), "characters", Map.of("苏晚", person), "events", List.of(),
+                "concealed_objects", Map.of("客栈", Map.of("账簿", Map.of("observation", "原件秘密"))),
+                "scheduler", Map.of("skill_views", Map.of("苏晚", Map.of("name", "保护与隐瞒",
+                        "phase", "藏匿可疑线索", "reason", "现场有可藏匿线索")))));
         var controller = new WorldWebController(store, runtime, new ObjectMapper());
 
         assertEquals(75, ((Map<?, ?>) ((Map<?, ?>) controller.world().get("characters")).get("苏晚")).get("energy"));
         assertFalse(controller.world().toString().contains("弟弟涉案"));
+        assertFalse(controller.world().toString().contains("原件秘密"));
+        assertTrue(controller.world().toString().contains("保护与隐瞒"));
         assertEquals(List.of("见过林默"), controller.characterView("苏晚").get("recent_memories"));
         assertFalse(controller.characterView("苏晚").toString().contains("弟弟涉案"));
         var mvc = org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(controller).build();

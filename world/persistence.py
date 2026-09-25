@@ -83,6 +83,8 @@ def snapshot_world(*, scheduler_state: dict | None = None) -> dict:
         "locations": WORLD_STATE["locations"],
         "inspectables": WORLD_STATE["inspectables"],
         "inspectable_objects": WORLD_STATE["inspectable_objects"],
+        "concealable_objects": WORLD_STATE.get("concealable_objects", {}),
+        "concealed_objects": WORLD_STATE.get("concealed_objects", {}),
         "lore": WORLD_STATE["lore"],
         "events": WORLD_STATE["events"],
         "characters": {
@@ -109,6 +111,8 @@ def restore_snapshot(snapshot: dict) -> dict:
     }
     # V1 存档没有独立 lore；仅旧存档沿用当时的默认设定。
     restored["lore"] = snapshot.get("lore", [asdict(entry) for entry in load_lore()])
+    restored["concealable_objects"] = snapshot.get("concealable_objects", {})
+    restored["concealed_objects"] = snapshot.get("concealed_objects", {})
     restored["characters"] = characters
     WORLD_STATE.clear()
     WORLD_STATE.update(restored)

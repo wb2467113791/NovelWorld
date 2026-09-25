@@ -78,12 +78,17 @@ class RemoteWorld:
     def execute(self, name: str, arguments: dict, acting_character: str | None) -> str:
         from world.state import remember_event
 
-        response = json.loads(self._call("execute_world_tool", {
-            "worldId": self.world_id,
-            "name": name,
-            "argumentsJson": json.dumps(arguments, ensure_ascii=False),
-            "actingCharacter": acting_character or arguments.get("character", ""),
-        }))
+        try:
+            response = json.loads(self._call("execute_world_tool", {
+                "worldId": self.world_id,
+                "name": name,
+                "argumentsJson": json.dumps(arguments, ensure_ascii=False),
+                "actingCharacter": acting_character or arguments.get("character", ""),
+            }))
+        except ValueError:
+            # 世界可能在候选生成后变化；失败不算进度，先同步再让模型改选。
+            self._refresh_business_state()
+            raise
         event = response["event"]
         if event:
             # 服务端已写入业务状态与事件；重新读取后只补 Python 专属的角色记忆。

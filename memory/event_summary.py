@@ -12,6 +12,8 @@ EVENT_IMPORTANCE = {
     "give_item": 3,
     "rest": 1,
     "director": 4,
+    "conceal": 4,
+    "recover": 4,
 }
 
 
@@ -69,6 +71,9 @@ def summarize_event(event: Event, observer: str) -> str:
 
     if kind == "director":
         return f"我在{location}注意到：{event['description']}"
+
+    if kind in {"conceal", "recover"}:
+        return event["description"]
 
     # narration 是 NPC 本轮未执行工具时的文字，本身没有更多结构化细节。
     return event["description"]

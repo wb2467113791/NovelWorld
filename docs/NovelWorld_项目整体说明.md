@@ -27,7 +27,6 @@ flowchart TB
     Java --> Rules[WorldRules 校验与结算]
     Rules --> Store[WorldStore]
     Store --> MySQL[(MySQL 权威快照与事件日志)]
-    Store --> Redis[(Redis 可重建快照缓存)]
     Java -->|世界快照 / 事件流| Browser
 ```
 
@@ -104,7 +103,7 @@ Director 先由 Python 规则检查近期事件、角色参与和冷却时间。
 
 ## 4. 世界状态、事件和存档
 
-一个世界由 `world_id` 标识；不同世界有各自的时间、地点、NPC、可调查对象、设定、事件、记忆和调度进度。Java 的 MySQL 快照是 Web 模式的权威持久数据，Redis 保存可重建的世界快照缓存。Python 在运行时持有同步后的角色对象与记忆索引，但行动、时间和人为事件必须回到 Java 提交。Java 使用 `revision` 检测存档更新冲突。
+一个世界由 `world_id` 标识；不同世界有各自的时间、地点、NPC、可调查对象、设定、事件、记忆和调度进度。Java 的 MySQL 快照是 Web 模式的权威持久数据。Python 在运行时持有同步后的角色对象与记忆索引，但行动、时间和人为事件必须回到 Java 提交。Java 使用 `revision` 检测存档更新冲突。
 
 事件至少表达“何时、何地、谁、做了什么、谁当时能感知”，常用字段包括 `id`、`timestamp`、`type`、`actor`、`target`、`location`、`payload`、`perceived_by`、`description`。事件附在世界快照内；Python 和 `/api/world-events` 按游标读取。浏览器通过 SSE 接收包含近期事件的页面状态。`perceived_by` 是**发生时**的快照：后来走进场景的 NPC 不会因此自动知道旧事件。
 
@@ -124,7 +123,7 @@ Director 先由 Python 规则检查近期事件、角色参与和冷却时间。
 | `tools/` | 模型工具声明、行动者约束和 Java MCP 客户端 | `world_tools.py`、`remote_world.py` |
 | `world/` | Python 侧的世界投影、事件和恢复副本 | `state.py`、`events.py`、`persistence.py` |
 | `memory/`、`retrieval/`、`lore/` | 近期/长期/事实记忆、Chroma 检索和世界设定可见性 | `memory/retrieval.py`、`retrieval/chroma_index.py` |
-| `skills/` | 按目标加载的角色行动指导文本；不授予额外执行权限 | `router.py` 与各 `SKILL.md` |
+| `skills/` | 调查任务的跨 Tick 规划与进度判断；不授予额外执行权限 | `router.py`、`investigation/workflow.py` 与 `SKILL.md` |
 | `tests/` | 当前 Web 运行路径与世界规则的自动测试 | `tests/test_current_runtime.py`、`world-service/src/test/` |
 | `docs/` | 学习计划、历史架构说明和完整验收流程 | 本文、`NovelWorld_自主世界完整验收流程.md` |
 
@@ -171,7 +170,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m uvicorn web_api:app --host 127.0.0.1 --port 8001
 ```
 
-打开 `http://127.0.0.1:8080`。浏览器只访问 Java 8080；Java 与 Python 8001、Python 与 Java `/mcp` 是本机内部通信。若页面显示 `Service Unavailable`，先确认 Python 8001 的终端仍在运行。Java 默认连接 Docker 提供的本机 MySQL `3307` 和 Redis `6380`；详细启动排错与逐项验收见[自主世界完整验收流程](NovelWorld_自主世界完整验收流程.md)。同一个 `world_id` 同时只应由一个 Python Runtime 推进。
+打开 `http://127.0.0.1:8080`。浏览器只访问 Java 8080；Java 与 Python 8001、Python 与 Java `/mcp` 是本机内部通信。若页面显示 `Service Unavailable`，先确认 Python 8001 的终端仍在运行。Java 默认连接 Docker 提供的本机 MySQL `3307`；详细启动排错与逐项验收见[自主世界完整验收流程](NovelWorld_自主世界完整验收流程.md)。同一个 `world_id` 同时只应由一个 Python Runtime 推进。
 
 ## 7. 新人建议的阅读与验证顺序
 
@@ -196,7 +195,7 @@ Java 测试同样要求 Maven 使用 JDK 17。页面的“下一 Tick”或“�
 
 当前已有可验证的分层闭环：可编辑且互不覆盖的世界、角色独立知识与记忆、按事件唤醒、等待、Java 规则结算、事件与调度进度持久化、浏览器观测和人为投放线索。它是**阶段性完成的架构**，不等于所有理想能力都已成熟。
 
-尤其要知道：当前 Director 只在几类规则触发时添加可调查线索，还不是完整的长期剧情规划器；知情者主要按事件现场和直接关联判定，没有复杂的视野、听力或传播网络；开局后的运行由作者单步或指定有限 Tick 批量触发，不是无人值守的无限后台循环；模板是 JSON 编辑与预览，尚非逐字段表单；世界快照仍以整份 JSON 存储，扩展到大量 NPC 和长事件历史时需要进一步优化查询、索引、并发与成本控制。记忆检索使用本地字符片段哈希向量，对同义表达的理解有限。后续工作因此既包括内容，也包括规则、记忆、调度和性能。
+尤其要知道：当前 Director 只在几类规则触发时添加可调查线索，还不是完整的长期剧情规划器；知情者主要按事件现场和直接关联判定，没有复杂的视野、听力或传播网络；开局后的运行由作者单步或指定有限 Tick 批量触发，不是无人值守的无限后台循环；模板是 JSON 编辑与预览，尚非逐字段表单；世界快照仍以整份 JSON 存储，扩展到大量 NPC 和长事件历史时需要进一步优化查询、索引、并发与成本控制。记忆检索现在使用独立的 Embedding 模型，向量质量与实际剧情决策收益仍需通过对照评估。后续工作因此既包括内容，也包括规则、记忆、调度和性能。
 
 如果只记住一个原则：**模型提出可能发生的事，程序验证并提交真正发生的事；事件再影响知道它的角色。**
 
@@ -267,7 +266,7 @@ Prompt 不直接塞完整世界快照，只取自己的 `known_facts`、`secrets
 
 **Q7：这里的 RAG 和 Skill 是什么？**
 
-RAG 是“检索增强生成”：在模型行动前按角色检索相关旧记忆及可见世界设定，放入 Prompt。当前使用本地字符片段哈希向量，不调用 Embedding API，同义词召回有限。Skill 是 `skills/` 中的职业行动指导，由 `skills/router.py` 按身份、目标和体力只选一份；它影响模型建议，不赋予新的世界执行权限。
+RAG 是“检索增强生成”：在模型行动前按角色检索相关旧记忆及可见世界设定，放入 Prompt。Chroma 使用 `qwen3.7-text-embedding` 的 1024 维文本向量，新增文档及查询词会调用向量接口；索引按世界和向量模型隔离，原始记忆仍保存在 MySQL 快照中。当前 Skill 包括调查与保护隐瞒：程序按角色自己的可见信息及已提交事件建议下一步，模型决定是否采用；Java 校验并结算藏匿、痕迹调查和找回，只有成功事件才推动跨 Tick 续排。旧世界未标记可藏匿对象时维持原有行为。Skill 不赋予新的世界执行权限，也不代表已经验证其相对无 Skill 的模型效果。
 
 ### 规则、状态与可靠性
 
@@ -283,9 +282,9 @@ NPC 可以不调用工具而等待；Web 事件调度不会因此追加叙述事
 
 业务状态以 Java `WorldStore` 的 MySQL 快照为准；Python 的 `WORLD_STATE` 是当前运行所需的本地投影，Agent 与 Prompt 从中读取。行动交给 Java，成功后 Python 刷新投影；记忆和调度状态再同步回 Java。Python 没有另一个可独立结算行动的本地规则分支。看 `tools/remote_world.py`、`world/state.py`。
 
-**Q11：Redis 和 MySQL 分别做什么？为什么 Redis 挂了世界还在？**
+**Q11：MySQL 保存什么？为什么不需要单独的缓存？**
 
-MySQL 的 `world_saves` 表保存完整 JSON 快照及 `revision`，是持久依据；Redis 仅保存可重建缓存。`WorldStore.load()` 会校验缓存版本，不可用或过期时从 MySQL 读取；缓存写失败不会删掉已存快照。Python 调度按 Java 已提交事件的游标读取，不依赖 Redis 事件队列。看 `WorldStore.java` 与 `schema.sql`。
+MySQL 的 `world_saves` 表保存完整 JSON 快照及 `revision`，是持久依据；`WorldStore.load()` 直接读取 MySQL。当前世界规模较小，原先的缓存命中仍需向 MySQL 校验版本，本机基准测试没有体现读取收益，因此移除了缓存层。Python 调度按 Java 已提交事件的游标读取，待唤醒队列随调度状态保存在快照中。看 `WorldStore.java` 与 `schema.sql`。
 
 **Q12：并发更新和重启重复处理怎么处理？是否做到严格 exactly-once？**
 

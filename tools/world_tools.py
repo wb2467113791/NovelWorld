@@ -42,6 +42,20 @@ def unverified_inspection_claim(character: str, text: str) -> str | None:
 # Tool Schema 是给模型看的工具说明书，不负责执行 Python 函数。
 NPC_ACTION_TOOL_SCHEMAS = [
     {
+        "type": "function", "name": "conceal_clue",
+        "description": "藏起当前位置被明确标记为可藏匿的线索；Java 保存原文并留下可调查痕迹。",
+        "parameters": {"type": "object", "properties": {
+            "character": {"type": "string"}, "object_name": {"type": "string"},
+        }, "required": ["character", "object_name"]},
+    },
+    {
+        "type": "function", "name": "recover_clue",
+        "description": "亲自调查异常痕迹后，找回当前位置被藏匿的线索。",
+        "parameters": {"type": "object", "properties": {
+            "character": {"type": "string"}, "object_name": {"type": "string"},
+        }, "required": ["character", "object_name"]},
+    },
+    {
         "type": "function",
         "name": "inspect",
         "description": "调查角色当前地点；可选 object_name 查看本轮 Prompt 列出的当地对象。重复调查未变化的内容不会产生新发现。",
@@ -179,6 +193,8 @@ TOOL_ACTOR_ARGUMENTS = {
     "move_character": "character",
     "give_item": "giver",
     "rest_character": "character",
+    "conceal_clue": "character",
+    "recover_clue": "character",
 }
 
 

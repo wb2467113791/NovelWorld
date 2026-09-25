@@ -22,11 +22,13 @@ WORLD_STATE = {
     },
     "inspectable_objects": {
         "晚风客栈": {
-            "住客登记簿": "登记簿放在柜台抽屉里。现有记录未列出具体住客与时辰，无法据此核对个别人的行踪。",
+            "住客登记簿": "登记簿记载失踪者案发前夜入住晚风客栈，但离店时辰被涂改；仅凭记录无法确定其去向。",
             "后门": "后门通向客栈外；仅凭眼前环境无法确认案发夜经过的人是谁。",
             "柴房门锁": "柴房门锁已有锈迹；仅凭外观无法确认近期是否被打开过。",
         },
     },
+    "concealable_objects": {"晚风客栈": ["住客登记簿"]},
+    "concealed_objects": {},
     "lore": [asdict(entry) for entry in load_lore()],
     "events": [],
 }
@@ -69,6 +71,12 @@ def remember_event(event: Event) -> None:
                 source_event_id=event["id"],
                 timestamp=event["timestamp"],
             )
+        if event_type == "recover" and character_name == actor:
+            trace_name = event["payload"]["object_name"] + "被移动的痕迹"
+            character.semantic_memory.forget_inspection(event["location"], trace_name)
+        if event_type == "conceal":
+            trace_name = event["payload"]["object_name"] + "被移动的痕迹"
+            character.semantic_memory.forget_inspection(event["location"], trace_name)
 
 
 def reconcile_event_memories() -> int:

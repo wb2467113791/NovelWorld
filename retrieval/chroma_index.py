@@ -1,26 +1,29 @@
 """按世界隔离的本地 Chroma 检索索引；JSON 存档才是事实来源。"""
 
 from pathlib import Path
+from functools import lru_cache
 
 from characters.model import Character
 from world.state import WORLD_STATE
 from memory.retrieval import eligible_archived_entries
-from retrieval.text import bigrams, text_vector
+from retrieval.embedding import DashScopeEmbedder
 
 
 DEFAULT_INDEX_ROOT = Path(__file__).resolve().parents[1] / "data" / "chroma"
 
 
 class ChromaIndex:
-    def __init__(self, world_id: str, root: Path = DEFAULT_INDEX_ROOT) -> None:
+    def __init__(self, world_id: str, root: Path = DEFAULT_INDEX_ROOT, embedder=None, client=None) -> None:
         if not world_id or any(char in world_id for char in "/\\."):
             raise ValueError("世界 ID 无效")
         import chromadb
         from chromadb.config import Settings
 
         self.world_id = world_id
-        self.path = Path(root) / world_id
-        self.client = chromadb.PersistentClient(
+        self.embedder = embedder or DashScopeEmbedder()
+        # 旧索引使用本地 384 维向量；按模型和维度分目录自动重建新索引。
+        self.path = Path(root) / world_id / f"{self.embedder.model}-{self.embedder.dimensions}"
+        self.client = client or chromadb.PersistentClient(
             path=str(self.path), settings=Settings(anonymized_telemetry=False)
         )
         self.memories = self.client.get_or_create_collection(
@@ -30,21 +33,32 @@ class ChromaIndex:
             name="world_lore", embedding_function=None
         )
 
-    @staticmethod
-    def _sync_collection(collection, documents: dict[str, tuple[str, dict]], *, where: dict | None = None) -> None:
-        existing = set(collection.get(where=where, include=[])["ids"])
+    def _sync_collection(self, collection, documents: dict[str, tuple[str, dict]], *, where: dict | None = None) -> None:
+        current = collection.get(where=where, include=["documents", "metadatas"])
+        existing = {
+            item_id: (document, metadata)
+            for item_id, document, metadata in zip(
+                current["ids"], current["documents"], current["metadatas"]
+            )
+        }
         desired = set(documents)
-        obsolete = existing - desired
+        obsolete = set(existing) - desired
         if obsolete:
             collection.delete(ids=sorted(obsolete))
-        if documents:
-            ids = list(documents)
+        changed = [item_id for item_id, value in documents.items() if existing.get(item_id) != value]
+        for start in range(0, len(changed), 20):
+            ids = changed[start:start + 20]
+            texts = [documents[item][0] for item in ids]
             collection.upsert(
                 ids=ids,
-                documents=[documents[item][0] for item in ids],
-                embeddings=[text_vector(documents[item][0]) for item in ids],
+                documents=texts,
+                embeddings=self.embedder.embed(texts),
                 metadatas=[documents[item][1] for item in ids],
             )
+
+    @lru_cache(maxsize=128)
+    def _query_vector(self, query: str) -> list[float]:
+        return self.embedder.embed([query])[0]
 
     def sync_character(self, character: Character) -> None:
         """从角色记忆重建其索引，并移除被新调查取代的旧内容。"""
@@ -92,7 +106,7 @@ class ChromaIndex:
         if not count or not query.strip():
             return []
         response = self.memories.query(
-            query_embeddings=[text_vector(query)],
+            query_embeddings=[self._query_vector(query)],
             n_results=min(count, max_items * 8),
             where={"owner": character.name},
             include=["documents", "metadatas", "distances"],
@@ -126,19 +140,17 @@ class ChromaIndex:
         self, character_name: str, query: str, *, max_items: int = 2, max_chars: int = 350,
     ) -> list[str]:
         self.sync_lore()
-        if not query.strip():
+        count = self.lore.count()
+        if not query.strip() or not count:
             return []
         response = self.lore.query(
-            query_embeddings=[text_vector(query)],
-            n_results=min(self.lore.count(), max_items * 8),
+            query_embeddings=[self._query_vector(query)],
+            n_results=min(count, max_items * 8),
             where={"$or": [{"audience": "public"}, {"audience": character_name}]},
             include=["documents", "metadatas", "distances"],
         )
         selected: list[str] = []
-        terms = bigrams(query)
         for document, metadata in zip(response["documents"][0], response["metadatas"][0]):
-            if not terms & bigrams(document + metadata["category"]):
-                continue
             item = f"世界设定（{metadata['category']}）：{document}"
             if len(item) <= max_chars:
                 selected.append(item)

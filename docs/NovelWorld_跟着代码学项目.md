@@ -36,7 +36,6 @@ flowchart LR
   D -->|MCP 环境事件| J
   J --> R[Java WorldRules]
   R --> DB[(MySQL 世界快照)]
-  J --> C[(Redis 可重建缓存)]
 ```
 
 **读图练习**：如果 NPC 想移动，箭头会从 NPC 经过 MCP 回到 Java。模型不会直接连接 MySQL；浏览器不会直接调用 Python。
@@ -135,9 +134,9 @@ Java 查询当前激活世界时会经 `AgentRuntimeClient.status()` 获取 Pyth
 
 这解释了“知识边界”的主要实现：**不要把完整世界快照塞进 Prompt**。苏晚的秘密存在服务端世界快照中；构造林默的 Prompt 时读取的是林默自己的 `Character`。检索同样按记忆所有者与 `lore.audience` 过滤，见 [`retrieval/chroma_index.py`](../retrieval/chroma_index.py) 的 `retrieve_memory`、`retrieve_lore`。
 
-读到 Chroma 时先不要被 RAG 吓住。RAG（检索增强生成）的核心动作很简单：**先从已有材料中挑出与当前目标有关的少量文字，再放进这次模型输入**。这个项目用 [`retrieval/text.py`](../retrieval/text.py) 生成本地确定性文本向量，放入 Chroma；这里没有单独调用付费 Embedding 模型。Chroma 是可重建的检索索引，权威存档仍在 Java/MySQL。
+读到 Chroma 时先不要被 RAG 吓住。RAG（检索增强生成）的核心动作很简单：**先从已有材料中挑出与当前目标有关的少量文字，再放进这次模型输入**。这个项目用 [`retrieval/embedding.py`](../retrieval/embedding.py) 调用独立的 `qwen3.7-text-embedding` 向量模型，把向量放入 Chroma；新增文档和新查询会产生向量调用。Chroma 是可重建的检索索引，权威存档仍在 Java/MySQL。
 
-`skills/router.py` 会按职业、目标和体力读取一份行动指导文本。Skill 是**给模型的建议**，不授予越过 Java 规则的权限。
+目前接入调查与保护隐瞒两个 Skill。`skills/investigation/workflow.py` 根据捕快自己的已知事实、调查记录和已提交事件计算下一步，包括核查异常痕迹、找回线索、核对现场、询问在场人和追踪地点；保护隐瞒流程只对显式标记的可藏匿对象提出建议。`skills/router.py` 把当前阶段和建议工具加入 Prompt，模型可以选择其他合法行动。`agent/tick.py` 仅在 Java 已提交事件证实本阶段完成后续排角色；失败工具不会改变进度。藏匿和找回均由 Java 规则结算，旧世界没有可藏匿标记时维持原有行为。Skill **不直接改变世界**，其相对无 Skill 的模型效果尚需付费对照评估。
 
 **自己回答**：为什么“模型不会看到苏晚的秘密”和“模型绝不可能猜到苏晚的秘密”不是同一句话？
 
@@ -189,13 +188,13 @@ Python 请求 execute_world_tool(name="give_item", actingCharacter="林默", ...
 → WorldMcpTools 检查 giver 是否为林默，读出当前世界
 → WorldRules 检查两人是否同地点、林默是否持有物品、是否有体力
 → 成功后变更双方物品列表、扣除行动体力、追加 give_item 事件
-→ WorldStore.update 写入 MySQL，再更新 Redis 缓存
+→ WorldStore.update 写入 MySQL
 → 返回成功结果和新事件给 Python
 ```
 
 对照 `WorldRules.apply` 的 `give_item` 分支看每个条件。再看 `move_character` 分支：目标必须在 `locations` 中。看 `world_action` 的 `attack`、`use_item` 等分支，理解这不是让模型自行编伤害数值。当前规则是确定性的，不是一套完整的战斗模拟。
 
-`WorldStore` 把完整快照存进 MySQL 的 `world_saves` 表，`revision` 用于检测并发更新冲突。Redis 只缓存快照；缓存读不到或版本落后时，仍从 MySQL 读取。`data/world.json` 是 Python 的本地恢复副本，不是网页模式下行动规则的权威来源。
+`WorldStore` 把完整快照存进 MySQL 的 `world_saves` 表，读取时直接查询 MySQL；`revision` 用于检测并发更新冲突。`data/world.json` 是 Python 的本地恢复副本，不是网页模式下行动规则的权威来源。
 
 **自己回答**：如果模型提出“瞬移到不存在的王宫宝库”，失败应出现在哪层？
 
@@ -285,7 +284,7 @@ Invoke-RestMethod 'http://127.0.0.1:8080/api/world-events?after=0'
 2. 模型选中 `move_character` 后，谁校验地点？谁保存新位置？
 3. 事件 `perceived_by` 为什么必须在发生时记录？
 4. NPC 等待和队列为空时分别发生什么？Director 是否仍可能运行？
-5. MySQL、Redis、`data/world.json`、Chroma 各自是什么角色？
+5. MySQL、`data/world.json`、Chroma 各自是什么角色？
 6. 为什么不能说“当前项目已经保证 NPC 绝不泄漏秘密”？
 
 可以用一句话串起全项目：**人设置或影响环境；调度器根据事件唤醒角色；模型提出角色意图；Java 规则结算并保存；新事件再影响相关角色。**
