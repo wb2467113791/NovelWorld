@@ -111,6 +111,34 @@ class CurrentRuntimeTest(unittest.TestCase):
         self.assertEqual(calls, [("stagnation", "晚风客栈", "门边出现一封信")])
         self.assertEqual(before, {name: person.location for name, person in WORLD_STATE["characters"].items()})
 
+    def test_first_empty_tick_revives_world_after_scheduler_restore(self):
+        backend = Mock()
+        backend.advance_time.return_value = "09:35"
+        backend.introduce_event.side_effect = lambda category, location, tick_count, observation: committed_event(
+            "director", "世界", observation, location=location,
+            payload={"category": category, "tick_count": tick_count})
+        names = list(WORLD_STATE["characters"])
+        for index, name in enumerate(names):
+            committed_event("talk", name, f"各不相同的历史对话 {index}",
+                            target=names[(index + 1) % len(names)],
+                            payload={"message": f"历史对话 {index}"})
+        director = Director(propose_event=lambda category, location: "客栈门边出现一封新信")
+        decide = Mock(return_value="等待")
+        with patch("tools.remote_world.active_backend", return_value=backend):
+            scheduler = WorldTickScheduler(director=director)
+            scheduler.restore({"tick_count": 17, "event_cursor": len(WORLD_STATE["events"]),
+                               "pending": [], "current_depth": 0})
+            restored = WorldTickScheduler(director=director)
+            restored.restore(scheduler.snapshot())
+            self.assertEqual(restored.run_tick(decide)["character"], "世界")
+            event = WORLD_STATE["events"][-1]
+            self.assertEqual(event["type"], "director")
+            self.assertTrue(event["perceived_by"])
+            backend.introduce_event.assert_called_once()
+            self.assertEqual(restored.snapshot()["pending"][0]["name"], event["perceived_by"][0])
+            self.assertEqual(restored.run_tick(decide)["character"], event["perceived_by"][0])
+        decide.assert_called_once()
+
     def test_snapshot_replay_preserves_original_witnesses(self):
         location = WORLD_STATE["characters"]["苏晚"].location
         event = committed_event("intervention", "世界", "现场出现一封信", location=location)

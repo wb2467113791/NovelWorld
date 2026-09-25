@@ -3,6 +3,7 @@ package org.novelworld.world;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -55,9 +56,21 @@ public class WorldSetupController {
         return runtime.control("activate", Map.of("world_id", worldId));
     }
 
-    private void requirePaused() {
-        if (Boolean.TRUE.equals(runtime.status().get("running")))
+    @DeleteMapping("/worlds/{worldId}")
+    public ResponseEntity<Void> deleteWorld(@PathVariable String worldId) {
+        var status = requirePaused();
+        if (worldId.equals(status.get("world_id")))
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "当前世界不能删除，请先切换到其他世界");
+        if (!store.delete(worldId))
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "世界不存在：" + worldId);
+        return ResponseEntity.noContent().build();
+    }
+
+    private Map<String, Object> requirePaused() {
+        var status = runtime.status();
+        if (Boolean.TRUE.equals(status.get("running")))
             throw new ResponseStatusException(HttpStatus.CONFLICT, "请先暂停当前世界");
+        return status;
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

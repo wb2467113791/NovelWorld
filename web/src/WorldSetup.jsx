@@ -149,6 +149,27 @@ export default function WorldSetup({ running, activeWorldId, onActivated }) {
     }
   }
 
+  async function deleteWorld(worldId) {
+    if (running || busy || worldId === activeWorldId) return
+    if (!window.confirm(`确定永久删除世界 ${worldId} 吗？该世界的存档和事件无法从 Git 恢复。`)) return
+    setBusy(true)
+    setMessage('')
+    try {
+      const response = await fetch(`/api/worlds/${encodeURIComponent(worldId)}`, { method: 'DELETE' })
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}))
+        throw new Error(result.detail || `删除失败：${response.status}`)
+      }
+      if (createdId === worldId) setCreatedId('')
+      await refreshWorlds()
+      setMessage(`已删除世界 ${worldId}`)
+    } catch (error) {
+      setMessage(error.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const template = preview.template
   const characters = Object.entries(template?.characters || {})
   return <section className="panel opening-panel" id="setup">
@@ -204,7 +225,10 @@ export default function WorldSetup({ running, activeWorldId, onActivated }) {
     <div className="opening-worlds"><h3>已保存的世界</h3>
       {worldIds.length ? worldIds.map(worldId => <div key={worldId}>
         <code>{worldId}</code>
-        {worldId === activeWorldId ? <span>当前世界</span> : <button type="button" disabled={running || busy} onClick={() => activateWorld(worldId)}>切换到此世界</button>}
+        {worldId === activeWorldId ? <span>当前世界</span> : <div className="opening-world-actions">
+          <button type="button" disabled={running || busy} onClick={() => activateWorld(worldId)}>切换到此世界</button>
+          <button type="button" className="delete-world-button" disabled={running || busy} onClick={() => deleteWorld(worldId)}>删除世界</button>
+        </div>}
       </div>) : <p>暂无可切换的世界</p>}
     </div>
   </section>

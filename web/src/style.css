@@ -37,6 +37,8 @@
 .opening-worlds code{overflow-wrap:anywhere;color:#b8c7ce}
 .opening-worlds span{color:#92c4ae;white-space:nowrap}
 .opening-worlds button{background:#343c45;color:#e5e9eb;border:1px solid #4b5560;border-radius:8px;padding:7px 10px;font-size:11px;white-space:nowrap}
+.opening-world-actions{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end}
+.opening-worlds .delete-world-button{color:#e0aaa4;border-color:#765653}
 .opening-worlds button:disabled{opacity:.45;cursor:not-allowed}
 .opening-worlds p{font-size:11px;color:#98a4ad}
 @media(max-width:950px){.opening-grid{grid-template-columns:1fr}.opening-preview{max-height:none}}

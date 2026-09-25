@@ -52,6 +52,14 @@ public class WorldStore {
         return jdbc.queryForList("SELECT world_id FROM world_saves ORDER BY world_id", String.class);
     }
 
+    public boolean delete(String worldId) {
+        int deleted = jdbc.update("DELETE FROM world_saves WHERE world_id = ?", worldId);
+        if (deleted == 0) return false;
+        try { redis.delete("world:" + worldId); }
+        catch (RuntimeException ignored) { /* MySQL is authoritative; stale cache cannot pass the revision check. */ }
+        return true;
+    }
+
     public void update(String worldId, Map<String, Object> snapshot) {
         long revision = ((Number) snapshot.get("revision")).longValue();
         snapshot.put("revision", revision + 1);

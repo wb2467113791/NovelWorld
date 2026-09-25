@@ -13,6 +13,7 @@ import tools.jackson.databind.ObjectMapper;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -136,5 +137,45 @@ class WorldTemplateServiceTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.world_id").value("new"));
         verify(store, never()).update(anyString(), anyMap());
         verify(runtime).control("activate", Map.of("world_id", "new"));
+    }
+
+    @Test
+    void deletingSavedWorldRemovesOnlyItsRecordAndCache() {
+        var source = new JdbcDataSource();
+        source.setURL("jdbc:h2:mem:delete-world-test;DB_CLOSE_DELAY=-1");
+        var jdbc = new JdbcTemplate(source);
+        jdbc.execute("CREATE TABLE world_saves (world_id VARCHAR(64) PRIMARY KEY, snapshot CLOB NOT NULL, revision BIGINT NOT NULL)");
+        var redis = mock(StringRedisTemplate.class);
+        var store = new WorldStore(jdbc, redis, new ObjectMapper());
+        var service = new WorldTemplateService(store, new ObjectMapper());
+        String removedId = service.createWorld(service.defaultTemplate());
+        String keptId = service.createWorld(service.defaultTemplate());
+
+        assertTrue(store.delete(removedId));
+        assertFalse(store.delete(removedId));
+        assertEquals(java.util.List.of(keptId), store.listWorldIds());
+        assertThrows(IllegalArgumentException.class, () -> store.load(removedId));
+        assertEquals(keptId, store.load(keptId).get("world_id"));
+        verify(redis).delete("world:" + removedId);
+    }
+
+    @Test
+    void deleteApiRejectsRunningAndActiveWorlds() throws Exception {
+        var store = mock(WorldStore.class);
+        var runtime = mock(AgentRuntimeClient.class);
+        var service = new WorldTemplateService(store, new ObjectMapper());
+        var mvc = MockMvcBuilders.standaloneSetup(new WorldSetupController(service, store, runtime)).build();
+        when(runtime.status()).thenReturn(
+                Map.of("world_id", "current", "running", true),
+                Map.of("world_id", "current", "running", false));
+        when(store.delete("other")).thenReturn(true);
+
+        mvc.perform(delete("/api/worlds/other")).andExpect(status().isConflict());
+        mvc.perform(delete("/api/worlds/current")).andExpect(status().isConflict());
+        mvc.perform(delete("/api/worlds/other")).andExpect(status().isNoContent());
+        mvc.perform(delete("/api/worlds/missing")).andExpect(status().isNotFound());
+        verify(store, never()).delete("current");
+        verify(store).delete("other");
+        verify(store).delete("missing");
     }
 }

@@ -84,6 +84,7 @@ class WorldTickScheduler:
         if backend is None:
             raise RuntimeError("世界调度需要已连接的世界服务")
         backend.sync_events()
+        had_new_events = len(WORLD_STATE["events"]) > self._event_cursor
         self._collect_events()
         scheduled = self._pending.pop(0) if self._pending else None
         character = WORLD_STATE["characters"][scheduled["name"]] if scheduled else None
@@ -112,7 +113,8 @@ class WorldTickScheduler:
         advance_world_time(TICK_MINUTES)
         self._tick_count += 1
         if self.director is not None:
-            self.director.maybe_inject(self._tick_count)
+            idle = not had_new_events and len(WORLD_STATE["events"]) == event_count_before and not self._pending
+            self.director.maybe_inject(self._tick_count, idle=idle)
         self._collect_events()
         if self._tick_count % REFLECTION_INTERVAL == 0:
             for current_character in WORLD_STATE["characters"].values():

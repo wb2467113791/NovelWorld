@@ -20,14 +20,27 @@ class Director:
                       if event["type"] == "director"), None)
         self.last_event_tick = prior["payload"].get("tick_count", -DIRECTOR_COOLDOWN) if prior else -DIRECTOR_COOLDOWN
 
-    def choose_event(self, tick_count: int) -> tuple[str, str] | None:
-        if tick_count - self.last_event_tick < DIRECTOR_COOLDOWN or tick_count < 3:
+    @staticmethod
+    def occupied_location(preferred: str | None = None) -> str:
+        characters = list(WORLD_STATE["characters"].values())
+        available = next((character for character in characters
+                          if character.location == preferred and character.status != "unconscious"), None)
+        if available is None:
+            available = next((character for character in characters if character.status != "unconscious"), characters[0])
+        return available.location
+
+    def choose_event(self, tick_count: int, idle: bool = False) -> tuple[str, str] | None:
+        if tick_count - self.last_event_tick < DIRECTOR_COOLDOWN:
+            return None
+        if idle:
+            return "stagnation", self.occupied_location()
+        if tick_count < 3:
             return None
         history = [event for event in WORLD_STATE["events"] if event["type"] != "director"]
         recent = history[-6:]
         if len(history) >= 3 and (all(event["type"] == "narration" for event in history[-3:])
                                   or len({event["description"] for event in history[-3:]}) == 1):
-            return "stagnation", "晚风客栈" if "晚风客栈" in WORLD_STATE["locations"] else WORLD_STATE["locations"][0]
+            return "stagnation", self.occupied_location("晚风客栈")
 
         if tick_count >= 6:
             active = {event["actor"] for event in recent if event["type"] not in {"narration"}}
@@ -36,11 +49,11 @@ class Director:
                 return "participation", WORLD_STATE["characters"][quiet[0]].location
 
         if tick_count >= 6 and not any(event["type"] in {"talk", "relationship"} for event in recent):
-            return "conflict", "青石街" if "青石街" in WORLD_STATE["locations"] else WORLD_STATE["locations"][0]
+            return "conflict", self.occupied_location("青石街")
         return None
 
-    def maybe_inject(self, tick_count: int) -> dict | None:
-        selected = self.choose_event(tick_count)
+    def maybe_inject(self, tick_count: int, idle: bool = False) -> dict | None:
+        selected = self.choose_event(tick_count, idle)
         if selected is None:
             return None
         category, location = selected
