@@ -6,6 +6,7 @@ from dataclasses import asdict, fields
 from pathlib import Path
 
 from characters.model import Character
+from agent.runtime import AgentRuntimeState
 from lore.catalog import load_lore
 from memory.episodic import EpisodicArchive, MemoryEntry
 from memory.semantic import SemanticFact, SemanticMemory
@@ -32,7 +33,7 @@ def _character_to_dict(character: Character) -> dict:
     result = {
         item.name: deepcopy(getattr(character, item.name))
         for item in fields(Character)
-        if item.name not in {"memory", "semantic_memory"}
+        if item.name not in {"memory", "semantic_memory", "runtime_state"}
     }
     memory = character.memory
     result["memory"] = {
@@ -46,6 +47,7 @@ def _character_to_dict(character: Character) -> dict:
         "facts": [asdict(fact) for fact in semantic.current_facts()],
         "superseded_event_ids": sorted(semantic.superseded_event_ids),
     }
+    result["runtime_state"] = character.runtime_state.to_dict()
     return result
 
 
@@ -69,9 +71,11 @@ def _character_from_dict(data: dict) -> Character:
         item.name: (data.get(item.name, 100 if item.name == "hp" else "normal")
                     if item.name in {"hp", "status"} else data[item.name])
         for item in fields(Character)
-        if item.name not in {"memory", "semantic_memory"}
+        if item.name not in {"memory", "semantic_memory", "runtime_state"}
     }
-    return Character(**ordinary_fields, memory=memory, semantic_memory=semantic)
+    runtime = AgentRuntimeState.from_dict(data.get("runtime_state", {}), character=data["name"])
+    runtime.select_goal(data["goals"])
+    return Character(**ordinary_fields, memory=memory, semantic_memory=semantic, runtime_state=runtime)
 
 
 def snapshot_world(*, scheduler_state: dict | None = None) -> dict:

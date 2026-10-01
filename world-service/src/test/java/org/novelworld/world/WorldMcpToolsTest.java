@@ -11,6 +11,73 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class WorldMcpToolsTest {
+    @Test
+    @SuppressWarnings("unchecked")
+    void cognitionPersistsInExistingSnapshotsWithoutOverwritingBusinessState() {
+        var source = new org.h2.jdbcx.JdbcDataSource();
+        source.setURL("jdbc:h2:mem:agent-runtime;DB_CLOSE_DELAY=-1");
+        var jdbc = new org.springframework.jdbc.core.JdbcTemplate(source);
+        jdbc.execute("CREATE TABLE world_saves (world_id VARCHAR(64) PRIMARY KEY, snapshot CLOB NOT NULL, revision BIGINT NOT NULL)");
+        var mapper = new ObjectMapper();
+        var store = new WorldStore(jdbc, mapper);
+        var templates = new WorldTemplateService(store, mapper);
+        String firstId = templates.createWorld(templates.defaultTemplate());
+        String secondId = templates.createWorld(templates.defaultTemplate());
+        var tools = new WorldMcpTools(store, new WorldRules(), mapper);
+        var before = store.load(firstId);
+        var characters = (Map<String, Object>) before.get("characters");
+        var payloadCharacters = new HashMap<String, Object>();
+        for (var entry : characters.entrySet()) {
+            var person = (Map<String, Object>) entry.getValue();
+            payloadCharacters.put(entry.getKey(), new HashMap<>(Map.of(
+                    "memory", person.get("memory"), "semantic_memory", person.get("semantic_memory"))));
+        }
+        var linPayload = (Map<String, Object>) payloadCharacters.get("林默");
+        var runtime = Map.of("active_goal", "找到失踪者的下落", "current_intention", "核对线索",
+                "current_plan", "根据新信息调整调查方向", "busy_until", 300,
+                "agenda", List.of(Map.of("id", "visit", "character", "林默", "due_tick", 310,
+                        "intention", "继续调查", "status", "pending")));
+        linPayload.put("runtime_state", runtime);
+        linPayload.put("location", "晚风客栈");
+        linPayload.put("energy", 0);
+        var payload = new HashMap<String, Object>();
+        payload.put("characters", payloadCharacters);
+        payload.put("scheduler", Map.of("tick_count", 7));
+        payload.put("events", List.of());
+        payload.put("time", "23:59");
+        tools.saveAgentState(firstId, mapper.writeValueAsString(payload));
+
+        // 新建 Store 模拟重新连接，验证数据库快照而非进程内缓存。
+        var reconnected = new WorldStore(jdbc, mapper);
+        var saved = reconnected.load(firstId);
+        var lin = (Map<String, Object>) ((Map<?, ?>) saved.get("characters")).get("林默");
+        assertEquals(runtime, lin.get("runtime_state"));
+        assertEquals("县衙", lin.get("location"));
+        assertEquals(90, lin.get("energy"));
+        assertEquals("08:00", saved.get("time"));
+        assertEquals(before.get("events"), saved.get("events"));
+        assertEquals(Map.of("tick_count", 7), saved.get("scheduler"));
+        assertFalse(((Map<?, ?>) ((Map<?, ?>) reconnected.load(secondId).get("characters"))
+                .get("林默")).containsKey("runtime_state"));
+
+        // 未携带认知的旧客户端不能清空已保存认知。
+        linPayload.remove("runtime_state");
+        tools.saveAgentState(firstId, mapper.writeValueAsString(payload));
+        assertEquals(runtime, ((Map<?, ?>) ((Map<?, ?>) store.load(firstId).get("characters"))
+                .get("林默")).get("runtime_state"));
+
+        for (var invalid : List.of(Map.of("location", "晚风客栈"),
+                Map.of("current_plan", List.of("move", "inspect")),
+                Map.of("active_goal", "别人的目标"), Map.of("busy_until", true),
+                Map.of("agenda", List.of(Map.of("id", "x", "character", "苏晚", "due_tick", 1, "intention", "藏匿"))))) {
+            linPayload.put("runtime_state", invalid);
+            var savedBefore = store.load(firstId);
+            assertThrows(IllegalArgumentException.class,
+                    () -> tools.saveAgentState(firstId, mapper.writeValueAsString(payload)));
+            assertEquals(savedBefore, store.load(firstId));
+        }
+    }
+
     @Test void interventionIsVisibleOnlyAtItsLocationAndReadableByCursor() {
         var store = mock(WorldStore.class);
         var world = new HashMap<String, Object>();

@@ -40,7 +40,8 @@ class WorldController:
     def _propose_director_event(category: str, location: str) -> str:
         from llm_client import chat
         recent = "\n".join(event["description"] for event in WORLD_STATE["events"][-6:]) or "暂无"
-        goals = "；".join(f"{name}：{character.goals[0]}" for name, character in WORLD_STATE["characters"].items())
+        goals = "；".join(f"{name}：{character.runtime_state.select_goal(character.goals)}"
+                         for name, character in WORLD_STATE["characters"].items())
         return chat(
             "你是 NovelWorld 的 Director，只提出一条可在场景中调查的环境线索。"
             "不要替 NPC 决定行动、说话或结论；线索可以不可靠。"

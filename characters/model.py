@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 
 from memory.short_term import ShortTermMemory
 from memory.semantic import SemanticMemory
+from agent.runtime import AgentRuntimeState
 
 
 @dataclass
@@ -25,3 +26,4 @@ class Character:
     items: list[str] = field(default_factory=list)
     memory: ShortTermMemory = field(default_factory=ShortTermMemory)
     semantic_memory: SemanticMemory = field(default_factory=SemanticMemory)
+    runtime_state: AgentRuntimeState = field(default_factory=AgentRuntimeState)

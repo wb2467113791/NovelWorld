@@ -44,6 +44,7 @@ def build_action_prompt(
     retrieved_context: list[str],
     lore_context: list[str],
     observations: list[str],
+    runtime_context: dict | None = None,
 ) -> str:
     """自主行动模式：NPC 没有用户输入，根据自身上下文决定下一步。"""
     character_context = _build_character_context(character, memories)
@@ -57,6 +58,8 @@ def build_action_prompt(
     skill_section = f"【当前行动策略】\n{current_skill}\n" if current_skill else ""
     observation_text = "\n".join(f"- {item}" for item in observations) or "- 暂无"
     observation_section = f"【本轮观察】\n{observation_text}\n"
+    import json
+    cognition = json.dumps(runtime_context or character.runtime_state.to_dict(), ensure_ascii=False)
 
     return f"""
 你是正在 NovelWorld 中自主行动的角色。
@@ -80,6 +83,16 @@ def build_action_prompt(
 所在地点可调查对象：{local_objects}
 
 {observation_section}
+【本人认知状态（意图，不是世界事实）】
+{cognition}
+每次结合最新观察重新考虑目标、意图与计划。Plan 只是一段粗粒度方向，可保留、修订或清空；
+不能是 Tool 步骤列表，不能据此声称行动已经完成。Skill 建议只是决策上下文。
+需要更新认知时，在本次回复文字中输出 JSON 对象：
+{{"cognition": {{"active_goal": "本人目标之一", "current_intention": "此刻想达成什么", "current_plan": "根据新信息可调整的方向"}}, "answer": "本轮回复及原因"}}
+cognition 仅允许 active_goal、current_intention、current_plan、agenda、busy_until；省略字段保持原值，意图和计划可用 null 清空。
+agenda 为条目列表，每条含 id、character（本人）、due_tick（世界累计 Tick 序号）、intention、status（pending/completed/cancelled）。
+busy_until 为累计 Tick 序号或 null。Agenda 和 busy_until 目前只保存，不会自动执行或阻塞行动。
+不能在 cognition 中写位置、体力、已知事实或替他人更新状态。工具调用仍使用现有工具；普通文字回复也可保持原认知。
 【本次任务】
 {active_goal_text}根据你的目标、当前状态、已知事实和记忆，决定此刻最合理的一步行动。旧记忆可能已过时，以当前状态和最新调查结果为准。
 需要改变世界或获取信息时，请调用一个合适的工具。如果此刻没有合理行动，可以直接回复“等待”，不调用工具；等待不产生世界事件。

@@ -105,6 +105,7 @@ class RemoteWorld:
             for name, character in remote["characters"].items():
                 character["memory"] = local["characters"][name]["memory"]
                 character["semantic_memory"] = local["characters"][name]["semantic_memory"]
+                character["runtime_state"] = local["characters"][name]["runtime_state"]
             remote_ids = {event["id"] for event in remote["events"]}
             remote["events"].extend(
                 event for event in local["events"]
@@ -139,6 +140,7 @@ class RemoteWorld:
                 name: {
                     "memory": character["memory"],
                     "semantic_memory": character["semantic_memory"],
+                    "runtime_state": character["runtime_state"],
                 }
                 for name, character in snapshot["characters"].items()
             },

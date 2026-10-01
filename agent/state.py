@@ -12,8 +12,9 @@ class AgentState(TypedDict):
 
     # 当前行动的角色名称，用于构造角色视角并校验工具调用者。
     npc_id: str
-    # 本轮正在处理的一个目标，默认取角色目标列表的第一项。
+    # 本轮目标快照；持续的 active_goal 保存在角色 runtime_state 中。
     goal: str
+    runtime_context: dict[str, Any]
     # 本轮启动时的近期记忆快照，不随角色记忆的后续写入自动变化。
     memories: list[str]
     # 本轮开始时按目标检索出的历史经历与调查事实快照。
@@ -54,12 +55,13 @@ def create_initial_agent_state(
     index: Any,
 ) -> AgentState:
     """根据角色当前信息创建一次全新的 Agent 流程状态。"""
-    active_goal = character.goals[0]
+    active_goal = character.runtime_state.select_goal(character.goals)
     query = f"{active_goal} {character.location}"
 
     return {
         "npc_id": character.name,
         "goal": active_goal,
+        "runtime_context": character.runtime_state.to_dict(),
         "memories": recent_memory_texts(character),
         "retrieved_context": index.retrieve_memory(character, query),
         "lore_context": index.retrieve_lore(character.name, query),

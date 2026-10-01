@@ -12,19 +12,19 @@ SKILL_ROOT = Path(__file__).resolve().parent
 
 
 def choose_skill(character: Character, goal: str | None = None) -> str | None:
-    objective = goal or (character.goals[0] if character.goals else "")
+    objective = goal if goal is not None else character.runtime_state.select_goal(character.goals)
     if next_step(character, objective):
         return "investigation"
     return "concealment" if concealment_step(character, objective) else None
 
 
 def current_step(character: Character, goal: str | None = None):
-    objective = goal or (character.goals[0] if character.goals else "")
+    objective = goal if goal is not None else character.runtime_state.select_goal(character.goals)
     return next_step(character, objective) or concealment_step(character, objective)
 
 
 def skill_view(character: Character) -> dict | None:
-    goal = character.goals[0] if character.goals else ""
+    goal = character.runtime_state.select_goal(character.goals)
     kind = choose_skill(character, goal)
     step = current_step(character, goal)
     if kind is None or step is None:
@@ -42,7 +42,7 @@ def skill_for(
     character: Character,
     goal: str | None = None,
 ) -> str:
-    objective = goal or (character.goals[0] if character.goals else "")
+    objective = goal if goal is not None else character.runtime_state.select_goal(character.goals)
     kind = choose_skill(character, objective)
     step = current_step(character, objective)
     if kind is None or step is None:

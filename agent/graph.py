@@ -28,6 +28,7 @@ def build_model_prompt(state: AgentState) -> str:
         retrieved_context=state["retrieved_context"],
         lore_context=state.get("lore_context", []),
         observations=state.get("perception", []) + state["observations"],
+        runtime_context=state.get("runtime_context"),
     )
 
 
@@ -123,6 +124,25 @@ def build_agent_loop_graph(
         )
         allow_tools = state["step"] < DEFAULT_MAX_TOOL_ROUNDS and not action_done
         response = request_model(conversation, allow_tools)
+        # 同一次模型回复可提出认知修订；它不执行世界行为，也不消耗行动额度。
+        character = WORLD_STATE["characters"][state["npc_id"]]
+        answer = response.output_text or "已达到工具轮数上限，本轮结束。"
+        cognition_error = None
+        try:
+            envelope = json.loads(answer)
+        except (ValueError, TypeError):
+            envelope = None
+        if isinstance(envelope, dict) and "cognition" in envelope:
+            try:
+                if not isinstance(envelope.get("answer"), str):
+                    raise ValueError("认知回复缺少 answer 文字")
+                character.runtime_state = character.runtime_state.revised(
+                    envelope["cognition"], character=character.name, goals=character.goals)
+                conversation = conversation + [{"role": "assistant", "content": response.output_text}]
+                answer = envelope["answer"]
+            except ValueError as error:
+                cognition_error = f"认知更新未保存：{error}"
+                answer = cognition_error
         tool_calls = _extract_tool_calls(response) if allow_tools else []
         call_messages = [
             {
@@ -133,13 +153,15 @@ def build_agent_loop_graph(
             }
             for call in tool_calls
         ]
-        answer = response.output_text or "已达到工具轮数上限，本轮结束。"
         if not tool_calls:
             unverified_object = unverified_inspection_claim(state["npc_id"], answer)
             if unverified_object:
                 answer = f"本轮回复声称已调查{unverified_object}，但缺少工具记录。原因：需要先执行调查工具。"
         return {
-            "conversation": conversation + call_messages,
+            "conversation": conversation + call_messages + (
+                [{"role": "user", "content": cognition_error}] if cognition_error else []),
+            "goal": character.runtime_state.select_goal(character.goals),
+            "runtime_context": character.runtime_state.to_dict(),
             "pending_tool_calls": tool_calls,
             "final_answer": None if tool_calls else answer,
         }

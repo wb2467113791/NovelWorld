@@ -109,7 +109,7 @@ public class WorldMcpTools {
         return json(Map.of("output", output, "event", event == null ? Map.of() : event, "revision", world.get("revision")));
     }
 
-    @McpTool(name = "save_agent_state", description = "保存 Python 的记忆和 Tick 调度进度；不覆盖 Java 的世界业务状态")
+    @McpTool(name = "save_agent_state", description = "保存 Python 的记忆、角色认知和 Tick 调度进度；不覆盖 Java 的世界业务状态")
     @SuppressWarnings("unchecked")
     public synchronized String saveAgentState(
             @McpToolParam(description = "世界 ID") String worldId,
@@ -119,11 +119,18 @@ public class WorldMcpTools {
         var characters = (Map<String, Object>) world.get("characters");
         var memories = (Map<String, Object>) state.get("characters");
         if (memories == null || !characters.keySet().equals(memories.keySet())) throw new IllegalArgumentException("角色集合不一致");
+        // 先验证所有角色的认知；意图不是世界事实，不能夹带业务字段或其他角色的 Agenda。
+        for (var name : characters.keySet()) {
+            var memory = (Map<String, Object>) memories.get(name);
+            if (memory.containsKey("runtime_state"))
+                validateRuntime(memory.get("runtime_state"), name, (Map<String, Object>) characters.get(name));
+        }
         for (var name : characters.keySet()) {
             var person = (Map<String, Object>) characters.get(name);
             var memory = (Map<String, Object>) memories.get(name);
             person.put("memory", memory.get("memory"));
             person.put("semantic_memory", memory.get("semantic_memory"));
+            if (memory.containsKey("runtime_state")) person.put("runtime_state", memory.get("runtime_state"));
         }
         world.put("scheduler", state.get("scheduler"));
         var existingEvents = (List<Map<String, Object>>) world.get("events");
@@ -137,6 +144,46 @@ public class WorldMcpTools {
         }
         store.update(worldId, world);
         return String.valueOf(world.get("revision"));
+    }
+
+    private static void validateRuntime(Object raw, String owner, Map<String, Object> person) {
+        if (!(raw instanceof Map<?, ?> runtime) || !java.util.Set.of(
+                "active_goal", "current_intention", "current_plan", "agenda", "busy_until").containsAll(runtime.keySet()))
+            throw new IllegalArgumentException("Agent runtime 字段无效");
+        for (String field : List.of("active_goal", "current_intention", "current_plan")) {
+            Object value = runtime.get(field);
+            if (value != null && (!(value instanceof String text) || text.isBlank()))
+                throw new IllegalArgumentException(field + " 必须是非空文字");
+        }
+        Object goal = runtime.get("active_goal");
+        if (goal != null && !((List<?>) person.get("goals")).contains(goal))
+            throw new IllegalArgumentException("active_goal 必须来自本人目标");
+        validateTick(runtime.get("busy_until"), true);
+        Object agendaValue = runtime.getOrDefault("agenda", null);
+        if (agendaValue == null && !runtime.containsKey("agenda")) return;
+        if (!(agendaValue instanceof List<?> agenda)) throw new IllegalArgumentException("Agenda 必须是列表");
+        var ids = new java.util.HashSet<String>();
+        for (Object item : agenda) {
+            if (!(item instanceof Map<?, ?> entry) || !java.util.Set.of(
+                    "id", "character", "due_tick", "intention", "status").containsAll(entry.keySet()))
+                throw new IllegalArgumentException("Agenda 字段无效");
+            for (String field : List.of("id", "character", "intention")) {
+                if (!(entry.get(field) instanceof String text) || text.isBlank())
+                    throw new IllegalArgumentException("Agenda 文字字段无效");
+            }
+            if (!owner.equals(entry.get("character")) || !ids.add((String) entry.get("id")))
+                throw new IllegalArgumentException("Agenda 归属或 ID 无效");
+            validateTick(entry.get("due_tick"), false);
+            Object status = entry.containsKey("status") ? entry.get("status") : "pending";
+            if (!List.of("pending", "completed", "cancelled").contains(status))
+                throw new IllegalArgumentException("Agenda status 无效");
+        }
+    }
+
+    private static void validateTick(Object value, boolean nullable) {
+        if (value == null && nullable) return;
+        if (!(value instanceof Integer || value instanceof Long) || ((Number) value).longValue() < 0)
+            throw new IllegalArgumentException("时间必须是非负累计 Tick 序号");
     }
 
     @McpTool(name = "introduce_narrative_event", description = "由规则触发的 Director 提议环境线索，Java 校验并结算")

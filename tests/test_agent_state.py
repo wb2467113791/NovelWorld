@@ -17,7 +17,7 @@ class AgentStateTest(unittest.TestCase):
         self.assertEqual(
             set(state),
             {
-                "npc_id", "goal", "memories", "retrieved_context", "lore_context", "perception", "observations", "step",
+                "npc_id", "goal", "runtime_context", "memories", "retrieved_context", "lore_context", "perception", "observations", "step",
                 "pending_tool_calls", "tool_results", "conversation",
                 "final_answer",
             },

@@ -94,7 +94,7 @@ class WorldTickScheduler:
         from skills.investigation.workflow import completed_step
         from skills.router import current_step
 
-        skill_step = current_step(character, character.goals[0]) if character and character.goals else None
+        skill_step = current_step(character) if character else None
         self._current_depth = scheduled["depth"] if scheduled else 0
         tick_time = WORLD_STATE["time"]
         event_count_before = len(WORLD_STATE["events"])
@@ -136,7 +136,7 @@ class WorldTickScheduler:
             for event in WORLD_STATE["events"][event_count_before:]
         ):
             current = WORLD_STATE["characters"][character.name]
-            if current_step(current, current.goals[0]) and not any(
+            if current_step(current) and not any(
                 item["name"] == current.name for item in self._pending
             ):
                 self._pending.append({"name": current.name, "depth": 0})
