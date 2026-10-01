@@ -1,261 +1,72 @@
-请先完整阅读当前仓库，尤其是：
+# NovelWorld Codex 协作约定
 
-- AGENTS.md
-- agent/
-- characters/
-- skills/
-- memory/
-- tools/
-- world/
-- world-service/
-- tests/
+## 项目目标
 
-不要只根据 README 判断项目架构。
+NovelWorld 是面向小说与 RPG 叙事的小型持久 AI 世界引擎，重点是角色自主行动、信息隔离与传播、长期记忆和一致的世界规则，不追求大规模 NPC 数量或复杂游戏画面。
 
-当前任务是开始 NovelWorld V4 重构。
+项目宗旨：NovelWorld 希望构建一个持续运行的 AI 角色世界。世界中的角色应基于各自的目标、知识、记忆、关系和计划自主行动与交流，而不是执行预先写好的剧情脚本。
 
-目标不是推翻现有项目，而是把当前偏“事件驱动任务/剧情执行器”的上层 Agent 行为，逐步升级成“持续运行的 AI 角色世界”。
+人可以使用两种视角参与世界：
 
-## 必须保留的现有架构
+- Observe Mode：从外部观察 AI 角色自己生活、行动、交流和改变世界。
+- Play Mode：作为一个受世界规则约束的 Human Actor 进入世界，与 NPC 互动。
 
-以下原则不能破坏：
+NPC 始终由各自的 Agent 自主决策。Human Actor 不能直接替 NPC 作出决定，也不能绕过世界规则修改状态。
 
-- Java `world-service` 继续作为 authoritative world state 和 authoritative rules layer。
-- Python/LangGraph 继续负责 Agent 决策。
-- Python 通过 MCP 请求 Java 执行世界行为。
-- 所有真实世界状态修改必须经过 Java 校验。
-- 保留角色知识隔离和 `perceived_by`。
-- 保留角色视角的 Memory / RAG。
-- 保留 Chroma 作为可重建检索索引。
-- 保留 MySQL 世界持久化。
-- 保留多世界隔离。
-- 保留 React + SSE Observatory。
-- 保留“一 Tick 最多一个成功 world action”原则。
-- 保留 Event Reaction 机制。
-- 保留现有测试，并给新行为补测试。
+架构约定：Web UI 只访问 Spring Boot。Spring Boot 提供静态页面、世界查询、控制 API 与 SSE，并持有权威世界状态；Python 是本机内部 Agent Runtime，负责角色决策，并通过 MCP 请求 Java 执行世界行动。不要把 FastAPI 重新作为浏览器的正式入口。
 
-核心职责：
+## 核心设计原则
 
-LLM 决定：
-“角色想做什么。”
+- LLM 负责角色的目标、意图、计划、判断和行动选择。
+- Java 世界规则负责判断行为是否合法、执行结果以及修改权威世界状态。
+- 模型文本不能直接决定世界事实；所有真实世界状态变化必须经过 Java 规则校验和结算。
+- 优先增加通用世界规则和基础行动，不要用大量剧情专用 Tool 或 Workflow 替角色决定下一步行为。
+- 角色既可以因为感知到外部事件而做出反应，也应该能够因为自己的目标、计划和 Agenda 主动行动。
+- 不要让 Director 或外部事件成为世界持续运行的唯一动力。
+- 多轮 Conversation 应视为持续的角色交互过程，不应仅依赖普通事件不断相互唤醒，也不应被普通事件 reaction depth 任意截断。
+- World Truth、Character Knowledge 和 Character Belief 应保持区分。角色听到的说法不自动等于世界事实。
 
-Java World Engine 决定：
-“这个行为是否允许，以及世界实际发生什么。”
+## Skill 约定
 
-禁止让 LLM 直接修改 World State。
+Skill 用于按角色身份、目标和当前上下文加载专业知识、行动策略、约束和相关能力。
 
----
+Skill 可以影响角色如何理解场景、如何思考以及哪些行动值得考虑，但不应该硬编码角色下一步必须调用哪个 Tool。
 
-# V4 总体方向
+避免把 Skill 写成固定剧情 Workflow，例如：
 
-后续 V4 会逐步实现：
+1. 去客栈
+2. 检查账本
+3. 询问老板
+4. 去县衙
 
-1. Goal / Intention / Plan / Agenda
-2. Event Reaction + Agenda 双驱动调度
-3. ConversationSession
-4. 更通用的 World Object Model
-5. 通用 world primitives
-6. Skill 去 Workflow 化
-7. 普通生活场景测试
+更合适的 Skill 内容包括：
 
-但是本次不要一次全部完成。
+- 专业知识
+- heuristics
+- constraints
+- relevant tool affordances
+- examples
+- 必要时的 evaluator
 
-## 本次只执行 Phase 1
+简单 Skill 可以只是 Prompt/Markdown，不要为了显得复杂而过度工程化。
 
-Phase 1 目标：
+## 和作者协作
 
-建立 Agent 的基础自主计划状态，为后续 Agenda Scheduler 做准备。
+- 用简明中文说明修改原因、涉及范围和实际验证结果；解释 Agent 行为时，区分模型决策、程序调度、Java 规则校验和世界状态修改。
+- 开始修改前检查现有文件和 Git 状态，保留用户已有的未提交改动。
+- 优先采用可读、容易调试的实现；发现重复状态、职责混乱或实际行为不自然时主动指出并处理。
+- 修改后运行与改动相关的最小充分验证；涉及 API、模型或费用时，先说明调用范围，不擅自更换模型。
+- 一次性任务要求不要自动写入长期协作规则。提交和推送以作者的具体要求为准。
 
-### 当前问题
+## 简历与面试准备
 
-目前角色行为过度依赖：
+- 作者有编程基础，正在通过阅读本项目代码准备面试。解释简历中的技术点时，从相关代码入口、关键函数和一次实际调用链讲起，再说明设计原因与取舍；首次出现的重要术语用中文解释。
+- 以当前代码和测试为依据，明确区分已实现功能、简化实现、已知限制和未来设想。尤其不要把 World Agent 说成独立的大模型，也不要虚构性能指标、并发能力或生产环境经验。
+- 对简历表述逐项核对实现：RAG 按角色可见范围检索记忆与设定；MCP 用于 Python Agent 请求 Java 世界工具；Java 规则服务负责校验、结算和权威状态；Skills 应以当前实际实现为准，不把未来设计描述成已经完成。
+- 回答面试问题时先给出可口述的简短答案，再用具体文件和例子解释；发现简历措辞超出代码能力时直接指出并给出准确写法。
 
-- `character.goals[0]`
-- Event 唤醒
-- Skill Workflow 推荐具体下一步行为
+## 安全约定
 
-需要增加一层更高层的自主认知状态。
-
-### Phase 1 需要支持
-
-至少能够表达：
-
-- active_goal
-- current_intention
-- current_plan
-- agenda
-- busy_until
-
-必要时可以设计独立的运行时 Agent 状态对象，不要求把所有字段永久写入 Character dataclass。
-
-请根据当前代码结构选择最小且清晰的方案。
-
-### Plan 的设计要求
-
-Plan 是粗粒度方向，不是 Tool 步骤列表。
-
-正确例子：
-
-Goal:
-调查失踪案
-
-Intention:
-确认客栈方向的线索
-
-Plan:
-继续调查客栈相关情况，根据获得的信息决定是否询问相关人员或前往其他地点。
-
-错误例子：
-
-1. move 客栈
-2. inspect 登记簿
-3. talk 苏晚
-4. move 县衙
-
-不要创建：
-
-- PlanWorkflow
-- PlanStepExecutor
-- 固定 Tool sequence
-
-Plan 必须能够在新 observation / event 出现后被重新考虑。
-
-### active_goal
-
-不要继续永远固定：
-
-`character.goals[0]`
-
-需要让 Agent State 可以明确保存当前 active_goal。
-
-本阶段可以采用简单、可解释的 goal selection，不需要设计复杂 Goal Manager。
-
-重点是为未来动态 goal 切换留下正确的数据结构。
-
-### Agenda
-
-本阶段只建立 Agenda 的数据模型和基础持久化/恢复能力。
-
-不要提前完成完整双调度器。
-
-Agenda 至少应该能表达：
-
-- 某个角色
-- 预计执行时间
-- 对应的 intention / activity
-- status
-
-具体结构请保持简单。
-
-不要设计复杂日历系统。
-
-### busy_until
-
-为未来 Conversation、travel、长期行为预留 busy 状态。
-
-本阶段只建立合理的数据表达和持久化支持，不需要实现完整 busy scheduler。
-
----
-
-# 本阶段暂时不要做
-
-不要提前实现：
-
-- 完整 ConversationSession
-- Player Actor
-- take / put / 新 Object Model
-- Location 拓扑
-- travel_time
-- Belief System
-- Reflection 重构
-- Social Evaluator
-- Relationship 重构
-- 经济系统
-- 天气系统
-- Redis
-- 新的大型框架
-
-也不要删除现有 Event Scheduler。
-
----
-
-# Skill
-
-本 Phase 不需要彻底重写 Skill。
-
-但请避免新增任何新的 deterministic Skill Workflow。
-
-现有 investigation / concealment 先保持兼容。
-
-如果新的 Plan 状态需要和 Skill 交互，Skill 只能作为决策上下文，不能变成 Plan 的固定步骤生成器。
-
----
-
-# 持久化
-
-新的：
-
-- active_goal
-- current_intention
-- current_plan
-- agenda
-- busy_until
-
-需要考虑当前：
-
-- Python scheduler/session state
-- Java snapshot / save_agent_state
-- restart restore
-- multi-world isolation
-
-请先理解现有持久化调用链，再决定数据放在哪里。
-
-不要制造第二套权威业务状态。
-
-Java 仍然是 World State 的权威来源。
-
-Agent cognition/runtime state 可以按照当前 scheduler/memory 的方式合理持久化。
-
----
-
-# 测试
-
-至少增加或调整测试验证：
-
-1. active_goal 不再只能隐式等于 `goals[0]`
-2. Agent runtime state 可以保存并恢复 intention / plan
-3. Agenda 数据可以保存并恢复
-4. 多世界之间 Agent runtime state 不串
-5. 原有 Event Scheduler 行为不被破坏
-6. 原有知识边界不被破坏
-7. Java authoritative world state 原则不被破坏
-
-不要使用真实 LLM API 做单元测试。
-
-使用 deterministic/mocked behavior。
-
----
-
-# 执行流程
-
-开始修改前，先输出：
-
-1. 当前 Agent / Scheduler / persistence 的实际调用链
-2. Phase 1 预计修改的文件
-3. 每个文件为什么需要改
-4. 哪些现有结构会保留
-5. 你计划如何避免把 Plan 做成新的 Workflow
-
-然后再开始修改。
-
-完成 Phase 1 后：
-
-1. 运行相关 Python tests
-2. 运行相关 Java tests
-3. 总结实际修改文件
-4. 总结新增数据结构
-5. 明确说明仍未实现哪些 V4 Phase
-6. 检查是否出现重复状态源
-7. 不要自动开始 Phase 2
-
-如果发现 Phase 1 某个设计与当前代码严重冲突，请优先保持现有正确架构，并采用更小的兼容性方案，而不是为了严格照搬本文而大面积重写。
+- 不读取、打印或提交 `.env` 中的密钥；不提交 `.venv` 或其他敏感文件。
+- 不执行破坏性 Git 操作，除非作者明确要求。
+- 所有世界状态的真实变化必须由 Java 规则服务经工具校验并结算，不能只靠模型文本假装发生。
