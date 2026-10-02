@@ -58,6 +58,12 @@ def remember_event(event: Event) -> None:
         character = WORLD_STATE["characters"][character_name]
         if not is_npc(character):
             continue
+        if event_type == "talk":
+            # 使用快照中已提交的来源，不把传入文本或模型认知当成证据。
+            source = next(((order, actual) for order, actual in enumerate(WORLD_STATE["events"])
+                           if actual["id"] == event["id"]), None)
+            if source is not None:
+                character.belief_memory.learn_report(source[1], owner=character_name, order=source[0])
         entry_id = f"{event['id']}:{character_name}"
         if any(entry.id == entry_id for entry in character.memory.all_entries()):
             continue

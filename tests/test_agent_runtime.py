@@ -119,7 +119,7 @@ class AgentRuntimeTest(unittest.TestCase):
         self.assertEqual(name, "save_agent_state")
         payload = json.loads(args["agentStateJson"])
         self.assertEqual(payload["characters"]["林默"]["runtime_state"], self.cognition().to_dict())
-        self.assertEqual(set(payload["characters"]["林默"]), {"memory", "semantic_memory", "runtime_state"})
+        self.assertEqual(set(payload["characters"]["林默"]), {"memory", "semantic_memory", "runtime_state", "belief_memory"})
         self.assertEqual(args["worldId"], WORLD_STATE["world_id"])
 
     def test_observed_event_allows_plan_revision_without_world_mutation_or_extra_call(self):

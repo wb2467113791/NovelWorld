@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Collections;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 
@@ -11,6 +12,45 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class WorldMcpToolsTest {
+    @Test void reportedBeliefsPersistOnlyWithVisibleRealSourcesAndNeverChangeObjects() {
+        var fixture = new ObjectPersistenceTest(); fixture.move();
+        var before = fixture.store.load(fixture.id).get("objects");
+        fixture.act("talk", Map.of("speaker", "玩家", "listener", "林默", "message", "钥匙在县衙"), "玩家");
+        var world = fixture.store.load(fixture.id);
+        var events = WorldObjects.list(world.get("events"));
+        var source = WorldObjects.map(events.get(events.size() - 1));
+        var report = new HashMap<String, Object>(Map.of("id", "report", "owner", "林默", "content", "钥匙在县衙",
+                "source_type", "report", "source_actor", "玩家", "source_event_id", source.get("id"),
+                "confidence", 0.5, "status", "active", "order", events.size() - 1, "evidence_event_ids", List.of(source.get("id"))));
+        var characters = ObjectPersistenceTest.npcs(world.get("characters"));
+        var lin = WorldObjects.map(characters.get("林默"));
+        lin.put("belief_memory", Map.of("entries", List.of(report)));
+        var payload = Map.of("characters", characters, "scheduler", world.get("scheduler"));
+        fixture.tools.saveAgentState(fixture.id, fixture.mapper.writeValueAsString(payload));
+        var saved = new WorldStore(fixture.jdbc, fixture.mapper).load(fixture.id);
+        assertEquals(lin.get("belief_memory"), WorldObjects.map(WorldObjects.map(saved.get("characters")).get("林默")).get("belief_memory"));
+        assertEquals(before, saved.get("objects"));
+        assertTrue(WorldObjects.list(WorldObjects.map(lin.get("semantic_memory")).get("facts")).isEmpty());
+        assertFalse(WorldActors.player(saved).containsKey("belief_memory"));
+        assertFalse(WorldObjects.map(WorldObjects.map(fixture.store.load(fixture.otherId).get("characters")).get("林默")).containsKey("belief_memory"));
+        for (var forged : List.of(Map.of("source_actor", "苏晚"), Map.of("source_event_id", "missing"),
+                Map.of("confidence", 1.0), Map.of("status", "verified"), Map.of("owner", "赵无极"))) {
+            var invalid = new HashMap<String, Object>(report); invalid.putAll(forged);
+            lin.put("belief_memory", Map.of("entries", List.of(invalid)));
+            assertThrows(IllegalArgumentException.class, () -> fixture.tools.saveAgentState(fixture.id, fixture.mapper.writeValueAsString(payload)));
+            assertEquals(saved, fixture.store.load(fixture.id));
+        }
+        lin.put("belief_memory", Map.of("entries", Collections.nCopies(51, report)));
+        assertThrows(IllegalArgumentException.class, () -> fixture.tools.saveAgentState(fixture.id, fixture.mapper.writeValueAsString(payload)));
+        lin.remove("belief_memory");
+        var zhao = WorldObjects.map(characters.get("赵无极"));
+        var invisible = new HashMap<>(report); invisible.put("owner", "赵无极");
+        zhao.put("belief_memory", Map.of("entries", List.of(invisible)));
+        assertThrows(IllegalArgumentException.class, () -> fixture.tools.saveAgentState(fixture.id, fixture.mapper.writeValueAsString(payload)));
+        zhao.remove("belief_memory");
+        fixture.tools.saveAgentState(fixture.id, fixture.mapper.writeValueAsString(payload)); // 旧客户端不能清空认知。
+        assertEquals(Map.of("entries", List.of(report)), WorldObjects.map(WorldObjects.map(fixture.store.load(fixture.id).get("characters")).get("林默")).get("belief_memory"));
+    }
     @Test
     @SuppressWarnings("unchecked")
     void cognitionPersistsInExistingSnapshotsWithoutOverwritingBusinessState() {

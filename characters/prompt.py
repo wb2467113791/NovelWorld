@@ -31,11 +31,11 @@ def _build_character_context(
 性格：{character.personality}
 目标：{goals}
 自己的秘密：{secrets}
-已知事实：{known_facts}
+开局认知（initial，角色原有设定，不等同于 World Truth）：{known_facts}
 持有物品：{items}
 当前关系：{relationship_text}
 
-【近期记忆】
+【近期经历（Memory，记住发生过什么）】
 {memory_text}
 """.strip()
 
@@ -52,7 +52,12 @@ def build_action_prompt(
 ) -> str:
     """自主行动模式：NPC 没有用户输入，根据自身上下文决定下一步。"""
     character_context = _build_character_context(character, memories)
-    retrieved_text = "\n".join(f"- {item}" for item in retrieved_context) or "- 暂无"
+    retrieved_text = "\n".join(f"- {item}" for item in retrieved_context if not item.startswith("已核实调查：")) or "- 暂无"
+    verified = [item for item in retrieved_context if item.startswith("已核实调查：")]
+    verified.extend(f"{fact.content} [直接观察，confidence=1.0，来源时间={fact.timestamp}]"
+                    for fact in character.semantic_memory.current_facts()[-8:])
+    verified_text = "\n".join(f"- {item}" for item in dict.fromkeys(verified)) or "- 暂无"
+    belief_text = "\n".join(f"- {item}" for item in character.belief_memory.report_context()) or "- 暂无"
     lore_text = "\n".join(f"- {item}" for item in lore_context) or "- 暂无"
     from world.objects import visible_objects
     local_objects = "；".join(f"{item['name']}（object_id={item['id']}，state={item['state']}，portable={item['portable']}，affordances={item['affordances']}）"
@@ -82,7 +87,17 @@ def build_action_prompt(
 
 {character_context}
 
-【检索到的旧记忆与调查事实】
+【已验证事实（本人直接观察，可能过时）】
+{verified_text}
+
+【未验证说法 / Beliefs（只读）】
+{belief_text}
+reported belief 只表示“某人曾这样说”，不等于世界事实。不同来源可能冲突，不能凭空判定谁是真的。
+confidence 是程序的固定来源标记，不是真实概率；initial 也可能是错误认知。
+只有本人真实观察才能建立已验证知识；说话事件只证明说过这句话，不证明内容真实。
+Belief 由程序从可见事件维护；不得通过 belief_updates、cognition 或普通文本修改来源、置信度或验证状态。
+
+【检索到的历史经历（说法与反思未经验证）】
 {retrieved_text}
 
 【世界设定】

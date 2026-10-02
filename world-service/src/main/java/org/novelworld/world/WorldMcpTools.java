@@ -41,6 +41,10 @@ public class WorldMcpTools {
         snapshot.put("revision", 0);
         if (snapshot.containsKey("active_conversations"))
             validateConversations(snapshot.get("active_conversations"), snapshot);
+        WorldObjects.map(snapshot.get("characters")).forEach((name, raw) -> {
+            var person = WorldObjects.map(raw);
+            if (person.containsKey("belief_memory")) WorldBeliefs.validate(person.get("belief_memory"), name, snapshot);
+        });
         store.insert(worldId, snapshot);
         return worldId;
     }
@@ -145,6 +149,8 @@ public class WorldMcpTools {
             var memory = (Map<String, Object>) memories.get(name);
             if (memory.containsKey("runtime_state"))
                 validateRuntime(memory.get("runtime_state"), name, (Map<String, Object>) characters.get(name));
+            if (memory.containsKey("belief_memory"))
+                WorldBeliefs.validate(memory.get("belief_memory"), name, world);
         }
         for (var name : npcNames) {
             var person = (Map<String, Object>) characters.get(name);
@@ -152,6 +158,7 @@ public class WorldMcpTools {
             person.put("memory", memory.get("memory"));
             person.put("semantic_memory", memory.get("semantic_memory"));
             if (memory.containsKey("runtime_state")) person.put("runtime_state", memory.get("runtime_state"));
+            if (memory.containsKey("belief_memory")) person.put("belief_memory", memory.get("belief_memory"));
         }
         world.put("scheduler", state.get("scheduler"));
         if (state.containsKey("active_conversations")) world.put("active_conversations", state.get("active_conversations"));

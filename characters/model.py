@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 
 from memory.short_term import ShortTermMemory
 from memory.semantic import SemanticMemory
+from memory.belief import BeliefMemory
 from agent.runtime import AgentRuntimeState
 
 
@@ -29,6 +30,10 @@ class Character:
     semantic_memory: SemanticMemory = field(default_factory=SemanticMemory)
     runtime_state: AgentRuntimeState = field(default_factory=AgentRuntimeState)
     actor_type: str = "npc"
+    belief_memory: BeliefMemory = field(default_factory=BeliefMemory)
+
+    def __post_init__(self) -> None:
+        self.belief_memory.seed_initial(self.name, self.known_facts)
 
 
 @dataclass

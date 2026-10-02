@@ -12,6 +12,7 @@ from lore.catalog import load_lore
 from memory.episodic import EpisodicArchive, MemoryEntry
 from memory.semantic import SemanticFact, SemanticMemory
 from memory.short_term import ShortTermMemory
+from memory.belief import BeliefMemory
 from world.state import WORLD_STATE
 from world.objects import current_objects, inventory, legacy_views, migrate, validate
 
@@ -39,7 +40,7 @@ def _character_to_dict(character: Character) -> dict:
     result = {
         item.name: deepcopy(getattr(character, item.name))
         for item in fields(Character)
-        if item.name not in {"memory", "semantic_memory", "runtime_state"}
+        if item.name not in {"memory", "semantic_memory", "runtime_state", "belief_memory"}
     }
     memory = character.memory
     result["memory"] = {
@@ -55,11 +56,12 @@ def _character_to_dict(character: Character) -> dict:
     }
     character.runtime_state.select_goal(character.goals)
     result["runtime_state"] = character.runtime_state.to_dict()
+    result["belief_memory"] = character.belief_memory.to_dict()
     result["items"] = inventory(character)
     return result
 
 
-def _character_from_dict(data: dict) -> Character:
+def _character_from_dict(data: dict, events: list) -> Character:
     if data.get("actor_type", "npc") == "player":
         return PlayerActor(**{item.name: data[item.name] for item in fields(PlayerActor) if item.name in data})
     if data.get("actor_type", "npc") != "npc":
@@ -83,11 +85,17 @@ def _character_from_dict(data: dict) -> Character:
         item.name: (data.get(item.name, {"hp": 100, "status": "normal", "actor_type": "npc"}[item.name])
                     if item.name in {"hp", "status", "actor_type"} else data[item.name])
         for item in fields(Character)
-        if item.name not in {"memory", "semantic_memory", "runtime_state"}
+        if item.name not in {"memory", "semantic_memory", "runtime_state", "belief_memory"}
     }
     runtime = AgentRuntimeState.from_dict(data.get("runtime_state", {}), character=data["name"])
     runtime.select_goal(data["goals"])
-    return Character(**ordinary_fields, memory=memory, semantic_memory=semantic, runtime_state=runtime)
+    beliefs = BeliefMemory.from_dict(data["belief_memory"], owner=data["name"], known_facts=data["known_facts"], events=events) if "belief_memory" in data else BeliefMemory()
+    character = Character(**ordinary_fields, memory=memory, semantic_memory=semantic, runtime_state=runtime, belief_memory=beliefs)
+    if "belief_memory" not in data:
+        # 仅迁移旧快照：从本人可见的真实 talk 恢复近期说法，不扫他人的记忆。
+        for order, event in enumerate(events):
+            character.belief_memory.learn_report(event, owner=character.name, order=order)
+    return character
 
 
 def snapshot_world(*, scheduler_state: dict | None = None) -> dict:
@@ -116,7 +124,7 @@ def restore_snapshot(snapshot: dict) -> dict:
     if snapshot.get("version") != SAVE_VERSION:
         raise ValueError("不支持的世界存档版本")
     characters = {
-        name: _character_from_dict(data)
+        name: _character_from_dict(data, snapshot["events"])
         for name, data in snapshot["characters"].items()
     }
     if not snapshot.get("world_id") or not characters:

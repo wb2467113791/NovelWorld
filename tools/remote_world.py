@@ -120,6 +120,7 @@ class RemoteWorld:
                 character["memory"] = local["characters"][name]["memory"]
                 character["semantic_memory"] = local["characters"][name]["semantic_memory"]
                 character["runtime_state"] = local["characters"][name]["runtime_state"]
+                character["belief_memory"] = local["characters"][name]["belief_memory"]
         restore_snapshot(remote)
         reconcile_event_memories()
 
@@ -150,6 +151,7 @@ class RemoteWorld:
                     "memory": character["memory"],
                     "semantic_memory": character["semantic_memory"],
                     "runtime_state": character["runtime_state"],
+                    "belief_memory": character["belief_memory"],
                 }
                 for name, character in snapshot["characters"].items()
                 if character.get("actor_type", "npc") == "npc"
