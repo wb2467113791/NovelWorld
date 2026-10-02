@@ -68,13 +68,18 @@ public class WorldMcpTools {
             throw new IllegalArgumentException("线索名称或内容无效");
         var world = store.load(worldId);
         if (!((List<?>) world.get("locations")).contains(location)) throw new IllegalArgumentException("地点不存在：" + location);
+        WorldObjects.ensure(world);
         var objects = (Map<String, Object>) world.get("inspectable_objects");
         var place = (Map<String, Object>) objects.computeIfAbsent(location, ignored -> new LinkedHashMap<String, Object>());
         var hidden = (Map<String, Object>) world.getOrDefault("concealed_objects", Map.of());
         var hiddenPlace = (Map<String, Object>) hidden.getOrDefault(location, Map.of());
         if (place.containsKey(objectName) || hiddenPlace.containsKey(objectName))
             throw new IllegalArgumentException("该地点已有同名线索");
-        place.put(objectName, observation);
+        var object = WorldObjects.sceneObject(location, objectName, observation);
+        if (((Map<?, ?>) world.get("objects")).containsKey(object.get("id")))
+            throw new IllegalArgumentException("该线索已存在，不能覆盖其物理状态");
+        ((Map<String, Object>) world.get("objects")).put((String) object.get("id"), object);
+        WorldObjects.project(world);
         var event = new LinkedHashMap<String, Object>();
         event.put("id", UUID.randomUUID().toString().replace("-", ""));
         event.put("timestamp", world.get("time")); event.put("type", "intervention");
@@ -95,10 +100,14 @@ public class WorldMcpTools {
             @McpToolParam(description = "当前行动角色") String actingCharacter) {
         var world = store.load(worldId);
         var arguments = parse(argumentsJson);
-        String actorKey = Map.of("inspect", "character", "talk", "speaker",
-                "update_relationship", "character", "move_character", "character", "give_item", "giver",
-                "rest_character", "character", "world_action", "actor",
-                "conceal_clue", "character", "recover_clue", "character").get(name);
+        String actorKey = switch (name) {
+            case "talk" -> "speaker";
+            case "give_item" -> "giver";
+            case "world_action" -> "actor";
+            case "inspect", "take", "put", "give", "use", "interact", "update_relationship", "move_character",
+                    "rest_character", "conceal_clue", "recover_clue" -> "character";
+            default -> null;
+        };
         if (actorKey != null && !actingCharacter.equals(arguments.get(actorKey)))
             throw new IllegalArgumentException(actingCharacter + "不能通过" + name + "替其他角色行动");
         int before = ((List<?>) world.get("events")).size();
@@ -263,12 +272,18 @@ public class WorldMcpTools {
         if (tickCount < 1) throw new IllegalArgumentException("Tick 数无效");
         var world = store.load(worldId);
         if (!((List<?>) world.get("locations")).contains(location)) throw new IllegalArgumentException("地点不存在：" + location);
+        WorldObjects.ensure(world);
         var objects = (Map<String, Object>) world.get("inspectable_objects");
         var place = (Map<String, Object>) objects.computeIfAbsent(location, ignored -> new LinkedHashMap<String, Object>());
         int sequence = ((List<?>) world.get("events")).size() + 1;
-        while (place.containsKey("新线索" + sequence)) sequence++;
+        while (place.containsKey("新线索" + sequence) || ((Map<?, ?>) world.get("objects")).containsKey(
+                WorldObjects.stableId("scene\0" + location + "\0新线索" + sequence))) sequence++;
         String objectName = "新线索" + sequence;
-        place.put(objectName, observation);
+        var object = WorldObjects.sceneObject(location, objectName, observation);
+        if (((Map<?, ?>) world.get("objects")).containsKey(object.get("id")))
+            throw new IllegalArgumentException("该线索已存在，不能覆盖其物理状态");
+        ((Map<String, Object>) world.get("objects")).put((String) object.get("id"), object);
+        WorldObjects.project(world);
         var event = new LinkedHashMap<String, Object>();
         event.put("id", UUID.randomUUID().toString().replace("-", ""));
         event.put("timestamp", world.get("time")); event.put("type", "director");

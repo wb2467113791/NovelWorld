@@ -13,6 +13,7 @@ from memory.episodic import EpisodicArchive, MemoryEntry
 from memory.semantic import SemanticFact, SemanticMemory
 from memory.short_term import ShortTermMemory
 from world.state import WORLD_STATE
+from world.objects import current_objects, inventory, legacy_views, migrate, validate
 
 
 SAVE_VERSION = 1
@@ -49,6 +50,7 @@ def _character_to_dict(character: Character) -> dict:
         "superseded_event_ids": sorted(semantic.superseded_event_ids),
     }
     result["runtime_state"] = character.runtime_state.to_dict()
+    result["items"] = inventory(character)
     return result
 
 
@@ -65,7 +67,7 @@ def _character_from_dict(data: dict) -> Character:
     semantic_data = data["semantic_memory"]
     facts = [SemanticFact(**item) for item in semantic_data["facts"]]
     semantic = SemanticMemory(
-        facts={(fact.location, fact.object_name): fact for fact in facts},
+        facts={(fact.location, fact.object_id or fact.object_name): fact for fact in facts},
         superseded_event_ids=set(semantic_data["superseded_event_ids"]),
     )
     ordinary_fields = {
@@ -87,9 +89,8 @@ def snapshot_world(*, scheduler_state: dict | None = None) -> dict:
         "time": WORLD_STATE["time"],
         "locations": WORLD_STATE["locations"],
         "inspectables": WORLD_STATE["inspectables"],
-        "inspectable_objects": WORLD_STATE["inspectable_objects"],
-        "concealable_objects": WORLD_STATE.get("concealable_objects", {}),
-        "concealed_objects": WORLD_STATE.get("concealed_objects", {}),
+        **legacy_views(current_objects(), WORLD_STATE["characters"]),
+        "objects": deepcopy(current_objects()),
         "lore": WORLD_STATE["lore"],
         "events": WORLD_STATE["events"],
         "active_conversations": [session.to_dict() for session in sessions() if session.status == "active"],
@@ -112,6 +113,10 @@ def restore_snapshot(snapshot: dict) -> dict:
     if not snapshot.get("world_id") or not characters:
         raise ValueError("世界存档缺少世界 ID 或角色")
     conversations = restore_sessions(snapshot.get("active_conversations", []), characters, snapshot["events"])
+    objects = migrate(snapshot)
+    validate(objects, characters, snapshot["locations"])
+    for name, character in characters.items():
+        character.items = [item["name"] for item in objects.values() if item["holder"] == name]
     restored = {
         key: snapshot[key]
         for key in ("world_id", "time", "locations", "inspectables", "inspectable_objects", "events")
@@ -122,6 +127,8 @@ def restore_snapshot(snapshot: dict) -> dict:
     restored["concealed_objects"] = snapshot.get("concealed_objects", {})
     restored["characters"] = characters
     restored["active_conversations"] = conversations
+    restored["objects"] = objects
+    restored.update(legacy_views(objects, characters))
     WORLD_STATE.clear()
     WORLD_STATE.update(restored)
     return snapshot["scheduler"]

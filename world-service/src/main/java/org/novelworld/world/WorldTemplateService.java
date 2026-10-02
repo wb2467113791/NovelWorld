@@ -64,6 +64,7 @@ public class WorldTemplateService {
             characters.put(name, character);
         });
         world.put("characters", characters);
+        if (template.containsKey("objects")) world.put("objects", copy(template.get("objects")));
         world.put("scheduler", Map.of("tick_count", 0));
         store.insert(worldId, world);
         return worldId;

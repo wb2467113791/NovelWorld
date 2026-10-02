@@ -13,7 +13,8 @@ def _build_character_context(
     goals = "；".join(character.goals)
     secrets = "；".join(character.secrets) or "暂无"
     known_facts = "；".join(character.known_facts) or "暂无"
-    items = "；".join(character.items) or "暂无"
+    from world.objects import inventory
+    items = "；".join(inventory(character)) or "暂无"
     relationship_text = "；".join(
         f"对{target}的关系值为{value}"
         for target, value in character.relationships.items()
@@ -51,8 +52,9 @@ def build_action_prompt(
     character_context = _build_character_context(character, memories)
     retrieved_text = "\n".join(f"- {item}" for item in retrieved_context) or "- 暂无"
     lore_text = "\n".join(f"- {item}" for item in lore_context) or "- 暂无"
-    available_objects = WORLD_STATE["inspectable_objects"].get(character.location, {})
-    local_objects = "、".join(available_objects) or "暂无"
+    from world.objects import visible_objects
+    local_objects = "；".join(f"{item['name']}（object_id={item['id']}，state={item['state']}，portable={item['portable']}，affordances={item['affordances']}）"
+                              for item in visible_objects(character)) or "暂无"
     active_goal_text = f"当前目标：{active_goal}\n"
     from skills.router import skill_for
     current_skill = skill_for(character, active_goal)
@@ -121,7 +123,7 @@ Agenda 的 completed 只表示行动机会已消费，不表示目标或 Plan �
 需要改变世界或获取信息时，请调用一个合适的工具。如果此刻没有合理行动，可以直接回复“等待”，不调用工具；等待不产生世界事件。
 不要等待用户提问，不要替其他角色行动，也不要使用上面没有提供的信息。
 只有工具结果才能代表真实的状态变化，不要声称位置、体力或关系发生了未经工具执行的改变。
-他人说“请过目”只是一句对话；若要声称自己已查看某个对象，先用 inspect 工具指定 object_name，并以成功结果为依据。不要虚构工具结果未提供的细节。
+他人说“请过目”只是一句对话；若要声称自己已查看某个对象，先用 inspect 工具指定可见 object_id，并以成功结果为依据。不要虚构工具结果未提供的细节。
 每个 Tick 最多成功执行一个行动。完成后根据工具结果结束本轮，不要重复调查没有变化的内容。
 最终回复请另起一行写“原因：……”，用一句简短的话说明你为何采取这一步；只依据你已知的信息和工具结果。
 """

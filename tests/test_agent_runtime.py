@@ -58,7 +58,7 @@ class AgentRuntimeTest(unittest.TestCase):
         self.index.retrieve_memory.assert_called_once_with(lin, "保护线索 晚风客栈")
         # 使用不带捕快角色的角色区分两种 Skill。
         lin.role = "守卫"
-        self.assertEqual(current_step(lin).tool, "conceal_clue")
+        self.assertEqual(current_step(lin).tool, "take")
         self.assertIn("当前目标：保护线索", build_model_prompt(state))
 
     def test_goal_selection_keeps_choice_and_handles_removed_or_empty_goals(self):

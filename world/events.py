@@ -38,9 +38,9 @@ def recipients_for_event(
         return [name for name in event["perceived_by"] if name in characters]
     recipients = [event["actor"]] if event["actor"] in characters else []
 
-    if event["type"] in {"talk", "give_item"} and event["target"] is not None:
+    if event["type"] in {"talk", "give_item", "give"} and event["target"] is not None:
         recipients.append(event["target"])
-    elif event["type"] in {"move", "flee", "follow", "attack", "interact"}:
+    elif event["type"] in {"move", "flee", "follow", "attack", "interact", "take", "put", "use"}:
         recipients.extend(
             name for name, character in characters.items()
             if name != event["actor"] and character.location == event["location"]

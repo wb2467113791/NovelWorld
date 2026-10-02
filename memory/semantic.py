@@ -15,6 +15,7 @@ class SemanticFact:
     observation: str
     source_event_id: str
     timestamp: str
+    object_id: str | None = None
 
     @property
     def content(self) -> str:
@@ -38,11 +39,15 @@ class SemanticMemory:
         observation: str,
         source_event_id: str,
         timestamp: str,
+        object_id: str | None = None,
     ) -> SemanticFact:
-        key = (location, object_name)
+        key = (location, object_id or object_name)
         previous = self.facts.get(key)
+        if previous is None and object_id is not None:
+            previous = self.facts.pop((location, object_name), None)  # 旧 name-key fact 单向迁移。
         if previous is not None:
             if previous.source_event_id == source_event_id:
+                self.facts[key] = previous
                 return previous
             self.superseded_event_ids.add(previous.source_event_id)
 
@@ -54,6 +59,7 @@ class SemanticMemory:
             observation=observation,
             source_event_id=source_event_id,
             timestamp=timestamp,
+            object_id=object_id,
         )
         self.facts[key] = fact
         return fact
@@ -63,6 +69,7 @@ class SemanticMemory:
 
     def forget_inspection(self, location: str, object_name: str) -> None:
         """线索找回后，本人此前关于临时痕迹的调查不再是当前事实。"""
-        previous = self.facts.pop((location, object_name), None)
-        if previous is not None:
-            self.superseded_event_ids.add(previous.source_event_id)
+        for key, previous in list(self.facts.items()):
+            if previous.location == location and previous.object_name == object_name:
+                self.facts.pop(key)
+                self.superseded_event_ids.add(previous.source_event_id)

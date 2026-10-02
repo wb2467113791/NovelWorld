@@ -40,10 +40,10 @@ public class WorldRules {
         var recipients = new java.util.ArrayList<String>();
         var characters = map(world.get("characters"));
         if (characters.containsKey(actor)) recipients.add(actor);
-        if (("talk".equals(type) || "give_item".equals(type)) && target != null && characters.containsKey(target))
+        if (("talk".equals(type) || "give_item".equals(type) || "give".equals(type)) && target != null && characters.containsKey(target))
             recipients.add(target);
         if (List.of("move", "flee", "follow", "attack", "interact", "director",
-                "conceal", "recover").contains(type)) {
+                "conceal", "recover", "take", "put", "use").contains(type)) {
             for (var entry : characters.entrySet()) {
                 if (!recipients.contains(entry.getKey()) && location.equals(map(entry.getValue()).get("location")))
                     recipients.add(entry.getKey());
@@ -53,6 +53,8 @@ public class WorldRules {
     }
 
     public String apply(Map<String, Object> world, String name, Map<String, Object> args) {
+        WorldObjects.ensure(world);
+        if (WorldObjects.TOOLS.contains(name)) return WorldObjects.apply(world, name, args);
         if ("world_action".equals(name)) return applyWorldAction(world, args);
         String actor, target, location, result;
         Map<String, Object> payload;
@@ -75,37 +77,22 @@ public class WorldRules {
                 location = (String) speaker.get("location");
                 if (!location.equals(listener.get("location"))) throw new IllegalArgumentException("双方不在同一地点");
                 String message = str(args, "message").trim();
-                var objectsByPlace = map(world.get("inspectable_objects"));
-                for (Object placeObjects : objectsByPlace.values()) {
-                    for (String objectName : map(placeObjects).keySet()) {
-                        boolean claimed = false;
-                        for (String sentence : message.split("[。！？\\n]")) {
-                            if (REVIEW_CLAIM.matcher(sentence).find() && (sentence.contains(objectName)
-                                    || sentence.contains(OBJECT_ALIASES.getOrDefault(objectName, objectName)))) claimed = true;
-                        }
-                        if (claimed && list(world.get("events")).stream().map(WorldRules::map).noneMatch(event ->
-                                "inspect".equals(event.get("type")) && actor.equals(event.get("actor"))
-                                        && objectName.equals(map(event.get("payload")).get("object_name"))))
-                            throw new IllegalArgumentException(actor + "尚未调查" + objectName + "，不能声称已经查看");
+                for (Object raw : map(world.get("objects")).values()) {
+                    var item = map(raw); String objectName = (String) item.get("name");
+                    boolean claimed = false;
+                    for (String sentence : message.split("[。！？\\n]")) {
+                        if (REVIEW_CLAIM.matcher(sentence).find() && (sentence.contains(objectName)
+                                || sentence.contains(OBJECT_ALIASES.getOrDefault(objectName, objectName)))) claimed = true;
                     }
+                    if (claimed && list(world.get("events")).stream().map(WorldRules::map).noneMatch(event ->
+                            "inspect".equals(event.get("type")) && actor.equals(event.get("actor"))
+                            && (item.get("id").equals(map(event.get("payload")).get("object_id"))
+                                || (map(event.get("payload")).get("object_id") == null && objectName.equals(map(event.get("payload")).get("object_name"))))))
+                        throw new IllegalArgumentException(actor + "尚未调查" + objectName + "，不能声称已经查看");
                 }
                 requireEnergy(speaker, actor, name);
                 result = actor + "对" + target + "说：“" + message + "”";
                 type = "talk"; payload = Map.of("message", message);
-                break;
-            }
-            case "give_item": {
-                actor = str(args, "giver"); target = str(args, "receiver");
-                String item = str(args, "item");
-                if (actor.equals(target)) throw new IllegalArgumentException("角色不能把物品交给自己");
-                var giver = character(world, actor); var receiver = character(world, target);
-                location = (String) giver.get("location");
-                if (!location.equals(receiver.get("location"))) throw new IllegalArgumentException("双方不在同一地点");
-                if (!list(giver.get("items")).contains(item)) throw new IllegalArgumentException(actor + "不拥有物品：" + item);
-                requireEnergy(giver, actor, name);
-                list(giver.get("items")).remove(item); list(receiver.get("items")).add(item);
-                result = actor + "在" + location + "把" + item + "交给了" + target + "。";
-                type = "give_item"; payload = Map.of("item", item);
                 break;
             }
             case "update_relationship": {
@@ -122,98 +109,6 @@ public class WorldRules {
                 location = (String) person.get("location");
                 result = actor + "对" + target + "的关系值从" + old + "变为" + next + "。";
                 type = "relationship"; payload = Map.of("change", number.intValue(), "old_value", old, "new_value", next);
-                break;
-            }
-            case "inspect": {
-                actor = str(args, "character"); var person = character(world, actor);
-                location = (String) person.get("location");
-                Object object = args.get("object_name");
-                Object observation = object == null ? map(world.get("inspectables")).get(location)
-                        : map(map(world.get("inspectable_objects")).getOrDefault(location, Map.of())).get(object);
-                if (observation == null) throw new IllegalArgumentException("地点或对象无法调查");
-                var history = list(world.get("events"));
-                int latestConceal = -1;
-                if (object instanceof String traceName && traceName.endsWith("被移动的痕迹")) {
-                    String originalName = traceName.substring(0, traceName.length() - "被移动的痕迹".length());
-                    for (int index = 0; index < history.size(); index++) {
-                        var event = map(history.get(index));
-                        if ("conceal".equals(event.get("type")) && location.equals(event.get("location"))
-                                && originalName.equals(map(event.get("payload")).get("object_name")))
-                            latestConceal = index;
-                    }
-                }
-                for (int index = latestConceal + 1; index < history.size(); index++) {
-                    var event = map(history.get(index)); var previous = map(event.get("payload"));
-                    if ("inspect".equals(event.get("type")) && actor.equals(event.get("actor"))
-                            && location.equals(event.get("location")) && java.util.Objects.equals(object, previous.get("object_name"))
-                            && observation.equals(previous.get("observation"))) throw new IllegalArgumentException("已调查过，目前没有新发现");
-                }
-                requireEnergy(person, actor, name);
-                result = actor + "调查了" + location + (object == null ? "" : "的" + object) + "：" + observation;
-                type = "inspect"; target = null;
-                payload = new java.util.HashMap<>(); payload.put("observation", observation);
-                if (object != null) payload.put("object_name", object);
-                break;
-            }
-            case "conceal_clue": {
-                actor = str(args, "character"); String objectName = str(args, "object_name");
-                var person = character(world, actor);
-                location = (String) person.get("location");
-                var allowed = map(world.getOrDefault("concealable_objects", Map.of()));
-                Object names = allowed.getOrDefault(location, List.of());
-                if (!(names instanceof List<?>) || !((List<?>) names).contains(objectName))
-                    throw new IllegalArgumentException("该对象不能藏匿");
-                var place = map(map(world.get("inspectable_objects")).getOrDefault(location, Map.of()));
-                Object observation = place.get(objectName);
-                if (!(observation instanceof String)) throw new IllegalArgumentException("线索已不在现场");
-                String traceName = objectName + "被移动的痕迹";
-                if (place.containsKey(traceName)) throw new IllegalArgumentException("现场已有同名痕迹");
-                requireEnergy(person, actor, name);
-                var hidden = map(world.computeIfAbsent("concealed_objects", ignored -> new LinkedHashMap<String, Object>()));
-                var hiddenPlace = map(hidden.computeIfAbsent(location, ignored -> new LinkedHashMap<String, Object>()));
-                if (hiddenPlace.containsKey(objectName)) throw new IllegalArgumentException("线索已被藏匿");
-                hiddenPlace.put(objectName, Map.of("observation", observation, "trace_name", traceName,
-                        "concealed_by", actor, "concealed_at_event_count", list(world.get("events")).size()));
-                place.remove(objectName);
-                place.put(traceName, "此处有物件被移走的痕迹，原线索内容无法直接查看。");
-                target = null; type = "conceal";
-                payload = Map.of("object_name", objectName, "trace_name", traceName);
-                result = actor + "藏起了" + location + "的" + objectName + "，现场留下异常痕迹。";
-                break;
-            }
-            case "recover_clue": {
-                actor = str(args, "character"); String objectName = str(args, "object_name");
-                var person = character(world, actor);
-                location = (String) person.get("location");
-                var hidden = map(world.getOrDefault("concealed_objects", Map.of()));
-                var hiddenPlace = map(hidden.getOrDefault(location, Map.of()));
-                Object raw = hiddenPlace.get(objectName);
-                if (!(raw instanceof Map<?, ?>)) throw new IllegalArgumentException("现场没有可找回的线索");
-                var clue = map(raw);
-                String traceName = (String) clue.get("trace_name");
-                var place = map(map(world.get("inspectable_objects")).getOrDefault(location, Map.of()));
-                if (!place.containsKey(traceName) || place.containsKey(objectName))
-                    throw new IllegalArgumentException("线索状态已变化");
-                int concealedAt = ((Number) clue.get("concealed_at_event_count")).intValue();
-                boolean examined = false;
-                var events = list(world.get("events"));
-                for (int index = concealedAt + 1; index < events.size(); index++) {
-                    var event = map(events.get(index));
-                    if ("inspect".equals(event.get("type")) && actor.equals(event.get("actor"))
-                            && location.equals(event.get("location"))
-                            && traceName.equals(map(event.get("payload")).get("object_name"))) {
-                        examined = true;
-                        break;
-                    }
-                }
-                if (!examined) throw new IllegalArgumentException("需先亲自调查异常痕迹");
-                requireEnergy(person, actor, name);
-                place.remove(traceName);
-                place.put(objectName, clue.get("observation"));
-                hiddenPlace.remove(objectName);
-                target = null; type = "recover";
-                payload = Map.of("object_name", objectName);
-                result = actor + "循着痕迹找回了" + location + "的" + objectName + "。";
                 break;
             }
             case "rest_character": {
@@ -254,6 +149,12 @@ public class WorldRules {
     /** 新动作首版均使用确定性规则；模型只能提出意图。 */
     private String applyWorldAction(Map<String, Object> world, Map<String, Object> args) {
         String action = str(args, "action");
+        if (List.of("use_item", "interact").contains(action)) {
+            var request = new LinkedHashMap<>(args);
+            request.put("character", args.get("actor"));
+            request.put("action", "use_item".equals(action) ? "consume" : args.get("interaction"));
+            return WorldObjects.apply(world, "use_item".equals(action) ? "use" : "interact", request);
+        }
         String actor = str(args, "actor");
         var person = character(world, actor);
         String location = (String) person.get("location");
@@ -275,18 +176,6 @@ public class WorldRules {
                 hpAfter = Math.max(0, ((Number) other.getOrDefault("hp", 100)).intValue() - 20);
                 payload.put("damage", 20); payload.put("hp_after", hpAfter);
                 result = actor + "攻击了" + target + "，造成20点伤害。";
-                break;
-            }
-            case "use_item": {
-                String item = str(args, "item");
-                if (!list(person.get("items")).contains(item)) throw new IllegalArgumentException(actor + "不拥有物品：" + item);
-                if (!item.contains("药")) throw new IllegalArgumentException("该物品没有已定义的使用规则：" + item);
-                if (((Number) person.getOrDefault("hp", 100)).intValue() >= 100)
-                    throw new IllegalArgumentException("生命值已满，无需使用药物");
-                cost = 2;
-                hpAfter = Math.min(100, ((Number) person.getOrDefault("hp", 100)).intValue() + 20);
-                payload.put("item", item); payload.put("hp_after", hpAfter);
-                result = actor + "使用" + item + "，生命值恢复至" + hpAfter + "。";
                 break;
             }
             case "flee": {
@@ -324,16 +213,6 @@ public class WorldRules {
                 location = destination;
                 break;
             }
-            case "interact": {
-                String objectName = str(args, "object_name");
-                var objects = map(world.get("inspectable_objects"));
-                if (!map(objects.getOrDefault(location, Map.of())).containsKey(objectName))
-                    throw new IllegalArgumentException("当前位置没有这个互动对象：" + objectName);
-                cost = 2;
-                payload.put("object_name", objectName);
-                result = actor + "与" + location + "的" + objectName + "互动。";
-                break;
-            }
             default: throw new IllegalArgumentException("未知行动：" + action);
         }
         int energy = ((Number) person.get("energy")).intValue();
@@ -343,10 +222,6 @@ public class WorldRules {
         if ("attack".equals(action)) {
             other.put("hp", hpAfter);
             other.put("status", hpAfter == 0 ? "unconscious" : "injured");
-        } else if ("use_item".equals(action)) {
-            person.put("hp", hpAfter);
-            if (hpAfter == 100) person.put("status", "normal");
-            list(person.get("items")).remove(payload.get("item"));
         } else if ("flee".equals(action) || "follow".equals(action)) {
             person.put("location", location);
         }

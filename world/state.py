@@ -25,6 +25,8 @@ WORLD_STATE = {
             "住客登记簿": "登记簿记载失踪者案发前夜入住晚风客栈，但离店时辰被涂改；仅凭记录无法确定其去向。",
             "后门": "后门通向客栈外；仅凭眼前环境无法确认案发夜经过的人是谁。",
             "柴房门锁": "柴房门锁已有锈迹；仅凭外观无法确认近期是否被打开过。",
+            "木箱": "一个可打开存放物品的木箱。",
+            "钥匙": "一把普通小钥匙。",
         },
     },
     "concealable_objects": {"晚风客栈": ["住客登记簿"]},
@@ -71,6 +73,7 @@ def remember_event(event: Event) -> None:
                 observation=event["payload"]["observation"],
                 source_event_id=event["id"],
                 timestamp=event["timestamp"],
+                object_id=event["payload"].get("object_id"),
             )
         if event_type == "recover" and character_name == actor:
             trace_name = event["payload"]["object_name"] + "被移动的痕迹"
@@ -90,7 +93,7 @@ def reconcile_event_memories() -> int:
             recipients = event["perceived_by"]
         else:
             recipients = [event["actor"]]
-            if event["type"] in {"talk", "give_item"} and event["target"] is not None:
+            if event["type"] in {"talk", "give_item", "give"} and event["target"] is not None:
                 recipients.append(event["target"])
         for name in recipients:
             character = WORLD_STATE["characters"].get(name)

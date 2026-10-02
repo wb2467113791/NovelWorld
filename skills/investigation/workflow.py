@@ -21,7 +21,9 @@ def completed_step(step: InvestigationStep | None, event: dict, actor: str) -> b
     if step.tool == "move_character":
         return event["type"] == "move" and event["location"] == step.arguments["location"]
     if step.tool == "inspect":
-        return event["type"] == "inspect" and event["payload"].get("object_name") == step.arguments["object_name"]
+        return event["type"] == "inspect" and (event["payload"].get("object_id") == step.arguments["object_id"] if "object_id" in step.arguments else event["payload"].get("object_name") == step.arguments["object_name"])
+    if step.tool == "take":
+        return event["type"] == "take" and event["payload"].get("object_id") == step.arguments["object_id"]
     if step.tool == "talk":
         return event["type"] == "talk" and event["target"] == step.arguments["listener"]
     if step.tool == "recover_clue":
@@ -42,42 +44,13 @@ def next_step(character: Character, goal: str) -> InvestigationStep | None:
 
     location = character.location
     own_events = [event for event in WORLD_STATE["events"] if event["actor"] == character.name]
-    inspected = {
-        (fact.location, fact.object_name)
-        for fact in character.semantic_memory.current_facts()
-    }
-    # 痕迹本身可见；原线索内容仍只保存在 Java，不参与这里的规划。
-    for object_name in WORLD_STATE["inspectable_objects"].get(location, {}):
-        if not object_name.endswith("被移动的痕迹"):
-            continue
-        original = object_name.removesuffix("被移动的痕迹")
-        latest_conceal = max((index for index, event in enumerate(WORLD_STATE["events"])
-                              if event["type"] == "conceal" and event["location"] == location
-                              and event["payload"].get("object_name") == original), default=-1)
-        examined_after_conceal = any(
-            index > latest_conceal and event["type"] == "inspect"
-            and event["actor"] == character.name and event["location"] == location
-            and event["payload"].get("object_name") == object_name
-            for index, event in enumerate(WORLD_STATE["events"])
-        )
-        if (location, object_name) not in inspected or not examined_after_conceal:
-            return InvestigationStep(
-                "核查异常痕迹", "inspect",
-                {"character": character.name, "object_name": object_name},
-                f"{location}出现尚未调查的{object_name}",
-            )
-        return InvestigationStep(
-            "找回线索", "recover_clue",
-            {"character": character.name, "object_name": original},
-            f"本人已调查{object_name}，可尝试找回原线索",
-        )
-    for object_name in WORLD_STATE["inspectable_objects"].get(location, {}):
-        if (location, object_name) not in inspected:
-            return InvestigationStep(
-                "核对现场", "inspect",
-                {"character": character.name, "object_name": object_name},
-                f"{location}的{object_name}尚无本人调查记录",
-            )
+    from world.objects import visible_objects
+    for item in visible_objects(character):
+        if item["holder"] is None and not any(fact.location == location and
+            (fact.object_id == item["id"] or (fact.object_id is None and fact.object_name == item["name"]))
+            for fact in character.semantic_memory.current_facts()):
+            return InvestigationStep("核对现场", "inspect", {"character": character.name, "object_id": item["id"]},
+                                     f"{location}的{item['name']}尚无本人调查记录")
 
     # 先询问目前就在现场、且本轮线索更新后尚未询问过的人。
     latest_fact_event_ids = {

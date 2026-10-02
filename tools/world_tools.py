@@ -17,11 +17,8 @@ OBJECT_ALIASES = {
 
 def unverified_inspection_claim(character: str, text: str) -> str | None:
     """检查角色自称调查过的对象是否有对应的已提交事件。"""
-    object_names = {
-        name
-        for objects in WORLD_STATE["inspectable_objects"].values()
-        for name in objects
-    }
+    from world.objects import visible_objects
+    object_names = {item["name"] for item in visible_objects(WORLD_STATE["characters"][character])}
     for sentence in re.split(r"[。！？\n]", text):
         if not REVIEW_CLAIM.search(sentence):
             continue
@@ -42,26 +39,13 @@ def unverified_inspection_claim(character: str, text: str) -> str | None:
 # Tool Schema 是给模型看的工具说明书，不负责执行 Python 函数。
 NPC_ACTION_TOOL_SCHEMAS = [
     {
-        "type": "function", "name": "conceal_clue",
-        "description": "藏起当前位置被明确标记为可藏匿的线索；Java 保存原文并留下可调查痕迹。",
-        "parameters": {"type": "object", "properties": {
-            "character": {"type": "string"}, "object_name": {"type": "string"},
-        }, "required": ["character", "object_name"]},
-    },
-    {
-        "type": "function", "name": "recover_clue",
-        "description": "亲自调查异常痕迹后，找回当前位置被藏匿的线索。",
-        "parameters": {"type": "object", "properties": {
-            "character": {"type": "string"}, "object_name": {"type": "string"},
-        }, "required": ["character", "object_name"]},
-    },
-    {
         "type": "function",
         "name": "inspect",
-        "description": "调查角色当前地点；可选 object_name 查看本轮 Prompt 列出的当地对象。重复调查未变化的内容不会产生新发现。",
+        "description": "调查角色当前地点；优先用 object_id 查看本轮 Prompt 列出的可见对象，object_name 仅为旧客户端兼容。重复调查未变化的内容不会产生新发现。",
         "parameters": {
             "type": "object",
             "properties": {
+                "object_id": {"type": "string", "description": "当前可见对象 ID，优先使用；省略时可调查地点。"},
                 "character": {
                     "type": "string",
                     "description": "执行调查的角色名称，例如苏晚或林默。",
@@ -142,7 +126,7 @@ NPC_ACTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "name": "give_item",
-        "description": "把自己持有的物品交给同一地点的另一名角色。",
+        "description": "旧客户端兼容入口；新行动优先 give + object_id，把本人持有物件交给同地点角色。",
         "parameters": {
             "type": "object",
             "properties": {
@@ -170,9 +154,9 @@ NPC_ACTION_TOOL_SCHEMAS = [
     },
     {
         "type": "function", "name": "world_action",
-        "description": "提出攻击、使用药物、逃跑、跟随或与场景对象互动的意图；由世界规则结算。",
+        "description": "提出攻击、逃跑或跟随的意图；由世界规则结算。",
         "parameters": {"type": "object", "properties": {
-            "action": {"type": "string", "enum": ["attack", "use_item", "flee", "follow", "interact"]},
+            "action": {"type": "string", "enum": ["attack", "flee", "follow"]},
             "actor": {"type": "string"},
             "target": {"type": "string"},
             "item": {"type": "string"},
@@ -184,8 +168,21 @@ NPC_ACTION_TOOL_SCHEMAS = [
 
 
 
-TOOL_NAMES = frozenset(schema["name"] for schema in NPC_ACTION_TOOL_SCHEMAS)
+for name, description, extra, required in (
+    ("take", "拿起当前可见、可接近且可携带的对象。", {}, []),
+    ("put", "放下本人持有的对象，只选择当前 location 或已打开的 container_id。", {"location": {"type": "string"}, "container_id": {"type": "string"}}, []),
+    ("give", "把本人持有的对象交给同地点角色，owner 保留，可用于借用。", {"receiver": {"type": "string"}}, ["receiver"]),
+    ("use", "仅按对象声明用途使用：consume/light/extinguish。", {"action": {"type": "string", "enum": ["consume", "light", "extinguish"]}}, ["action"]),
+    ("interact", "仅按对象 affordance 和当前状态操作：open/close。", {"action": {"type": "string", "enum": ["open", "close"]}}, ["action"]),
+):
+    NPC_ACTION_TOOL_SCHEMAS.append({"type": "function", "name": name, "description": description,
+        "parameters": {"type": "object", "properties": {"character": {"type": "string"}, "object_id": {"type": "string"}, **extra},
+                       "required": ["character", "object_id", *required], "additionalProperties": False}})
+
+# 已有客户端仍可调用 deprecated wrapper；模型工具集不再暴露专用藏匿动作。
+TOOL_NAMES = frozenset(schema["name"] for schema in NPC_ACTION_TOOL_SCHEMAS) | {"conceal_clue", "recover_clue"}
 TOOL_ACTOR_ARGUMENTS = {
+    "take": "character", "put": "character", "give": "character", "use": "character", "interact": "character",
     "world_action": "actor",
     "inspect": "character",
     "talk": "speaker",

@@ -9,6 +9,7 @@ from skills.router import choose_skill, current_step
 from tests.support import committed_event
 from world.persistence import restore_snapshot, snapshot_world
 from world.state import WORLD_STATE
+from world.objects import current_objects, make_object, visible_objects
 
 
 class InvestigationSkillTest(unittest.TestCase):
@@ -23,6 +24,9 @@ class InvestigationSkillTest(unittest.TestCase):
 
     def detective(self):
         return WORLD_STATE["characters"]["林默"]
+
+    def step_name(self, step):
+        return current_objects()[step.arguments["object_id"]]["name"]
 
     def prompt(self):
         person = self.detective()
@@ -41,9 +45,10 @@ class InvestigationSkillTest(unittest.TestCase):
         person.location = "晚风客栈"
         committed_event("move", person.name, "到达客栈", location=person.location,
                         payload={"from": "县衙", "to": "晚风客栈"})
-        for object_name in WORLD_STATE["inspectable_objects"][person.location]:
+        for item in [obj for obj in visible_objects(person) if obj["holder"] is None]:
+            object_name = item["name"]
             step = next_step(person, person.goals[0])
-            self.assertEqual((step.tool, step.arguments["object_name"]),
+            self.assertEqual((step.tool, self.step_name(step)),
                              ("inspect", object_name))
             committed_event("inspect", person.name, "核对现场", location=person.location,
                             payload={"object_name": object_name, "observation": "未发现异常"})
@@ -59,8 +64,9 @@ class InvestigationSkillTest(unittest.TestCase):
                         location=person.location, payload={"message": "我听说县衙有新的案卷。"})
         self.assertEqual(next_step(person, person.goals[0]).arguments["location"], "县衙")
 
-        WORLD_STATE["inspectable_objects"][person.location]["新线索"] = "新出现的物件"
-        self.assertEqual(next_step(person, person.goals[0]).arguments["object_name"], "新线索")
+        item = make_object("新线索", person.location, "新出现的物件")
+        current_objects()[item["id"]] = item  # 模拟 Java 新物件刷新
+        self.assertEqual(self.step_name(next_step(person, person.goals[0])), "新线索")
 
     def test_progress_survives_snapshot_and_uses_only_owner_knowledge(self):
         person = self.detective()
@@ -70,7 +76,7 @@ class InvestigationSkillTest(unittest.TestCase):
                         payload={"object_name": object_name, "observation": "未见具体时辰"})
         saved = deepcopy(snapshot_world())
         restore_snapshot(saved)
-        self.assertEqual(next_step(self.detective(), self.detective().goals[0]).arguments["object_name"],
+        self.assertEqual(self.step_name(next_step(self.detective(), self.detective().goals[0])),
                          "后门")
         self.assertNotIn(WORLD_STATE["characters"]["苏晚"].secrets[0], self.prompt())
 
@@ -79,7 +85,8 @@ class InvestigationSkillTest(unittest.TestCase):
         self.assertIsNone(choose_skill(WORLD_STATE["characters"]["赵无极"]))
         self.detective().energy = 19
         self.assertIsNone(next_step(self.detective(), self.detective().goals[0]))
-        WORLD_STATE["concealable_objects"] = {}
+        for item in current_objects().values():
+            item["properties"].pop("legacy_concealable", None)
         self.assertIsNone(choose_skill(WORLD_STATE["characters"]["苏晚"]))
 
     def test_conceal_inspect_recover_chain_uses_only_visible_steps(self):
@@ -87,9 +94,14 @@ class InvestigationSkillTest(unittest.TestCase):
         lin = self.detective()
         object_name = "住客登记簿"
         trace = object_name + "被移动的痕迹"
-        self.assertEqual(current_step(su).tool, "conceal_clue")
-        original = WORLD_STATE["inspectable_objects"][su.location].pop(object_name)
-        WORLD_STATE["inspectable_objects"][su.location][trace] = "异常痕迹"
+        self.assertEqual(current_step(su).tool, "take")
+        original_item = next(item for item in current_objects().values() if item["name"] == object_name)
+        original = original_item["description"]
+        original_item["visible"] = False
+        trace_item = make_object(trace, su.location, "异常痕迹")
+        trace_item["portable"] = False
+        trace_item["properties"]["trace_for"] = original_item["id"]
+        current_objects()[trace_item["id"]] = trace_item
         committed_event("conceal", su.name, "苏晚藏起登记簿", location=su.location,
                         payload={"object_name": object_name, "trace_name": trace})
         self.assertIsNone(current_step(su))
@@ -98,12 +110,12 @@ class InvestigationSkillTest(unittest.TestCase):
         lin.location = su.location
         committed_event("move", lin.name, "林默到达客栈", location=lin.location,
                         payload={"from": "县衙", "to": lin.location})
-        self.assertEqual(current_step(lin).arguments["object_name"], trace)
+        self.assertIn(trace, [item["name"] for item in visible_objects(lin)])
         committed_event("inspect", lin.name, "林默调查痕迹", location=lin.location,
                         payload={"object_name": trace, "observation": "异常痕迹"})
-        self.assertEqual(current_step(lin).tool, "recover_clue")
-        WORLD_STATE["inspectable_objects"][lin.location].pop(trace)
-        WORLD_STATE["inspectable_objects"][lin.location][object_name] = original
+        self.assertNotEqual(current_step(lin).tool, "recover_clue")
+        current_objects().pop(trace_item["id"])
+        original_item["visible"] = True
         committed_event("recover", lin.name, "林默找回登记簿", location=lin.location,
                         payload={"object_name": object_name})
         self.assertNotEqual(current_step(lin).tool if current_step(lin) else None, "recover_clue")

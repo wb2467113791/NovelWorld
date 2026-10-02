@@ -23,6 +23,7 @@ class Character:
     secrets: list[str] = field(default_factory=list)
     known_facts: list[str] = field(default_factory=list)
     relationships: dict[str, int] = field(default_factory=dict)
+    # 兼容展示字段；运行中的 inventory 以 Java snapshot objects.holder 为准。
     items: list[str] = field(default_factory=list)
     memory: ShortTermMemory = field(default_factory=ShortTermMemory)
     semantic_memory: SemanticMemory = field(default_factory=SemanticMemory)

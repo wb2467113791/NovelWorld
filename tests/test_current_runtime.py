@@ -79,7 +79,10 @@ class CurrentRuntimeTest(unittest.TestCase):
         backend = Mock()
 
         def reject_changed_clue(*_):
-            WORLD_STATE["inspectable_objects"][su.location].pop("住客登记簿")
+            from world.objects import current_objects
+            for item in current_objects().values():
+                if item["name"] == "住客登记簿":
+                    item["visible"] = False
             raise ValueError("线索已不在现场")
 
         backend.execute.side_effect = reject_changed_clue
@@ -102,6 +105,7 @@ class CurrentRuntimeTest(unittest.TestCase):
 
     def test_old_snapshot_without_concealment_fields_restores(self):
         snapshot = deepcopy(snapshot_world())
+        snapshot.pop("objects")  # 模拟真正的旧存档；新存档只信任 objects。
         snapshot.pop("concealable_objects")
         snapshot.pop("concealed_objects")
         restore_snapshot(snapshot)
