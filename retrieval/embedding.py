@@ -1,38 +1,34 @@
-"""使用独立的文本向量模型；NPC 和 Director 的生成模型保持不变。"""
+"""现有百炼向量模型，增加按模型、维度和文本内容寻址的Redis缓存。"""
 
 from math import isfinite
-
+from retrieval.cache import EmbeddingCache
 
 EMBEDDING_MODEL = "qwen3.7-text-embedding"
 EMBEDDING_DIMENSIONS = 1024
-EMBEDDING_BATCH_SIZE = 20
 
 
 class DashScopeEmbedder:
     model = EMBEDDING_MODEL
     dimensions = EMBEDDING_DIMENSIONS
 
-    def embed(self, texts: list[str]) -> list[list[float]]:
-        if not texts:
-            return []
+    def __init__(self, cache=None):
+        self.cache = cache or EmbeddingCache()
 
-        # 复用现有百炼客户端和密钥；导入延迟到实际请求，便于无密钥测试。
-        from llm_client import client
-
-        vectors: list[list[float]] = []
-        for start in range(0, len(texts), EMBEDDING_BATCH_SIZE):
-            batch = texts[start:start + EMBEDDING_BATCH_SIZE]
-            response = client.embeddings.create(
-                model=self.model,
-                input=batch,
-                dimensions=self.dimensions,
-            )
-            ordered = sorted(response.data, key=lambda item: item.index)
-            if [item.index for item in ordered] != list(range(len(batch))):
-                raise ValueError("向量模型返回的文本序号不完整")
-            for item in ordered:
-                vector = item.embedding
-                if len(vector) != self.dimensions or not all(isfinite(value) for value in vector):
-                    raise ValueError("向量模型返回了无效维度或数值")
-                vectors.append(vector)
+    def embed(self, texts):
+        keys = [self.cache.key(self.model, self.dimensions, text) for text in texts]
+        vectors = [self.cache.get(key, self.dimensions) for key in keys]
+        missing = [i for i, vector in enumerate(vectors) if vector is None]
+        if missing:
+            from llm_client import get_client
+            for start in range(0, len(missing), 20):
+                positions = missing[start:start + 20]
+                result = get_client().embeddings.create(model=self.model, input=[texts[i] for i in positions], dimensions=self.dimensions)
+                ordered = sorted(result.data, key=lambda row: row.index)
+                if [row.index for row in ordered] != list(range(len(positions))):
+                    raise ValueError("向量返回序号不完整")
+                for position, row in zip(positions, ordered):
+                    if len(row.embedding) != self.dimensions or not all(isfinite(x) for x in row.embedding):
+                        raise ValueError("向量维度或数值无效")
+                    vectors[position] = row.embedding
+                    self.cache.put(keys[position], row.embedding)
         return vectors

@@ -5,3 +5,4 @@ chromadb==1.5.9
 mcp>=1.25,<2
 fastapi>=0.115,<1
 uvicorn>=0.30,<1
+redis>=5,<7

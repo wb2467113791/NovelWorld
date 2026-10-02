@@ -3,8 +3,6 @@ package org.novelworld.world;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -41,29 +39,26 @@ public class WorldSetupController {
 
     @GetMapping("/worlds")
     public Map<String, Object> worlds() {
-        return Map.of("world_ids", store.listWorldIds(),
+        var worlds = store.listWorldIds().stream().map(id -> {
+            var w = store.load(id);
+            return Map.of("world_id", id, "title", w.getOrDefault("title", "旧版世界"), "version", w.getOrDefault("version", 1));
+        }).toList();
+        return Map.of("worlds", worlds,
                 "active_world_id", runtime.status().get("world_id"));
     }
+
+    @GetMapping("/worlds/{worldId}/export")
+    public Map<String, Object> export(@PathVariable String worldId) { return store.load(worldId); }
 
     @PostMapping("/worlds/{worldId}/activate")
     public Map<String, Object> activateWorld(@PathVariable String worldId) {
         requirePaused();
         try {
-            store.load(worldId);
+            WorldRules.requireCurrent(store.load(worldId));
         } catch (IllegalArgumentException error) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, error.getMessage(), error);
         }
         return runtime.control("activate", Map.of("world_id", worldId));
-    }
-
-    @DeleteMapping("/worlds/{worldId}")
-    public ResponseEntity<Void> deleteWorld(@PathVariable String worldId) {
-        var status = requirePaused();
-        if (worldId.equals(status.get("world_id")))
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "当前世界不能删除，请先切换到其他世界");
-        if (!store.delete(worldId))
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "世界不存在：" + worldId);
-        return ResponseEntity.noContent().build();
     }
 
     private Map<String, Object> requirePaused() {
@@ -73,8 +68,4 @@ public class WorldSetupController {
         return status;
     }
 
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<Map<String, String>> invalidTemplate(IllegalArgumentException error) {
-        return ResponseEntity.badRequest().body(Map.of("detail", error.getMessage()));
-    }
 }

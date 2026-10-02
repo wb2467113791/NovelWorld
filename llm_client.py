@@ -1,51 +1,29 @@
+"""保留现有模型配置，客户端延迟创建；启动、静态检查不请求模型。"""
+
+import json
 import os
-from typing import Any
+from functools import lru_cache
 
-from dotenv import load_dotenv
-from openai import OpenAI
-
-from tools.world_tools import NPC_ACTION_TOOL_SCHEMAS
+MODEL = "qwen3.8-flash"
 
 
-# 读取 .env
-load_dotenv()
-
-api_key = os.getenv("DASHSCOPE_API_KEY")
-
-if not api_key:
-    raise ValueError("没有找到 DASHSCOPE_API_KEY，请检查 .env 文件")
-
-
-# 创建客户端
-client = OpenAI(
-    api_key=api_key,
-    base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
-)
-
-MODEL = "qwen3.8-max"
-MAX_TOOL_ROUNDS = 5
+@lru_cache(maxsize=1)
+def get_client():
+    from dotenv import load_dotenv
+    from openai import OpenAI
+    load_dotenv()
+    key = os.getenv("DASHSCOPE_API_KEY")
+    if not key:
+        raise RuntimeError("缺少 DASHSCOPE_API_KEY；请配置后再运行角色决策")
+    return OpenAI(api_key=key, base_url="https://dashscope.aliyuncs.com/compatible-mode/v1", timeout=60, max_retries=0)
 
 
-def chat(prompt: str) -> str:
-    """
-    调用 Qwen Responses API
-    """
-    response = client.responses.create(
-        model=MODEL,
-        input=prompt
-    )
-    return response.output_text
-
-
-def request_npc_graph_response(
-    conversation: list[dict[str, Any]],
-    allow_tools: bool,
-):
-    """为单 NPC Graph 调用现有 Qwen Responses 客户端。"""
-    request: dict[str, Any] = {
-        "model": MODEL,
-        "input": conversation,
-    }
-    if allow_tools:
-        request["tools"] = NPC_ACTION_TOOL_SCHEMAS
-    return client.responses.create(**request)
+def request_decision(prompt):
+    response = get_client().responses.create(model=MODEL, input=prompt)
+    text = (response.output_text or "").strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+    result = json.loads(text)
+    if not isinstance(result, dict):
+        raise ValueError("模型必须返回一个完整JSON对象")
+    return result

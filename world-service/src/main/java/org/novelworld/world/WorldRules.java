@@ -1,242 +1,206 @@
 package org.novelworld.world;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
-import java.util.LinkedHashMap;
-import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
 
+/** 只在这里结算真实活动与交流；模型意图不直接成为世界事实。 */
 @Component
 public class WorldRules {
-    // 通用过程目录，不接收自然语言结果；扩展活动需在规则层定义语义。
-    private static final Map<String, String> ACTIVITIES = Map.of(
-            "duty", "进行了原地日常值守", "upkeep", "进行了日常整理活动",
-            "administration", "进行了日常事务准备", "practice", "进行了练习",
-            "planning", "进行了筹划", "social_presence", "进行了在场招呼活动");
-    private static final Pattern REVIEW_CLAIM = Pattern.compile("(?:我|本人)(?:已|已经)?(?:看过|查过|翻过|过目|调查过|核对过|看了|查了|调查了)");
-    private static final Map<String, String> OBJECT_ALIASES = Map.of("住客登记簿", "登记簿", "柴房门锁", "柴房");
-    private static final Map<String, Integer> ENERGY_COSTS = Map.of(
-            "move_character", 5, "talk", 2);
     @SuppressWarnings("unchecked")
-    private static Map<String, Object> map(Object value) { return (Map<String, Object>) value; }
+    static Map<String, Object> map(Object v) {
+        if (!(v instanceof Map<?, ?>)) throw new IllegalArgumentException("需要对象数据");
+        return (Map<String, Object>) v;
+    }
     @SuppressWarnings("unchecked")
-    private static List<Object> list(Object value) { return (List<Object>) value; }
-    private static String str(Map<String, Object> map, String key) {
-        Object value = map.get(key);
-        if (!(value instanceof String text) || text.isBlank()) throw new IllegalArgumentException("参数不能为空：" + key);
-        return text;
+    static List<Object> list(Object v) {
+        if (!(v instanceof List<?>)) throw new IllegalArgumentException("需要列表数据");
+        return (List<Object>) v;
     }
-    private static Map<String, Object> character(Map<String, Object> world, String name) {
-        Object result = map(world.get("characters")).get(name);
-        if (result == null) throw new IllegalArgumentException("角色不存在：" + name);
-        return map(result);
+    static String text(Map<String, Object> data, String key, int limit) {
+        if (!(data.get(key) instanceof String s) || s.isBlank() || s.length() > limit)
+            throw new IllegalArgumentException("文字参数无效：" + key);
+        return s.trim();
     }
-    private static void requireEnergy(Map<String, Object> person, String actor, String action) {
-        if ("unconscious".equals(person.get("status"))) throw new IllegalArgumentException(actor + "失去行动能力");
-        int cost = ENERGY_COSTS.get(action);
-        if (((Number) person.get("energy")).intValue() < cost)
-            throw new IllegalArgumentException(actor + "体力不足，执行" + action + "需要" + cost + "点体力");
+    static int number(Object v, int min, int max) {
+        if (!(v instanceof Number n) || n.doubleValue() != n.intValue() || n.intValue() < min || n.intValue() > max)
+            throw new IllegalArgumentException("整数必须在 " + min + " 到 " + max + " 之间");
+        return n.intValue();
     }
-    static List<String> perceivedBy(Map<String, Object> world, String type, String actor,
-                                    String target, String location) {
-        var recipients = new java.util.ArrayList<String>();
-        var characters = map(world.get("characters"));
-        if (characters.containsKey(actor)) recipients.add(actor);
-        if (("talk".equals(type) || "give".equals(type)) && target != null && characters.containsKey(target))
-            recipients.add(target);
-        if (List.of("move", "flee", "follow", "attack", "interact", "director",
-                "take", "put", "use", "activity").contains(type)) {
-            for (var entry : characters.entrySet()) {
-                if (!recipients.contains(entry.getKey()) && location.equals(map(entry.getValue()).get("location")))
-                    recipients.add(entry.getKey());
-            }
-        }
-        return recipients;
+    static String id() { return UUID.randomUUID().toString().replace("-", ""); }
+    static int minute(Map<String, Object> w) { return number(w.get("minute"), 0, 100_000_000); }
+    static Map<String, Object> actor(Map<String, Object> w, String name) {
+        Object v = map(w.get("characters")).get(name);
+        if (v == null) throw new IllegalArgumentException("角色不存在：" + name);
+        return map(v);
     }
-
-    public String apply(Map<String, Object> world, String name, Map<String, Object> args) {
-        WorldObjects.ensure(world);
-        if (WorldObjects.TOOLS.contains(name)) return WorldObjects.apply(world, name, args);
-        if ("world_action".equals(name)) return applyWorldAction(world, args);
-        String actor, target, location, result;
-        Map<String, Object> payload;
-        String type;
-        switch (name) {
-            case "perform_activity": {
-                if (!java.util.Set.of("character", "activity").equals(args.keySet()))
-                    throw new IllegalArgumentException("活动仅接受 character 与 activity，不接受描述或状态字段");
-                actor = str(args, "character");
-                var person = character(world, actor);
-                if (!WorldActors.isNpc(person)) throw new IllegalArgumentException("Player 不支持该工具");
-                if ("unconscious".equals(person.get("status"))) throw new IllegalArgumentException(actor + "失去行动能力");
-                String activity = str(args, "activity");
-                if (!ACTIVITIES.containsKey(activity)) throw new IllegalArgumentException("未知日常活动：" + activity);
-                location = (String) person.get("location"); target = null;
-                if (!list(world.get("locations")).contains(location)) throw new IllegalArgumentException("当前地点无效");
-                result = actor + "在" + location + ACTIVITIES.get(activity) + "（仅记录活动过程，不代表取得成果或其他状态变化）。";
-                type = "activity"; payload = Map.of("activity", activity, "scope", "process_only");
-                break;
-            }
-            case "move_character": {
-                actor = str(args, "character"); location = str(args, "location");
-                if (!list(world.get("locations")).contains(location)) throw new IllegalArgumentException("地点不存在：" + location);
-                var person = character(world, actor);
-                requireEnergy(person, actor, name);
-                String old = (String) person.put("location", location);
-                result = old.equals(location) ? actor + "已经在" + location + "。" : actor + "从" + old + "移动到" + location + "。";
-                type = "move"; target = null; payload = Map.of("from", old, "to", location);
-                break;
-            }
-            case "talk": {
-                actor = str(args, "speaker"); target = str(args, "listener");
-                if (actor.equals(target)) throw new IllegalArgumentException("角色不能和自己交谈");
-                var speaker = character(world, actor); var listener = character(world, target);
-                location = (String) speaker.get("location");
-                if (!location.equals(listener.get("location"))) throw new IllegalArgumentException("双方不在同一地点");
-                String message = str(args, "message").trim();
-                for (Object raw : map(world.get("objects")).values()) {
-                    var item = map(raw); String objectName = (String) item.get("name");
-                    boolean claimed = false;
-                    for (String sentence : message.split("[。！？\\n]")) {
-                        if (REVIEW_CLAIM.matcher(sentence).find() && (sentence.contains(objectName)
-                                || sentence.contains(OBJECT_ALIASES.getOrDefault(objectName, objectName)))) claimed = true;
-                    }
-                    if (claimed && list(world.get("events")).stream().map(WorldRules::map).noneMatch(event ->
-                            "inspect".equals(event.get("type")) && actor.equals(event.get("actor"))
-                            && (item.get("id").equals(map(event.get("payload")).get("object_id"))
-                                || (map(event.get("payload")).get("object_id") == null && objectName.equals(map(event.get("payload")).get("object_name"))))))
-                        throw new IllegalArgumentException(actor + "尚未调查" + objectName + "，不能声称已经查看");
+    static void requireCurrent(Map<String, Object> w) {
+        if (!Integer.valueOf(3).equals(w.get("version")))
+            throw new IllegalArgumentException("旧世界保留供导出；请创建社会沙盒新世界");
+    }
+    static List<String> nearby(Map<String, Object> w, String location) {
+        var names = new ArrayList<String>();
+        map(w.get("characters")).forEach((name, raw) -> { if (location.equals(map(raw).get("location"))) names.add(name); });
+        return names;
+    }
+    static Map<String, Object> event(Map<String, Object> w, String type, String name, String target,
+                                     String location, String description, Map<String, Object> payload, List<String> witnesses) {
+        var e = new LinkedHashMap<String, Object>();
+        e.put("id", id()); e.put("minute", minute(w)); e.put("time", w.get("time")); e.put("type", type);
+        e.put("actor", name); e.put("target", target); e.put("location", location);
+        e.put("description", description); e.put("payload", payload); e.put("perceived_by", new ArrayList<>(witnesses));
+        list(w.get("events")).add(e);
+        return e;
+    }
+    static Map<String, Object> conversation(Map<String, Object> w, String name) {
+        return list(w.get("conversations")).stream().map(WorldRules::map)
+                .filter(s -> list(s.get("participants")).contains(name)).findFirst().orElse(null);
+    }
+    private static void idle(Map<String, Object> w, String name) {
+        if (actor(w, name).get("activity") != null) throw new IllegalArgumentException("正在活动；先 stop_activity 或等待完成");
+        if (conversation(w, name) != null) throw new IllegalArgumentException("正在交谈；先 leave_conversation");
+    }
+    private static void stopActivity(Map<String, Object> w, String name) {
+        var p = actor(w, name);
+        if (p.get("activity") == null) throw new IllegalArgumentException("没有进行中的活动");
+        var a = map(p.get("activity"));
+        event(w, "activity_interrupted", name, null, (String) p.get("location"), name + "停下了" + a.get("name") + "。",
+                new LinkedHashMap<>(a), nearby(w, (String) p.get("location")));
+        p.put("activity", null);
+    }
+    private static void closeConversation(Map<String, Object> w, Map<String, Object> s, String reason) {
+        var people = list(s.get("participants")).stream().map(Object::toString).toList();
+        event(w, "conversation_ended", people.get(0), people.get(1), (String) s.get("location"),
+                String.join("与", people) + "的交谈结束了（" + reason + "）。",
+                Map.of("conversation_id", s.get("id"), "reason", reason), people);
+        list(w.get("conversations")).remove(s);
+    }
+    /** 所有到期活动同时推进，角色无需获得模型轮次才能完成活动。 */
+    public void advance(Map<String, Object> w) {
+        requireCurrent(w);
+        int now = minute(w) + 5;
+        w.put("minute", now); w.put("tick_count", number(w.get("tick_count"), 0, 100_000_000) + 1);
+        w.put("time", "第" + (now / 1440 + 1) + "天 " + String.format("%02d:%02d", now % 1440 / 60, now % 60));
+        map(w.get("characters")).forEach((name, raw) -> {
+            var p = map(raw);
+            if (p.get("activity") != null) {
+                var a = map(p.get("activity"));
+                if (number(a.get("until"), 0, 100_000_000) <= now) {
+                    event(w, "activity_completed", name, null, (String) p.get("location"), name + "结束了" + a.get("name") + "。",
+                            new LinkedHashMap<>(a), nearby(w, (String) p.get("location")));
+                    p.put("activity", null);
                 }
-                requireEnergy(speaker, actor, name);
-                result = actor + "对" + target + "说：“" + message + "”";
-                type = "talk"; payload = Map.of("message", message);
-                break;
             }
-            case "rest_character": {
-                actor = str(args, "character"); var person = character(world, actor);
-                int before = ((Number) person.get("energy")).intValue();
-                if (before >= 100) throw new IllegalArgumentException(actor + "体力已满，无需休息");
-                int after = Math.min(100, before + 20);
-                person.put("energy", after);
-                location = (String) person.get("location"); target = null;
-                result = actor + "休息后体力从" + before + "恢复到" + after + "。";
-                type = "rest"; payload = Map.of("energy_before", before, "energy_after", after);
-                break;
-            }
-            default: throw new IllegalArgumentException("未知工具：" + name);
-        }
-        if (ENERGY_COSTS.containsKey(name)) {
-            var person = character(world, actor);
-            person.put("energy", ((Number) person.get("energy")).intValue() - ENERGY_COSTS.get(name));
-        }
-        var event = new java.util.LinkedHashMap<String, Object>();
-        event.put("id", UUID.randomUUID().toString().replace("-", ""));
-        event.put("timestamp", world.get("time")); event.put("type", type);
-        event.put("actor", actor); event.put("target", target); event.put("location", location);
-        var witnesses = perceivedBy(world, type, actor, target, location);
-        if ("move".equals(type)) {
-            String departure = (String) payload.get("from");
-            for (var entry : map(world.get("characters")).entrySet()) {
-                if (departure.equals(map(entry.getValue()).get("location")) && !witnesses.contains(entry.getKey()))
-                    witnesses.add(entry.getKey());
+        });
+        for (Object raw : new ArrayList<>(list(w.get("invitations")))) {
+            var i = map(raw);
+            if (number(i.get("expires"), 0, 100_000_000) <= now) {
+                event(w, "invitation_expired", (String) i.get("from"), (String) i.get("to"), (String) i.get("location"),
+                        i.get("from") + "向" + i.get("to") + "发出的交谈邀请未得到回应。", Map.of("invitation_id", i.get("id")),
+                        List.of((String) i.get("from"), (String) i.get("to")));
+                list(w.get("invitations")).remove(i);
             }
         }
-        event.put("perceived_by", witnesses);
-        event.put("payload", payload); event.put("description", result);
-        WorldSocial.apply(world, event);
-        list(world.get("events")).add(event);
-        return result;
+        for (Object raw : new ArrayList<>(list(w.get("conversations")))) {
+            var s = map(raw);
+            if (now - number(s.get("last_minute"), 0, 100_000_000) >= 45) closeConversation(w, s, "暂时没有继续回应");
+        }
     }
-
-    /** 新动作首版均使用确定性规则；模型只能提出意图。 */
-    private String applyWorldAction(Map<String, Object> world, Map<String, Object> args) {
-        String action = str(args, "action");
-        String actor = str(args, "actor");
-        var person = character(world, actor);
-        String location = (String) person.get("location");
-        String target = null;
-        String result;
-        int cost;
-        var payload = new java.util.LinkedHashMap<String, Object>();
-        Map<String, Object> other = null;
-        int hpAfter = 0;
-        String oldLocation = location;
+    public List<Object> apply(Map<String, Object> w, String name, String action, Map<String, Object> args) {
+        requireCurrent(w);
+        Set<String> fields = switch (action) {
+            case "move" -> Set.of("location"); case "start_activity" -> Set.of("activity_id");
+            case "invite" -> Set.of("target", "message"); case "respond_invitation" -> Set.of("invitation_id", "accept");
+            case "say" -> Set.of("message"); case "inspect" -> Set.of("object_id");
+            case "stop_activity", "leave_conversation", "wait" -> Set.of();
+            default -> throw new IllegalArgumentException("未知行动：" + action);
+        };
+        if (!args.keySet().equals(fields)) throw new IllegalArgumentException("行动参数应为：" + fields);
+        var p = actor(w, name); String location = (String) p.get("location"); int before = list(w.get("events")).size();
         switch (action) {
-            case "attack": {
-                target = str(args, "target");
-                if (actor.equals(target)) throw new IllegalArgumentException("不能攻击自己");
-                other = character(world, target);
-                if (!location.equals(other.get("location"))) throw new IllegalArgumentException("攻击目标不在同一地点");
-                if ("unconscious".equals(other.get("status"))) throw new IllegalArgumentException("目标已失去行动能力");
-                cost = 10;
-                hpAfter = Math.max(0, ((Number) other.getOrDefault("hp", 100)).intValue() - 20);
-                payload.put("damage", 20); payload.put("hp_after", hpAfter);
-                result = actor + "攻击了" + target + "，造成20点伤害。";
-                break;
+            case "move" -> {
+                idle(w, name); String destination = text(args, "location", 80);
+                if (!map(w.get("locations")).containsKey(destination) || destination.equals(location))
+                    throw new IllegalArgumentException("目的地不存在或已在此处");
+                var witnesses = nearby(w, location); p.put("location", destination);
+                for (String witness : nearby(w, destination)) if (!witnesses.contains(witness)) witnesses.add(witness);
+                event(w, "move", name, null, destination, name + "从" + location + "来到" + destination + "。",
+                        Map.of("from", location, "to", destination), witnesses);
             }
-            case "flee": {
-                String destination = str(args, "location");
-                if (!list(world.get("locations")).contains(destination) || destination.equals(location))
-                    throw new IllegalArgumentException("逃离地点无效");
-                cost = 7;
-                payload.put("from", location); payload.put("to", destination);
-                result = actor + "从" + location + "逃到了" + destination + "。";
-                location = destination;
-                break;
-            }
-            case "follow": {
-                target = str(args, "target");
-                if (actor.equals(target)) throw new IllegalArgumentException("不能跟随自己");
-                other = character(world, target);
-                String destination = (String) other.get("location");
-                if (destination.equals(location)) throw new IllegalArgumentException("目标尚未离开当前地点");
-                boolean seenDeparture = false;
-                var history = list(world.get("events"));
-                for (int i = history.size() - 1; i >= 0; i--) {
-                    var event = map(history.get(i));
-                    if (!List.of("move", "flee", "follow").contains(event.get("type")) || !target.equals(event.get("actor")))
-                        continue;
-                    var movement = map(event.get("payload"));
-                    seenDeparture = oldLocation.equals(movement.get("from"))
-                            && destination.equals(movement.get("to"))
-                            && list(event.getOrDefault("perceived_by", List.of())).contains(actor);
-                    break;
+            case "start_activity", "wait" -> {
+                idle(w, name); Map<String, Object> definition; String activityId;
+                if (action.equals("wait")) { activityId = "wait"; definition = Map.of("name", "静候片刻", "duration", 10); }
+                else {
+                    activityId = text(args, "activity_id", 80); Object raw = map(w.get("activities")).get(activityId);
+                    if (raw == null) throw new IllegalArgumentException("活动不存在"); definition = map(raw);
+                    if (!list(definition.get("locations")).contains(location)) throw new IllegalArgumentException("不在活动地点");
+                    var roles = list(definition.get("roles"));
+                    if (!roles.isEmpty() && !roles.contains(p.get("role"))) throw new IllegalArgumentException("身份不适合此活动");
                 }
-                if (!seenDeparture) throw new IllegalArgumentException("角色没有目击目标离开，无法跟随");
-                cost = 5;
-                payload.put("from", location); payload.put("to", destination);
-                result = actor + "跟随" + target + "来到" + destination + "。";
-                location = destination;
-                break;
+                var a = new LinkedHashMap<String, Object>(); a.put("id", activityId); a.put("name", definition.get("name"));
+                a.put("started", minute(w)); a.put("until", minute(w) + number(definition.get("duration"), 5, 120)); p.put("activity", a);
+                event(w, "activity_started", name, null, location, name + "开始" + definition.get("name") + "。", new LinkedHashMap<>(a), nearby(w, location));
             }
-            default: throw new IllegalArgumentException("未知行动：" + action);
-        }
-        int energy = ((Number) person.get("energy")).intValue();
-        if ("unconscious".equals(person.get("status"))) throw new IllegalArgumentException(actor + "失去行动能力");
-        if (energy < cost) throw new IllegalArgumentException(actor + "体力不足，执行" + action + "需要" + cost + "点体力");
-        person.put("energy", energy - cost);
-        if ("attack".equals(action)) {
-            other.put("hp", hpAfter);
-            other.put("status", hpAfter == 0 ? "unconscious" : "injured");
-        } else if ("flee".equals(action) || "follow".equals(action)) {
-            person.put("location", location);
-        }
-        var event = new java.util.LinkedHashMap<String, Object>();
-        event.put("id", UUID.randomUUID().toString().replace("-", ""));
-        event.put("timestamp", world.get("time")); event.put("type", action);
-        event.put("actor", actor); event.put("target", target); event.put("location", location);
-        var witnesses = perceivedBy(world, action, actor, target, location);
-        if ("flee".equals(action) || "follow".equals(action)) {
-            for (var entry : map(world.get("characters")).entrySet()) {
-                if (oldLocation.equals(map(entry.getValue()).get("location")) && !witnesses.contains(entry.getKey()))
-                    witnesses.add(entry.getKey());
+            case "stop_activity" -> stopActivity(w, name);
+            case "invite" -> {
+                idle(w, name); String target = text(args, "target", 80), message = text(args, "message", 600);
+                var other = actor(w, target);
+                if (name.equals(target) || !location.equals(other.get("location"))) throw new IllegalArgumentException("只能邀请同地点的另一人");
+                if (conversation(w, target) != null) throw new IllegalArgumentException("对方正在与别人交谈");
+                if (list(w.get("invitations")).stream().map(WorldRules::map).anyMatch(i -> name.equals(i.get("from"))
+                        || (target.equals(i.get("from")) && name.equals(i.get("to")))))
+                    throw new IllegalArgumentException("已有未处理的邀请，请等待或回应");
+                var i = new LinkedHashMap<String, Object>(); i.put("id", id()); i.put("from", name); i.put("to", target);
+                i.put("location", location); i.put("message", message); i.put("expires", minute(w) + 30); list(w.get("invitations")).add(i);
+                event(w, "invitation", name, target, location, name + "向" + target + "招呼：“" + message + "”", new LinkedHashMap<>(i), List.of(name, target));
             }
+            case "respond_invitation" -> {
+                String invitationId = text(args, "invitation_id", 80);
+                if (!(args.get("accept") instanceof Boolean)) throw new IllegalArgumentException("accept 必须是布尔值");
+                var i = list(w.get("invitations")).stream().map(WorldRules::map)
+                        .filter(v -> invitationId.equals(v.get("id")) && name.equals(v.get("to"))).findFirst()
+                        .orElseThrow(() -> new IllegalArgumentException("没有属于本人的待回应邀请"));
+                String from = (String) i.get("from"); boolean accepted = Boolean.TRUE.equals(args.get("accept"));
+                if (accepted) {
+                    if (!location.equals(actor(w, from).get("location")) || conversation(w, name) != null || conversation(w, from) != null
+                            || actor(w, from).get("activity") != null) throw new IllegalArgumentException("双方需要同地点且邀请人空闲");
+                    if (p.get("activity") != null) stopActivity(w, name);
+                    var s = new LinkedHashMap<String, Object>(); s.put("id", id()); s.put("participants", List.of(from, name));
+                    s.put("location", location); s.put("next_speaker", name); s.put("last_minute", minute(w)); s.put("messages", new ArrayList<>());
+                    list(w.get("conversations")).add(s);
+                }
+                list(w.get("invitations")).remove(i);
+                event(w, accepted ? "conversation_started" : "invitation_declined", name, from, location,
+                        name + (accepted ? "接受了" : "婉拒了") + from + "的交谈邀请。", Map.of("invitation_id", invitationId), List.of(name, from));
+            }
+            case "say" -> {
+                var s = conversation(w, name);
+                if (s == null || !name.equals(s.get("next_speaker"))) throw new IllegalArgumentException("尚未轮到本人发言或没有会话");
+                String message = text(args, "message", 1000);
+                String target = list(s.get("participants")).stream().map(Object::toString).filter(v -> !name.equals(v)).findFirst().orElseThrow();
+                var e = event(w, "talk", name, target, location, name + "对" + target + "说：“" + message + "”",
+                        Map.of("conversation_id", s.get("id"), "message", message), List.of(name, target));
+                list(s.get("messages")).add(Map.of("speaker", name, "message", message, "event_id", e.get("id")));
+                s.put("next_speaker", target); s.put("last_minute", minute(w));
+                if (list(s.get("messages")).size() >= 12) closeConversation(w, s, "本次交谈告一段落");
+            }
+            case "leave_conversation" -> {
+                var s = conversation(w, name); if (s == null) throw new IllegalArgumentException("没有进行中的对话");
+                closeConversation(w, s, name + "离开交谈");
+            }
+            case "inspect" -> {
+                String objectId = text(args, "object_id", 80); Object raw = map(w.get("objects")).get(objectId);
+                if (raw == null || !location.equals(map(raw).get("location"))) throw new IllegalArgumentException("对象不在本人现场");
+                var o = map(raw);
+                event(w, "inspect", name, null, location, name + "查看了" + o.get("name") + "：" + o.get("description"),
+                        Map.of("object_id", objectId, "observation", o.get("description")), List.of(name));
+            }
+            default -> throw new IllegalArgumentException("无法执行行动");
         }
-        event.put("perceived_by", witnesses);
-        event.put("payload", payload); event.put("description", result);
-        WorldSocial.apply(world, event);
-        list(world.get("events")).add(event);
-        return result;
+        return new ArrayList<>(list(w.get("events")).subList(before, list(w.get("events")).size()));
     }
 }

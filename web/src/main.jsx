@@ -1,194 +1,160 @@
-import React, { useEffect, useMemo, useState } from 'react'
-import { createRoot } from 'react-dom/client'
-import WorldSetup from './WorldSetup.jsx'
+import React, {useEffect, useMemo, useRef, useState} from 'react'
+import {createRoot} from 'react-dom/client'
+import {request, clock} from './api.js'
 import PlayMode from './PlayMode.jsx'
+import WorldSetup from './WorldSetup.jsx'
 import './style.css'
 
-const typeLabels = {
-  move: '移动', talk: '交谈', inspect: '调查', activity: '日常活动', director: '世界事件',
-  intervention: '人为干预', rest: '休息', attack: '攻击', flee: '逃跑', follow: '跟随',
-  take: '拿取', put: '放置', give: '交付', use: '使用物品', interact: '互动',
-  // legacy history only：保留旧存档时间线标签，不是当前 Tool。
-  relationship: '关系', give_item: '物品', narration: '叙述', use_item: '使用物品',
-  conceal: '藏匿线索', recover: '找回线索',
-}
-const initial = name => name.slice(0, 1)
-
-async function send(path, body) {
-  const response = await fetch(path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: body ? JSON.stringify(body) : undefined,
-  })
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}))
-    throw new Error(error.detail || `请求失败：${response.status}`)
-  }
+const labels = {
+  move: '来到', activity_started: '活动开始', activity_completed: '活动结束', activity_interrupted: '停下活动',
+  invitation: '邀约', invitation_declined: '婉拒', invitation_expired: '未回应',
+  conversation_started: '开始交谈', conversation_ended: '交谈结束', talk: '交谈', inspect: '查看', arrival: '到来',
 }
 
-function RelationshipMap({ characters, selected, onSelect }) {
-  const names = Object.keys(characters || {})
-  const positions = Object.fromEntries(names.map((name, index) => [
-    name,
-    [250 + 175 * Math.cos(2 * Math.PI * index / names.length), 160 + 105 * Math.sin(2 * Math.PI * index / names.length)],
-  ]))
-  const edges = names.includes(selected) ? names.filter(name => name !== selected).map(name => [selected, name]) : []
-  return <svg className="relationship-map" viewBox="0 0 500 320" role="img" aria-label="角色关系图">
-    {edges.map(([a, b]) => {
-      const [ax, ay] = positions[a], [bx, by] = positions[b]
-      const score = characters?.[a]?.relationships?.[b] ?? 0
-      return <g key={`${a}-${b}`}>
-        <line x1={ax} y1={ay} x2={bx} y2={by} className={score < 0 ? 'edge negative' : 'edge'} />
-        <rect x={(ax + bx) / 2 - 20} y={(ay + by) / 2 - 12} width="40" height="23" rx="11" className="edge-label-bg" />
-        <text x={(ax + bx) / 2} y={(ay + by) / 2 + 4} textAnchor="middle" className={score < 0 ? 'edge-label negative' : 'edge-label'}>{score > 0 ? '+' : ''}{score}</text>
-      </g>
+function Portrait({name, index=0, small=false}) {
+  return <span className={`portrait tone-${index % 4} ${small ? 'small' : ''}`}>{name?.slice(-1) || '人'}</span>
+}
+
+function Scene({location, description, world, selected, select}) {
+  const people = Object.values(world.characters || {}).filter(p => p.location === location)
+  return <article className="scene">
+    <div className="scene-title"><span className="location-glyph">⌂</span><h3>{location}</h3><span>{people.length} 人在这里</span></div>
+    <p className="scene-description">{description}</p>
+    <div className="scene-people">{people.length ? people.map(p => {
+      const conversation = world.conversations?.find(s => s.participants.includes(p.name))
+      const activity = p.activity
+      const progress = activity ? Math.min(100, (world.minute - activity.started) / (activity.until - activity.started) * 100) : 0
+      const index = Object.keys(world.characters).indexOf(p.name)
+      return <button key={p.name} className={`resident ${selected === p.name ? 'chosen' : ''}`} onClick={() => select(p.name)}>
+        <Portrait name={p.name} index={index} small/><span><b>{p.name}</b><small>{conversation ? `与${conversation.participants.find(n => n !== p.name)}交谈` : activity?.name || '暂时空闲'}</small>
+        {activity && <span className="activity-track"><i style={{width: `${progress}%`}}/></span>}</span>
+        {activity && <em>{clock(activity.until)}结束</em>}
+      </button>
+    }) : <p className="quiet">此刻很安静。</p>}</div>
+  </article>
+}
+
+function Story({world, filter, follow, selected}) {
+  const scroll = useRef(null)
+  const decisions = useMemo(() => {
+    const byEvent = {}
+    for (const d of world.decisions || []) {
+      const lastId = d.event_ids?.at(-1)
+      if (lastId) byEvent[lastId] = d
+    }
+    return byEvent
+  }, [world.decisions])
+  const rows = (world.events || []).filter(e => filter === 'all' || e.actor === filter || e.target === filter || decisions[e.id]?.actor === filter)
+  useEffect(() => {
+    if (follow && scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight
+  }, [world.revision, follow, filter])
+  return <div ref={scroll} className="story-scroll" tabIndex="0" aria-label="按发生顺序阅读故事">
+    {!rows.length && <div className="story-empty"><span>✧</span><h3>清晨，故事还没有开始。</h3><p>让时间向前走，看看每个人会怎样度过今天。</p></div>}
+    {rows.map(e => {
+      const thought = decisions[e.id]
+      const speech = e.type === 'talk' || e.type === 'invitation'
+      return <article key={e.id} className={`story-entry ${speech ? 'speech-entry' : ''} ${selected === e.actor ? 'highlight' : ''}`}>
+        <div className="story-margin"><time>{clock(e.minute)}</time><span className="story-dot"/></div>
+        <div className="story-body"><div className="story-meta"><b>{e.actor}</b>{e.target && <span>与 {e.target}</span>}<span>{e.location}</span><small>{labels[e.type] || e.type}</small></div>
+          {speech ? <blockquote>{e.payload.message}</blockquote> : <p>{e.description}</p>}
+          {thought && <div className="thought"><span>◌ {thought.actor}的动机</span><p>{thought.reason}</p></div>}
+        </div>
+      </article>
     })}
-    {names.map(name => {
-      const [x, y] = positions[name]
-      return <g key={name} onClick={() => onSelect(name)} className="map-node" tabIndex="0" role="button" aria-label={`查看${name}`}>
-        <circle cx={x} cy={y} r="28" className={selected === name ? 'node-ring selected' : 'node-ring'} />
-        <text x={x} y={y + 7} textAnchor="middle" className="node-initial">{initial(name)}</text>
-        <text x={x} y={y + 45} textAnchor="middle" className="node-name">{name}</text>
-      </g>
-    })}
-  </svg>
+  </div>
+}
+
+function CharacterDetail({world, selected, select}) {
+  const people = Object.values(world.characters || {}).filter(p => p.actor_type === 'npc')
+  const p = world.characters?.[selected]
+  const d = [...(world.decisions || [])].reverse().find(d => d.actor === selected)
+  const mind = p?.mind || {}
+  const impressions = {...p?.relationships, ...mind.relationship_notes}
+  return <aside className="character-panel">
+    <div className="section-title"><span className="eyebrow">他们的生活</span><h2>人物手记</h2></div>
+    <div className="character-tabs">{people.map((person, i) => <button className={selected === person.name ? 'selected' : ''} key={person.name} onClick={() => select(person.name)}><Portrait name={person.name} index={i} small/><span>{person.name}</span></button>)}</div>
+    {p?.actor_type === 'npc' ? <>
+      <div className="person-heading"><Portrait name={p.name} index={people.findIndex(v => v.name === p.name)}/><div><h3>{p.name}</h3><span>{p.role} · {p.location}</span></div></div>
+      <p className="person-background">{p.background}</p>
+      <div className="person-section"><h4>此刻在意</h4><p>{mind.goal || p.goals?.[0]}</p><h4>下一步打算</h4><p>{mind.intention || '还未作出选择'}</p>{d && <p className="muted">{d.reason}</p>}</div>
+      <div className="person-section"><h4>一天的安排 <small>个人意图，可改变</small></h4>{mind.plan?.length ? mind.plan.map((plan, i) => <div key={i} className={`plan-item ${plan.at < world.minute ? 'past' : ''}`}><time>{clock(plan.at)}</time><div><p>{plan.purpose}</p><small>{plan.location}</small></div></div>) : <p className="muted">尚未安排，下一次思考时可形成计划。</p>}</div>
+      <div className="person-section"><h4>对他人的印象</h4>{Object.entries(impressions).map(([name, note]) => <p className="impression" key={name}><b>{name}</b>{note}</p>)}</div>
+      <div className="person-section"><h4>从经历中想到的</h4><p>{mind.reflection || '还没有形成新的反思。'}</p></div>
+      <details className="person-section"><summary>记忆与私人设定</summary><p>{p.personality}</p>{p.secrets?.map(s => <p className="private-note" key={s}>{s}</p>)}{[...(p.memories || [])].reverse().slice(0, 10).map(m => <div className="memory" key={m.id}><small>{clock(m.minute)} · {m.kind === 'reported' ? '听到的说法' : m.kind === 'reflection' ? '主观反思' : '亲历'}</small><p>{m.content}</p></div>)}<small className="muted">这些资料只在上帝视角展示。</small></details>
+    </> : <p className="muted">选择一个人物，读一读他的手记。</p>}
+  </aside>
 }
 
 function App() {
-  const [mode, setMode] = useState('observe')
   const [world, setWorld] = useState(null)
-  const [connected, setConnected] = useState(false)
-  const [selected, setSelected] = useState('林默')
-  const [view, setView] = useState(null)
+  const [mode, setMode] = useState('observe')
+  const [selected, setSelected] = useState('苏晚')
   const [filter, setFilter] = useState('all')
-  const [speed, setSpeed] = useState(1)
+  const [follow, setFollow] = useState(true)
+  const [connected, setConnected] = useState(false)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
-  const [intervention, setIntervention] = useState({location: '', object_name: '', observation: ''})
-  const names = Object.keys(world?.characters || {})
-
-  useEffect(() => {
-    if (names.length && !names.includes(selected)) setSelected(names[0])
-  }, [world?.characters, selected])
+  const [setup, setSetup] = useState(false)
+  const [speed, setSpeed] = useState(1)
 
   useEffect(() => {
     let active = true
-    setWorld(null); setView(null)
-    fetch(mode === 'play' ? '/api/play/state' : '/api/world').then(response => response.json())
-      .then(value => { if (active) setWorld(value) }).catch(error => { if (active) setNotice(error.message) })
+    setWorld(null); setConnected(false); setFilter('all')
+    request(`/api/world?mode=${mode}`).then(w => {if (active) setWorld(w)}).catch(e => {if (active) setNotice(e.message)})
     const stream = new EventSource(`/api/events?mode=${mode}`)
-    stream.addEventListener('state', event => { if (active) {setWorld(JSON.parse(event.data)); setConnected(true)} })
-    stream.onerror = () => setConnected(false)
+    stream.addEventListener('state', e => {if (active) {setWorld(JSON.parse(e.data)); setConnected(true)}})
+    stream.onerror = () => {if (active) setConnected(false)}
     return () => {active = false; stream.close()}
   }, [mode])
 
   useEffect(() => {
-    if (mode !== 'observe') return
-    let active = true
-    fetch(`/api/characters/${encodeURIComponent(selected)}/view`)
-      .then(response => response.json()).then(value => {if (active) setView(value)}).catch(() => {if (active) setView(null)})
-    return () => { active = false }
-  }, [mode, selected, world?.world_id, world?.tick_count, world?.events?.length])
+    if (mode === 'observe' && world && !world.characters?.[selected]) setSelected(Object.keys(world.characters || {})[0] || '')
+  }, [world?.world_id, mode, selected])
 
-  const events = useMemo(() => {
-    const all = [...(world?.events || [])].reverse()
-    return filter === 'all' ? all : all.filter(event => event.type === filter)
-  }, [world?.events, filter])
+  useEffect(() => {setFilter('all')}, [world?.world_id])
 
-  async function command(path, body) {
-    setBusy(true); setNotice('')
-    try { await send(path, body) }
-    catch (error) { setNotice(error.message) }
-    finally { setBusy(false) }
-  }
-
-  async function injectEvent(event) {
-    event.preventDefault()
-    const location = intervention.location || world?.locations?.[0]
-    if (!location || !intervention.object_name.trim() || !intervention.observation.trim()) {
-      setNotice('请选择地点并填写线索名称与内容')
-      return
-    }
+  async function command(path, body={}) {
     setBusy(true); setNotice('')
     try {
-      await send('/api/world-events', {...intervention, location})
-      setIntervention({...intervention, object_name: '', observation: ''})
-      setNotice('线索已进入世界。下一 Tick 会唤醒能感知它的角色。')
-    } catch (error) { setNotice(error.message) }
-    finally { setBusy(false) }
+      const result = await request(path, body)
+      setWorld(await request(`/api/world?mode=${mode}`))
+      return result
+    } catch (error) {setNotice(error.message); throw error}
+    finally {setBusy(false)}
   }
+  function control(path, body) {command(path, body).catch(() => {})}
 
   return <div className="app-shell">
-    <aside className="sidebar">
-      <div className="brand"><span className="brand-mark">✦</span><div><strong>NOVELWORLD</strong><small>持续 AI 角色世界 · V4</small></div></div>
-      <div className="side-label">世界导航</div>
-      <a className="nav-link active" href="#overview"><span>◫</span> 世界总览</a>
-      <a className="nav-link" href="#timeline"><span>◷</span> 事件时间线</a>
-      <a className="nav-link" href="#characters"><span>◇</span> 角色视角</a>
-      <a className="nav-link" href="#setup"><span>✧</span> 开局工坊</a>
-      <div className="sidebar-spacer" />
-      <div className="world-id">世界 ID <span>{world?.world_id?.slice(0, 10) || '连接中'}…</span></div>
-      <div className="connection"><i className={connected ? 'dot online' : 'dot'} />{connected ? '实时连接中' : '正在重连'}</div>
-    </aside>
-
-    <main className="main-content" id="overview">
-      <header className="topbar"><div><div className="eyebrow">WORLD OBSERVATORY / 世界观测台</div><h1>每个选择，都让世界继续生长。</h1></div><div className="version-pill">● LIVE WORLD <span>V4.0</span></div></header>
-
-      {notice && <div className="notice">{notice}<button onClick={() => setNotice('')}>×</button></div>}
-      {world?.error && <div className="notice">运行中断：{world.error}</div>}
-
-      <section className="stats-grid">
-        <div className="stat-card"><div className="stat-icon blue">◷</div><div><span>世界时间</span><strong>{world?.time || '--:--'}</strong></div></div>
-        <div className="stat-card"><div className="stat-icon gold">◇</div><div><span>已运行 Tick</span><strong>{world?.tick_count ?? '—'}</strong></div></div>
-        <div className="stat-card"><div className="stat-icon green">✧</div><div><span>世界事件</span><strong>{world?.event_count ?? '—'}</strong></div></div>
-        <div className="stat-card"><div className="stat-icon red">◉</div><div><span>世界状态</span><strong className="state-text">{world?.running ? '运行中' : '已暂停'}</strong></div></div>
-      </section>
-
-      <section className="control-panel">
-        <div><div className="panel-kicker">WORLD CONTROL</div><h2>让故事继续</h2><p>事件、会话和 Agenda 为 NPC 提供行动机会；没有任何可调度机会时才进入 Idle。</p></div>
-        <div className="control-actions">
-          <button className="primary-button" disabled={busy || world?.running} onClick={() => command('/api/control/next')}>▶ 下一 Tick</button>
-          <button className="secondary-button" disabled={busy || world?.running} onClick={() => command('/api/control/run', {count: 10, delay_seconds: Number(speed)})}>运行 10 Tick</button>
-          <button className="secondary-button" disabled={busy || world?.running} onClick={() => command('/api/control/run', {count: 20, delay_seconds: Number(speed)})}>运行 20 Tick</button>
-          <button className="pause-button" disabled={!world?.running} onClick={() => command('/api/control/pause')}>Ⅱ 暂停</button>
-          <label className="speed-control">间隔 <input type="range" min="0" max="5" step="0.5" value={speed} onChange={event => setSpeed(event.target.value)} /><b>{speed}s</b></label>
-        </div>
-      </section>
-
-      <div className="control-actions"><button className={mode === 'observe' ? 'primary-button' : 'secondary-button'} onClick={() => setMode('observe')}>Observe</button><button className={mode === 'play' ? 'primary-button' : 'secondary-button'} onClick={() => setMode('play')}>Play</button></div>
-      {mode === 'play' ? <PlayMode worldId={world?.world_id} tick={world?.tick_count} eventCount={world?.event_count} revision={world?.revision} /> : <>
-      <section className="panel intervention-panel"><div className="section-heading"><div><div className="panel-kicker">WORLD INTERVENTION</div><h2>向世界投放线索</h2></div><span className="view-tag">角色自行决定反应</span></div>
-        <p>线索会成为 Java 保存的世界事件；只有事件发生时在该地点的角色会被唤醒。</p>
-        <form onSubmit={injectEvent} className="intervention-form">
-          <select aria-label="线索地点" value={intervention.location || world?.locations?.[0] || ''} onChange={event => setIntervention({...intervention, location: event.target.value})}>{(world?.locations || []).map(location => <option key={location} value={location}>{location}</option>)}</select>
-          <input aria-label="线索名称" placeholder="线索名称" maxLength="80" value={intervention.object_name} onChange={event => setIntervention({...intervention, object_name: event.target.value})} />
-          <input aria-label="线索内容" placeholder="线索内容" maxLength="1000" value={intervention.observation} onChange={event => setIntervention({...intervention, observation: event.target.value})} />
-          <button type="submit" className="secondary-button" disabled={busy || !world}>投放事件</button>
-        </form>
-      </section>
-
-      <div className="two-column">
-        <section className="panel timeline-panel" id="timeline">
-          <div className="section-heading"><div><div className="panel-kicker">CHRONICLE</div><h2>事件时间线</h2></div><select value={filter} onChange={event => setFilter(event.target.value)} aria-label="筛选事件"><option value="all">全部事件</option>{Object.entries(typeLabels).map(([type, label]) => <option key={type} value={type}>{label}</option>)}</select></div>
-          <div className="timeline-list">{events.length ? events.map(event => <article className="event-row" key={event.id}><div className={`event-marker ${event.type}`} /> <div className="event-content"><div className="event-meta"><span>{event.timestamp}</span><b>{typeLabels[event.type] || event.type}</b><em>{event.location}</em></div><p>{event.description}</p></div></article>) : <div className="empty">还没有事件。运行一轮，让故事开始。</div>}</div>
+    <nav className="sidebar"><a className="brand" href="#"><span>◈</span><b>NovelWorld</b><small>一座小镇，几种人生</small></a>
+      <div className="mode-switch"><button disabled={busy} className={mode === 'observe' ? 'active' : ''} onClick={() => setMode('observe')}>上帝视角</button><button disabled={busy} className={mode === 'play' ? 'active' : ''} onClick={() => setMode('play')}>走进小镇</button></div>
+      <p className="sidebar-note">{mode === 'observe' ? '看他们相遇、交谈，也各自生活。' : '作为旅人参与，认识你遇见的人。'}</p>
+      <button className="world-settings" onClick={() => setSetup(v => !v)}>⌂ 世界与开局</button>
+      <div className="sidebar-bottom"><span className={`connection ${connected ? 'online' : ''}`}>{connected ? '世界已连接' : '连接中'}</span><small>角色自主选择<br/>每段经历，都有来处。</small></div>
+    </nav>
+    <main>
+      <header className="page-header"><div><span className="eyebrow">小型 AI 社会沙盒</span><h1>{world?.title || '青石镇 · 一天尚未写完'}</h1><p>{world?.premise || '正在打开小镇……'}</p></div><div className="world-clock"><span>{world?.time || '—'}</span><small>{world?.running ? world.pausing ? '正在暂停' : '时间向前走' : '此刻暂停'} · {world?.tick_count ?? 0}轮</small></div></header>
+      {notice && <div role="alert" className="notice">{notice}<button aria-label="关闭提示" onClick={() => setNotice('')}>×</button></div>}
+      {world?.error && <div role="alert" className="notice error">运行已暂停：{world.error}</div>}
+      <section className="controls"><div className="run-state"><i className={world?.running ? 'pulse' : ''}/><span>{world?.acting ? `${world.acting} · ${world.phase}` : '给他们一点时间，生活会继续。'}</span></div><div className="control-buttons">
+        <button disabled={busy || !world || world.running} onClick={() => control('/api/control/next')}>走过 5 分钟</button>
+        <button className="primary" disabled={busy || !world || world.running} onClick={() => control('/api/control/run', {count: 12, delay_seconds: speed})}>让他们生活一小时</button>
+        <button disabled={busy || !world?.running} onClick={() => control('/api/control/pause')}>暂停</button>
+        <label>阅读间隔 <select value={speed} onChange={e => setSpeed(Number(e.target.value))}><option value="0">立即</option><option value="1">1 秒</option><option value="3">3 秒</option></select></label>
+      </div></section>
+      <p className="cost-note">运行会调用当前配置的模型。每轮最多两名角色思考，活动过程随时间推进。</p>
+      {setup && <WorldSetup running={world?.running} activeWorldId={world?.world_id} command={command} busy={busy}/>}
+      {mode === 'observe' ? <>
+        <section className="scene-section"><div className="section-title horizontal"><div><span className="eyebrow">此时此地</span><h2>小镇正在发生什么</h2></div><span className="muted">{Object.values(world?.characters || {}).filter(p => p.actor_type === 'npc').length} 位镇民 · {world?.event_count || 0} 段经历</span></div>
+          <div className="scene-grid">{Object.entries(world?.locations || {}).map(([location, description]) => <Scene key={location} location={location} description={description} world={world} selected={selected} select={setSelected}/>)}</div>
         </section>
-
-        <div className="right-stack">
-          <section className="panel" id="characters"><div className="section-heading"><div><div className="panel-kicker">CHARACTERS</div><h2>角色状态</h2></div><span className="count-badge">{names.length} NPC</span></div><div className="character-list">{names.map(name => { const person = world?.characters?.[name]; return <button key={name} className={selected === name ? 'character-card selected' : 'character-card'} onClick={() => setSelected(name)}><span className={`avatar avatar-${name}`}>{initial(name)}</span><span className="character-main"><strong>{name}<small>{person?.role || '加载中'}</small></strong><span>⌖ {person?.location || '—'} · 体力 {person?.energy ?? '—'} · 生命 {person?.hp ?? 100}</span></span><span className="card-arrow">›</span></button> })}</div></section>
-          <section className="panel relationship-panel"><div className="section-heading"><div><div className="panel-kicker">RELATIONSHIPS</div><h2>角色关系</h2></div></div><RelationshipMap characters={world?.characters} selected={selected} onSelect={setSelected} /><p className="graph-note">连线数字表示所选角色对其他人的关系值</p></section>
-        </div>
-      </div>
-
-      <section className="panel perspective-panel"><div className="section-heading"><div><div className="panel-kicker">PERSPECTIVE</div><h2>{selected}的视角</h2></div><span className="view-tag">独立知识与记忆</span></div><div className="perspective-grid"><div><h3>当前目标</h3>{view?.goals?.map(goal => <p className="line-item" key={goal}>{goal}</p>) || <p className="muted">加载中</p>}<h3>已知事实</h3>{view?.known_facts?.map(fact => <p className="line-item" key={fact}>{fact}</p>) || <p className="muted">暂无</p>}</div><div><h3>近期记忆</h3>{view?.recent_memories?.length ? view.recent_memories.map((memory, index) => <p className="memory-item" key={index}>{memory}</p>) : <p className="muted">暂无近期记忆</p>}</div><div><h3>长期记忆与调查事实</h3>{[...(view?.semantic_facts || []), ...(view?.archived_memories || [])].length ? [...(view?.semantic_facts || []), ...(view?.archived_memories || [])].slice(-8).map((memory, index) => <p className="memory-item" key={index}>{memory}</p>) : <p className="muted">暂无长期记忆</p>}</div></div></section>
-      <WorldSetup running={Boolean(world?.running)} activeWorldId={world?.world_id} onActivated={async () => {
-      const response = await fetch(mode === 'play' ? '/api/play/state' : '/api/world')
-        if (!response.ok) throw new Error(`读取切换后的世界失败：${response.status}`)
-        setWorld(await response.json())
-      }} />
-      </>}
-      <footer>NovelWorld · Agent 决策由模型完成，世界状态由程序执行和保存。自动运行会产生模型 API 费用。</footer>
+        <div className="reading-layout"><section className="story-panel"><div className="section-title horizontal"><div><span className="eyebrow">没有预定结局</span><h2>小镇纪事</h2></div><div className="story-tools"><select aria-label="跟随人物" value={filter} onChange={e => setFilter(e.target.value)}><option value="all">所有人物</option>{Object.keys(world?.characters || {}).map(name => <option key={name}>{name}</option>)}</select><label><input type="checkbox" checked={follow} onChange={e => setFollow(e.target.checked)}/>跟随最新</label></div></div>
+          <p className="reading-note">行动与对话来自实际发生的经历；“动机”是角色对自己选择的简短说明。</p>
+          <Story world={world || {}} filter={filter} follow={follow} selected={selected}/>
+        </section><CharacterDetail world={world || {}} selected={selected} select={setSelected}/></div>
+      </> : <PlayMode key={world?.world_id} world={world} command={command} busy={busy}/>}
+      <footer>NovelWorld · 一段持续发生的生活。<span>上帝视角中的私人资料不会进入其他角色的视角。</span></footer>
     </main>
   </div>
 }
 
-createRoot(document.getElementById('root')).render(<App />)
+createRoot(document.getElementById('root')).render(<App/> )

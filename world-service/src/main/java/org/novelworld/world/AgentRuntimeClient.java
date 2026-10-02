@@ -46,8 +46,6 @@ public class AgentRuntimeClient {
     @SuppressWarnings("unchecked")
     public Map<String, Object> play(String operation, Map<String, Object> body) {
         try {
-            if ("state".equals(operation))
-                return client.get().uri("/internal/play/state").retrieve().body(Map.class);
             return client.post().uri("/internal/play/" + operation).body(body).retrieve().body(Map.class);
         } catch (RestClientResponseException error) {
             throw new ResponseStatusException(error.getStatusCode(), error.getResponseBodyAsString(), error);

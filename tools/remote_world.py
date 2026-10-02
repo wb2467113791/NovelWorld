@@ -1,37 +1,17 @@
-"""Python Agent Runtime 通过 MCP 请求 Java 世界服务执行工具。"""
+"""唯一世界连接：Python 通过 MCP 请求 Spring Boot，不自行结算事实。"""
 
 import asyncio
 import json
 import os
-from typing import Any
-
-
-_active_backend = None
-
-
-class CommittedActionError(RuntimeError):
-    """Java 已提交，随后镜像刷新失败；调用者不可重新执行该行动。"""
-
-    def __init__(self, output: str, error: Exception):
-        super().__init__(f"行动已提交，刷新失败：{error}")
-        self.output = output
-
-
-def active_backend():
-    return _active_backend
-
-
-def use_backend(backend) -> None:
-    global _active_backend
-    _active_backend = backend
 
 
 class RemoteWorld:
-    def __init__(self, world_id: str, url: str | None = None) -> None:
+    def __init__(self, world_id=None, url=None):
         self.world_id = world_id
-        self.url = url or os.environ.get("NOVELWORLD_MCP_URL", "http://127.0.0.1:8080/mcp")
+        self.url = url or os.getenv("NOVELWORLD_MCP_URL", "http://127.0.0.1:8080/mcp")
+        self.snapshot = None
 
-    def _call(self, name: str, arguments: dict[str, Any]) -> str:
+    def _call(self, name, arguments):
         from mcp import ClientSession
         from mcp.client.streamable_http import streamable_http_client
 
@@ -40,127 +20,55 @@ class RemoteWorld:
                 async with ClientSession(reader, writer) as session:
                     await session.initialize()
                     result = await session.call_tool(name, arguments)
-                    if result.isError:
-                        message = " ".join(item.text for item in result.content if hasattr(item, "text"))
-                        return False, message or f"MCP 工具失败：{name}"
-                    return True, "".join(item.text for item in result.content if hasattr(item, "text"))
+                    content = "".join(block.text for block in result.content if hasattr(block, "text"))
+                    return not result.isError, content
 
-        success, text = asyncio.run(invoke())
+        success, content = asyncio.run(invoke())
+        # 在MCP异步上下文退出后抛出业务错误，避免TaskGroup把规则拒绝包装成传输异常。
         if not success:
-            raise ValueError(text)
-        return text
+            raise ValueError(content or "Java 世界规则拒绝了请求")
+        return json.loads(content)
 
-    def open(self, local_snapshot: dict) -> dict:
-        """现有世界以服务端为准；首次启动才导入本地存档。"""
+    def _accept(self, snapshot):
+        if snapshot.get("version") != 3:
+            raise ValueError("旧世界仅供保留和导出，请创建新版社会沙盒")
+        self.world_id = snapshot["world_id"]
+        self.snapshot = snapshot
+        return snapshot
+
+    def initialize(self):
+        return self._accept(self._call("initialize_world", {}))
+
+    def load(self):
+        return self._accept(self._call("get_world", {"worldId": self.world_id}))
+
+    def advance(self):
+        expected = self.snapshot["tick_count"]
         try:
-            return json.loads(self._call("get_world", {"worldId": self.world_id}))
-        except ValueError as error:
-            if "世界不存在" not in str(error):
-                raise
-            self._call("create_world", {"snapshotJson": json.dumps(local_snapshot, ensure_ascii=False)})
-            return json.loads(self._call("get_world", {"worldId": self.world_id}))
+            return self._accept(self._call("advance_world", {"worldId": self.world_id, "expectedTick": expected}))
+        except ValueError:
+            raise
+        except Exception:
+            # 网络返回丢失时只读确认；不会再次推进时钟。
+            snapshot = self.load()
+            if snapshot["tick_count"] == expected + 1:
+                return snapshot
+            raise
 
-    def load(self) -> dict:
-        """只读取已存在的世界，切换时不能把本地存档误导入为新世界。"""
-        return json.loads(self._call("get_world", {"worldId": self.world_id}))
-
-    def sync_events(self) -> int:
-        """只在 Java 出现新事件时刷新状态，供事件调度器读取人为干预。"""
-        from world.state import WORLD_STATE
-
-        cursor = len(WORLD_STATE["events"])
-        added = 0
-        while True:
-            page = json.loads(self._call("get_world_events", {
-                "worldId": self.world_id, "afterIndex": cursor,
-            }))
-            events = page["events"]
-            added += len(events)
-            if not events or len(events) < 100:
-                break
-            cursor = page["next_cursor"]
-        if added:
-            self._refresh_business_state()
-        return added
-
-    def execute(self, name: str, arguments: dict, acting_character: str | None) -> str:
-        from world.state import remember_event
-
+    def commit(self, actor, request_id, turn):
         try:
-            response = json.loads(self._call("execute_world_tool", {
-                "worldId": self.world_id,
-                "name": name,
-                "argumentsJson": json.dumps(arguments, ensure_ascii=False),
-                "actingCharacter": acting_character or arguments.get("character", ""),
+            return self._accept(self._call("commit_turn", {
+                "worldId": self.world_id, "actor": actor, "requestId": request_id,
+                "turnJson": json.dumps(turn, ensure_ascii=False),
             }))
         except ValueError:
-            # 世界可能在候选生成后变化；失败不算进度，先同步再让模型改选。
-            self._refresh_business_state()
             raise
-        event = response["event"]
-        if event:
-            # 服务端已写入业务状态与事件；重新读取后只补 Python 专属的角色记忆。
-            try:
-                self._refresh_business_state()
-                remember_event(event)
-            except Exception as error:
-                raise CommittedActionError(response["output"], error) from error
-        return response["output"]
+        except Exception:
+            # 已提交的轮次不因连接中断重复执行。查询也失败时 Runtime 会暂停。
+            snapshot = self.load()
+            if any(d["id"] == request_id for d in snapshot["decisions"]):
+                return snapshot
+            raise
 
-    def _refresh_business_state(self) -> None:
-        from world.persistence import restore_snapshot, snapshot_world
-        from world.state import WORLD_STATE, reconcile_event_memories
-        remote = json.loads(self._call("get_world", {"worldId": self.world_id}))
-        if WORLD_STATE.get("world_id") == self.world_id:
-            local = snapshot_world()
-            remote["active_conversations"] = local["active_conversations"]
-            for name, character in remote["characters"].items():
-                if character.get("actor_type", "npc") != "npc" or name not in local["characters"]:
-                    continue
-                character["memory"] = local["characters"][name]["memory"]
-                character["semantic_memory"] = local["characters"][name]["semantic_memory"]
-                character["runtime_state"] = local["characters"][name]["runtime_state"]
-                character["belief_memory"] = local["characters"][name]["belief_memory"]
-        restore_snapshot(remote)
-        reconcile_event_memories()
-
-    def introduce_event(self, category: str, location: str, tick_count: int,
-                        observation: str, form: str = "ambient") -> dict:
-        from world.state import WORLD_STATE, remember_event
-        arguments = {
-            "worldId": self.world_id,
-            "category": category,
-            "location": location,
-            "tickCount": tick_count,
-        }
-        arguments["observation"] = observation
-        arguments["form"] = form
-        event = json.loads(self._call("introduce_narrative_event", arguments))
-        self._refresh_business_state()
-        remember_event(event)
-        return event
-
-    def advance_time(self, minutes: int) -> str:
-        return self._call("advance_world_time", {"worldId": self.world_id, "minutes": minutes})
-
-    def save_agent_state(self, scheduler_state: dict) -> None:
-        from world.persistence import snapshot_world
-        snapshot = snapshot_world(scheduler_state=scheduler_state)
-        payload = {
-            "characters": {
-                name: {
-                    "memory": character["memory"],
-                    "semantic_memory": character["semantic_memory"],
-                    "runtime_state": character["runtime_state"],
-                    "belief_memory": character["belief_memory"],
-                }
-                for name, character in snapshot["characters"].items()
-                if character.get("actor_type", "npc") == "npc"
-            },
-            "scheduler": scheduler_state,
-            "active_conversations": snapshot["active_conversations"],
-        }
-        self._call("save_agent_state", {
-            "worldId": self.world_id,
-            "agentStateJson": json.dumps(payload, ensure_ascii=False),
-        })
+    def join(self, name, location):
+        return self._accept(self._call("join_player", {"worldId": self.world_id, "name": name, "location": location}))

@@ -1,34 +1,21 @@
-"""按角色与当前目标加载无状态专业知识，不扫描世界或推荐具体行动。"""
+"""按身份设定与当前社会情境加载Markdown，不读旁人的私有状态。"""
+
 from functools import lru_cache
 from pathlib import Path
-from characters.model import Character, is_npc
 
-SKILL_ROOT = Path(__file__).resolve().parent
-
-
-def choose_skill(character: Character, goal: str | None = None) -> str | None:
-    if not is_npc(character):
-        return None
-    # 只读目标；初始化和切换属于 Runtime，不属于 Skill。
-    objective = goal if goal is not None else character.runtime_state.active_goal
-    if objective is None:
-        objective = next(iter(character.goals), "")
-    if any(word in objective for word in ("调查", "查明", "追查", "寻找线索")) or (
-        "捕快" in character.role and "线索" in objective and "保护" not in objective
-    ):
-        return "investigation"
-    if any(word in objective for word in ("保护", "隐瞒", "藏")) or (
-        any(role in character.role for role in ("老板", "守卫")) and "保管" in objective
-    ):
-        return "concealment"
-    return None
+ROOT = Path(__file__).resolve().parent
+ALLOWED = {"hospitality", "community", "craft", "social"}
 
 
-@lru_cache(maxsize=2)
-def _read_skill(name: str) -> str:
-    return (SKILL_ROOT / name / "SKILL.md").read_text(encoding="utf-8").strip()
+@lru_cache(maxsize=4)
+def read_skill(name):
+    if name not in ALLOWED:
+        raise ValueError("未知角色Skill")
+    return (ROOT / name / "SKILL.md").read_text(encoding="utf-8")
 
 
-def skill_for(character: Character, goal: str | None = None) -> str:
-    kind = choose_skill(character, goal)
-    return _read_skill(kind) if kind else ""
+def skill_for(person, mind):
+    selected = list(person["skills"])
+    if any(word in (mind["goal"] + mind["intention"]) for word in ("朋友", "交流", "误会", "聚会")) and "social" not in selected:
+        selected.append("social")
+    return "\n\n".join(read_skill(name) for name in selected)

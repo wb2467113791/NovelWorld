@@ -1,165 +1,58 @@
-"""按世界隔离的本地 Chroma 检索索引；JSON 存档才是事实来源。"""
+"""可重建索引；先按角色owner过滤，再做向量检索。"""
 
-from pathlib import Path
 from functools import lru_cache
-
-from characters.model import Character, is_npc
-from world.state import WORLD_STATE
-from memory.retrieval import eligible_archived_entries
+from pathlib import Path
+from memory.retrieval import rank
 from retrieval.embedding import DashScopeEmbedder
 
 
-DEFAULT_INDEX_ROOT = Path(__file__).resolve().parents[1] / "data" / "chroma"
-
-
 class ChromaIndex:
-    def __init__(self, world_id: str, root: Path = DEFAULT_INDEX_ROOT, embedder=None, client=None) -> None:
-        if not world_id or any(char in world_id for char in "/\\."):
-            raise ValueError("世界 ID 无效")
+    def __init__(self, world_id, root=None, embedder=None, client=None):
+        if not world_id or any(c in world_id for c in "/\\."):
+            raise ValueError("世界ID无效")
         import chromadb
         from chromadb.config import Settings
-
-        self.world_id = world_id
         self.embedder = embedder or DashScopeEmbedder()
-        # 旧索引使用本地 384 维向量；按模型和维度分目录自动重建新索引。
-        self.path = Path(root) / world_id / f"{self.embedder.model}-{self.embedder.dimensions}"
+        root = Path(root or Path(__file__).resolve().parents[1] / "data" / "chroma")
         self.client = client or chromadb.PersistentClient(
-            path=str(self.path), settings=Settings(anonymized_telemetry=False)
-        )
-        self.memories = self.client.get_or_create_collection(
-            name="npc_memories", embedding_function=None
-        )
-        self.lore = self.client.get_or_create_collection(
-            name="world_lore", embedding_function=None
-        )
+            path=str(root / world_id / f"social-{self.embedder.model}-{self.embedder.dimensions}"),
+            settings=Settings(anonymized_telemetry=False))
+        self.memories = self.client.get_or_create_collection("memories", embedding_function=None, metadata={"hnsw:space": "cosine"})
+        self.lore = self.client.get_or_create_collection("lore", embedding_function=None, metadata={"hnsw:space": "cosine"})
 
-    def _sync_collection(self, collection, documents: dict[str, tuple[str, dict]], *, where: dict | None = None) -> None:
-        current = collection.get(where=where, include=["documents", "metadatas"])
-        existing = {
-            item_id: (document, metadata)
-            for item_id, document, metadata in zip(
-                current["ids"], current["documents"], current["metadatas"]
-            )
-        }
-        desired = set(documents)
-        obsolete = set(existing) - desired
-        if obsolete:
-            collection.delete(ids=sorted(obsolete))
-        changed = [item_id for item_id, value in documents.items() if existing.get(item_id) != value]
+    def _sync(self, collection, documents, where=None):
+        old = collection.get(where=where, include=["documents", "metadatas"])
+        present = {key: (text, meta) for key, text, meta in zip(old["ids"], old["documents"], old["metadatas"])}
+        removed = set(present) - set(documents)
+        if removed:
+            collection.delete(ids=list(removed))
+        changed = [key for key, value in documents.items() if present.get(key) != value]
         for start in range(0, len(changed), 20):
             ids = changed[start:start + 20]
-            texts = [documents[item][0] for item in ids]
-            collection.upsert(
-                ids=ids,
-                documents=texts,
-                embeddings=self.embedder.embed(texts),
-                metadatas=[documents[item][1] for item in ids],
-            )
+            texts = [documents[key][0] for key in ids]
+            collection.upsert(ids=ids, documents=texts, metadatas=[documents[key][1] for key in ids], embeddings=self.embedder.embed(texts))
 
     @lru_cache(maxsize=128)
-    def _query_vector(self, query: str) -> list[float]:
+    def vector(self, query):
         return self.embedder.embed([query])[0]
 
-    def sync_character(self, character: Character) -> None:
-        """从角色记忆重建其索引，并移除被新调查取代的旧内容。"""
-        if not is_npc(character):
-            return
-        documents: dict[str, tuple[str, dict]] = {}
-        order_by_event = {
-            entry.source_event_id: index
-            for index, entry in enumerate(character.memory.all_entries())
-            if entry.source_event_id is not None
-        }
-        for order, entry in eligible_archived_entries(character):
-            documents[entry.id] = (
-                entry.content,
-                {"owner": character.name, "kind": "episodic",
-                 "importance": entry.importance, "order": order,
-                 "source_event_id": entry.source_event_id or ""},
-            )
-        for fact in character.semantic_memory.current_facts():
-            documents[fact.id] = (
-                fact.content,
-                {"owner": character.name, "kind": "semantic",
-                 "importance": 3,
-                 "order": order_by_event.get(fact.source_event_id, 0),
-                 "source_event_id": fact.source_event_id},
-            )
-        self._sync_collection(self.memories, documents, where={"owner": character.name})
-
-    def sync_lore(self) -> None:
-        """只索引当前世界存档中的设定，不混入其他开局的资料。"""
-        documents = {
-            entry["id"]: (entry["text"], {"category": entry["category"], "audience": entry["audience"]})
-            for entry in WORLD_STATE["lore"]
-        }
-        self._sync_collection(self.lore, documents)
-
-    def sync_world(self, characters: dict[str, Character]) -> None:
-        for character in characters.values():
-            if is_npc(character):
-                self.sync_character(character)
-        self.sync_lore()
-
-    def retrieve_memory(
-        self, character: Character, query: str, *, max_items: int = 3, max_chars: int = 600,
-    ) -> list[str]:
-        if not is_npc(character):
-            raise ValueError("Player 不使用 NPC RAG")
-        self.sync_character(character)
-        count = len(self.memories.get(where={"owner": character.name}, include=[])["ids"])
-        if not count or not query.strip():
-            return []
-        response = self.memories.query(
-            query_embeddings=[self._query_vector(query)],
-            n_results=min(count, max_items * 8),
-            where={"owner": character.name},
-            include=["documents", "metadatas", "distances"],
-        )
-        recent_sources = {
-            entry.source_event_id for entry in character.memory.recent_entries()
-        }
-        total = max(len(character.memory.all_entries()), 1)
-        ranked = []
-        for document, metadata, distance in zip(
-            response["documents"][0], response["metadatas"][0], response["distances"][0]
-        ):
-            if metadata["source_event_id"] in recent_sources:
-                continue
-            similarity = 1 / (1 + distance)
-            score = (0.6 * similarity + 0.25 * metadata["importance"] / 5
-                     + 0.15 * (metadata["order"] + 1) / total)
-            label = "已核实调查" if metadata["kind"] == "semantic" else "历史经历"
-            ranked.append((score, f"{label}：{document}"))
-        ranked.sort(reverse=True)
-        selected: list[str] = []
-        for _, item in ranked:
-            if len(selected) >= max_items:
-                break
-            if len(item) <= max_chars:
-                selected.append(item)
-                max_chars -= len(item)
-        return selected
-
-    def retrieve_lore(
-        self, character_name: str, query: str, *, max_items: int = 2, max_chars: int = 350,
-    ) -> list[str]:
-        self.sync_lore()
-        count = self.lore.count()
-        if not query.strip() or not count:
-            return []
-        response = self.lore.query(
-            query_embeddings=[self._query_vector(query)],
-            n_results=min(count, max_items * 8),
-            where={"$or": [{"audience": "public"}, {"audience": character_name}]},
-            include=["documents", "metadatas", "distances"],
-        )
-        selected: list[str] = []
-        for document, metadata in zip(response["documents"][0], response["metadatas"][0]):
-            item = f"世界设定（{metadata['category']}）：{document}"
-            if len(item) <= max_chars:
-                selected.append(item)
-                max_chars -= len(item)
-            if len(selected) >= max_items:
-                break
-        return selected
+    def recall(self, world, name, memories, query):
+        # 近期窗口直接进Prompt；长期候选才进入Chroma，避免同一经历重复占上下文。
+        archive = memories[:-8]
+        # 同一个事件可以被多人感知，collection中的ID也必须包含owner。
+        docs = {f"{name}:{m['id']}": (m["content"], {"owner": name, "minute": m["minute"], "importance": m["importance"], "kind": m["kind"]}) for m in archive}
+        self._sync(self.memories, docs, {"owner": name})
+        lore_docs = {l["id"]: (l["text"], {"audience": l["audience"]}) for l in world["lore"]}
+        self._sync(self.lore, lore_docs)
+        recalled = []
+        if docs:
+            result = self.memories.query(query_embeddings=[self.vector(query)], n_results=min(len(docs), 16),
+                                         where={"owner": name}, include=["documents", "metadatas", "distances"])
+            recalled = rank(result["documents"][0], result["metadatas"][0], result["distances"][0], world["minute"])
+        visible_count = sum(l["audience"] in ("public", name) for l in world["lore"])
+        lore = []
+        if visible_count:
+            result = self.lore.query(query_embeddings=[self.vector(query)], n_results=min(visible_count, 3),
+                                    where={"$or": [{"audience": "public"}, {"audience": name}]}, include=["documents"])
+            lore = result["documents"][0]
+        return recalled, lore

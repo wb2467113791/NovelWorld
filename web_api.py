@@ -1,198 +1,151 @@
-"""Spring Boot 背后的内部 Python Agent Runtime。"""
+"""本机内部Agent控制服务；浏览器只访问Spring Boot。"""
 
 import asyncio
-import os
 import threading
 from contextlib import asynccontextmanager
-
-from fastapi import FastAPI, HTTPException
+from uuid import uuid4
+from fastapi import FastAPI
 from pydantic import BaseModel, Field
-
-from agent.director import Director
-from agent.session import WorldSession, make_graph_decide_action
-from world.persistence import DEFAULT_SAVE_PATH, load_world, restore_snapshot, save_world, snapshot_world
-from world.state import WORLD_STATE
-from characters.model import is_npc
+from agent.graph import build_graph
+from agent.tick import WorldSession
+from tools.remote_world import RemoteWorld
+from world.persistence import current_world_id, remember_world
 
 
 class RunRequest(BaseModel):
-    count: int = Field(default=10, ge=1, le=100)
+    count: int = Field(default=12, ge=1, le=100)
     delay_seconds: float = Field(default=1, ge=0, le=30)
 
 
 class ActivateRequest(BaseModel):
-    world_id: str = Field(min_length=1)
+    world_id: str = Field(min_length=1, max_length=64)
 
 
-class PlayActionRequest(BaseModel):
-    world_id: str = Field(min_length=1)
+class JoinRequest(ActivateRequest):
+    name: str = Field(default="旅人", min_length=1, max_length=40)
+    location: str = Field(min_length=1)
+
+
+class ActionRequest(ActivateRequest):
     action: str
     arguments: dict = Field(default_factory=dict)
 
 
 class WorldController:
-    def __init__(self) -> None:
+    def __init__(self, request_model=None, index_factory=None):
         self.lock = threading.RLock()
         self.pause_requested = threading.Event()
-        self.worker: threading.Thread | None = None
-        self.error: str | None = None
-        self.session: WorldSession | None = None
+        self.worker = None
+        self.session = None
+        self.error = None
+        self.acting = None
+        self.phase = "等待运行"
+        self._status = {"world_id": None, "tick_count": 0}
+        self.request_model = request_model
+        self.index_factory = index_factory
 
-    @staticmethod
-    def _request_model(conversation, allow_tools):
-        from llm_client import request_npc_graph_response
-        return request_npc_graph_response(conversation, allow_tools)
+    def progress(self, name, phase):
+        self.acting, self.phase = name, phase
 
-    @staticmethod
-    def _propose_director_event(category: str, location: str) -> dict:
-        import json
-        from llm_client import chat
-        recent = "\n".join(event["description"] for event in WORLD_STATE["events"][-6:]) or "暂无"
-        goals = "；".join(f"{name}：{'；'.join(character.goals)}"
-                         for name, character in WORLD_STATE["characters"].items() if is_npc(character))
-        setting = "\n".join(item["text"] for item in WORLD_STATE.get("lore", []) if item["audience"] == "public")
-        proposal = chat(
-            "你是 NovelWorld 的 Director，根据世界主题、角色长期目标与近期事件提出一条适合的环境变化。"
-            "可以是社会机会、日常麻烦、利益分歧或协商机会；不要默认制造神秘物证。"
-            "调查主题确实需要可查物证时才选择 clue；其他情况选 ambient。"
-            "不要替 NPC 决定行动、说话或结论，不宣告交易、关系或角色状态改变；议论不等于事实。"
-            f"\n世界设定：{setting}"
-            f"\n触发原因：{category}\n地点：{location}\n角色目标：{goals}"
-            f'\n最近事件：\n{recent}\n只输出 JSON：{{"form":"ambient 或 clue","observation":"不超过一百字的环境观察"}}。'
-        )
-        return json.loads(proposal)
-
-    def _new_session(self, scheduler_state: dict) -> WorldSession:
+    def _session(self, backend):
         from retrieval.chroma_index import ChromaIndex
+        from llm_client import request_decision
+        index = (self.index_factory or ChromaIndex)(backend.world_id)
+        graph = build_graph(backend, index, self.request_model or request_decision, self.progress)
+        return WorldSession(backend, graph)
 
-        index = ChromaIndex(WORLD_STATE["world_id"])
-        index.sync_world(WORLD_STATE["characters"])
-        return WorldSession(
-            make_graph_decide_action(self._request_model, index),
-            save_path=DEFAULT_SAVE_PATH, index=index, scheduler_state=scheduler_state,
-            director=(None if os.environ.get("NOVELWORLD_DIRECTOR", "on").lower() == "off"
-                      else Director(propose_event=self._propose_director_event)),
-        )
+    def refresh_status(self):
+        world = self.session.backend.snapshot
+        self._status = {"world_id": world["world_id"], "tick_count": world["tick_count"]}
 
-    def initialize(self) -> None:
-        from tools.remote_world import RemoteWorld, use_backend
+    def initialize(self):
+        world_id = current_world_id()
+        backend = RemoteWorld(world_id)
+        if world_id:
+            backend.load()
+        else:
+            backend.initialize()
+        self.session = self._session(backend)
+        remember_world(backend.world_id)
+        self.refresh_status()
 
-        scheduler_state = load_world(DEFAULT_SAVE_PATH) if DEFAULT_SAVE_PATH.exists() else None
-        if os.environ.get("NOVELWORLD_BACKEND", "mcp") != "mcp":
-            raise RuntimeError("Spring Boot Web 入口要求 NOVELWORLD_BACKEND=mcp")
-        if scheduler_state is None:
-            from agent.tick import WorldTickScheduler
-            scheduler_state = WorldTickScheduler().snapshot()  # 仅首次本地种子初始化。
-        backend = RemoteWorld(WORLD_STATE["world_id"])
-        scheduler_state = restore_snapshot(backend.open(snapshot_world(scheduler_state=scheduler_state)))
-        from world.state import reconcile_event_memories
-        if reconcile_event_memories():
-            backend.save_agent_state(scheduler_state)
-        use_backend(backend)
-        if not DEFAULT_SAVE_PATH.exists():
-            save_world(DEFAULT_SAVE_PATH, scheduler_state=scheduler_state)
-        self.session = self._new_session(scheduler_state)
-
-    def activate_world(self, world_id: str) -> dict:
-        from tools.remote_world import RemoteWorld, active_backend, use_backend
-        from world.state import reconcile_event_memories
-
-        with self.lock:
-            if self.worker is not None and self.worker.is_alive():
-                raise RuntimeError("请先暂停当前世界")
-            if self.session is None:
-                raise RuntimeError("世界尚未初始化")
-            if world_id == WORLD_STATE["world_id"]:
-                return self.status()
-
-            new_backend = RemoteWorld(world_id)
-            new_snapshot = new_backend.load()  # 目标必须已由 Java 创建。
-            if new_snapshot.get("world_id") != world_id:
-                raise ValueError("目标世界的存档 ID 不匹配")
-            old_session = self.session
-            old_backend = active_backend()
-            old_scheduler = old_session.scheduler.snapshot()
-            old_snapshot = snapshot_world(scheduler_state=old_scheduler)
-            if old_backend is not None:
-                old_backend.save_agent_state(old_scheduler)
-            save_world(DEFAULT_SAVE_PATH, scheduler_state=old_scheduler)
-
-            try:
-                scheduler_state = restore_snapshot(new_snapshot)
-                use_backend(new_backend)
-                if reconcile_event_memories():
-                    new_backend.save_agent_state(scheduler_state)
-                new_session = self._new_session(scheduler_state)
-                save_world(DEFAULT_SAVE_PATH, scheduler_state=scheduler_state)
-                self.session = new_session
-                self.error = None
-                return self.status()
-            except Exception:
-                restore_snapshot(old_snapshot)
-                use_backend(old_backend)
-                self.session = old_session
-                save_world(DEFAULT_SAVE_PATH, scheduler_state=old_scheduler)
-                raise
-
-    def status(self) -> dict:
-        # Tick 可能在 MCP、检索或模型请求中运行较久。状态查询不等待调度锁，
-        # 否则 Spring Boot 的 SSE / 页面查询会在读超时后误报 Runtime 不可用。
-        return {
-            "world_id": WORLD_STATE["world_id"],
-            "tick_count": self.session.completed_ticks if self.session else 0,
-            "running": self.worker is not None and self.worker.is_alive(),
-            "error": self.error,
-        }
-
-    def start(self, count: int, delay_seconds: float) -> None:
-        def work():
-            try:
-                for index in range(count):
-                    if self.pause_requested.is_set():
-                        break
-                    with self.lock:
-                        self.session.next_tick()
-                    if index + 1 < count and self.pause_requested.wait(delay_seconds):
-                        break
-            except Exception as error:
-                self.error = str(error)
-
-        with self.lock:
-            if self.worker is not None and self.worker.is_alive():
-                raise RuntimeError("世界已在运行")
-            self.pause_requested.clear()
-            self.error = None
-            self.worker = threading.Thread(target=work, daemon=True)
-            self.worker.start()
-
-    def pause(self) -> None:
-        self.pause_requested.set()
-
-    def play(self, operation: str, *, world_id: str | None = None, action: str = "", arguments=None) -> dict:
-        # 不排队到慢模型之后执行旧页面输入；与 NPC Tick / 世界切换使用同一个锁。
+    def activate(self, world_id):
         if not self.lock.acquire(blocking=False):
-            raise RuntimeError("当前 Tick 正在执行，请稍后重试")
+            raise RuntimeError("当前轮次正在执行，请先暂停并等待结束")
         try:
+            if self.running:
+                raise RuntimeError("请先暂停当前世界")
+            backend = RemoteWorld(world_id); backend.load()
+            session = self._session(backend)
+            remember_world(world_id)
+            self.session = session
+            self.error = None; self.acting = None; self.phase = "等待运行"
+            self.refresh_status()
+            return self.status()
+        finally:
+            self.lock.release()
+
+    @property
+    def running(self):
+        return self.worker is not None and self.worker.is_alive()
+
+    def status(self):
+        # 慢模型持锁时查询依然立即返回，SSE不会被模型请求拖住。
+        return {**self._status, "running": self.running, "pausing": self.running and self.pause_requested.is_set(),
+                "error": self.error, "acting": self.acting, "phase": self.phase}
+
+    def start(self, count, delay):
+        if not self.lock.acquire(blocking=False):
+            raise RuntimeError("当前轮次正在执行")
+        try:
+            if self.running:
+                raise RuntimeError("世界已经在运行")
             if self.session is None:
                 raise RuntimeError("世界尚未初始化")
-            if world_id is not None and world_id != WORLD_STATE["world_id"]:
-                raise RuntimeError("世界已切换，请刷新 Play 页面")
-            from tools.remote_world import active_backend
-            from agent.conversation import expire
-            from world.play import state_view, end_conversation
-            if operation == "action":
-                return self.session.player_action(action, arguments or {})
-            before = self.session.scheduler.snapshot()
-            from agent.conversation import sessions
-            before_sessions = [session.to_dict() for session in sessions()]
-            active_backend().sync_events()
-            self.session.scheduler._collect_events()
-            expire(self.session.completed_ticks)
-            if operation == "end":
-                end_conversation()
-            if operation == "end" or before != self.session.scheduler.snapshot() or before_sessions != [session.to_dict() for session in sessions()]:
-                self.session.save_runtime()
-            return {**state_view(self.session.completed_ticks), "running": self.status()["running"]}
+            self.pause_requested.clear(); self.error = None
+            def work():
+                try:
+                    for turn in range(count):
+                        if self.pause_requested.is_set():
+                            break
+                        with self.lock:
+                            try:
+                                self.session.next_tick()
+                                self.progress(None, "活动随时间推进")
+                            finally:
+                                self.refresh_status()
+                        if turn + 1 < count and self.pause_requested.wait(delay):
+                            break
+                except Exception as error:
+                    self.error = str(error)
+                finally:
+                    self.acting = None; self.phase = "运行中断" if self.error else "等待运行"
+            self.worker = threading.Thread(target=work, name="world-agent", daemon=True)
+            self.worker.start()
+        finally:
+            self.lock.release()
+        return {"accepted": True}
+
+    def play(self, request, join=False):
+        if not self.lock.acquire(blocking=False):
+            raise RuntimeError("当前角色正在思考，请稍后重试")
+        try:
+            if self.running:
+                raise RuntimeError("先暂停自动运行，再提交玩家行动")
+            backend = self.session.backend
+            if request.world_id != backend.world_id:
+                raise RuntimeError("世界已切换，请刷新页面")
+            world = backend.load()
+            if join:
+                backend.join(request.name, request.location)
+            else:
+                player = next((name for name, p in world["characters"].items() if p["actor_type"] == "player"), None)
+                if player is None:
+                    raise ValueError("请先加入世界")
+                backend.commit(player, uuid4().hex, {"action": request.action, "arguments": request.arguments,
+                                                     "reason": "玩家主动选择", "mind": {}, "memories": []})
+            self.refresh_status()
+            return {"committed": True}
         finally:
             self.lock.release()
 
@@ -201,75 +154,52 @@ controller = WorldController()
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI):
+async def lifespan(_):
     await asyncio.to_thread(controller.initialize)
     yield
-    controller.pause()
-    if controller.worker is not None:
-        controller.worker.join(timeout=5)
+    controller.pause_requested.set()
 
 
 app = FastAPI(title="NovelWorld Internal Agent Runtime", lifespan=lifespan)
 
 
-def _play(operation: str, **kwargs):
-    try:
-        return controller.play(operation, **kwargs)
-    except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error)) from error
-    except RuntimeError as error:
-        raise HTTPException(status_code=409, detail=str(error)) from error
+@app.exception_handler(ValueError)
+async def invalid(_, error):
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=400, content={"detail": str(error)})
 
 
-@app.get("/internal/play/state")
-def play_state():
-    return _play("state")
-
-
-@app.post("/internal/play/action")
-def play_action(request: PlayActionRequest):
-    return _play("action", world_id=request.world_id, action=request.action, arguments=request.arguments)
-
-
-@app.post("/internal/play/conversation/end")
-def play_end(request: ActivateRequest):
-    return _play("end", world_id=request.world_id)
+@app.exception_handler(RuntimeError)
+async def conflict(_, error):
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=409, content={"detail": str(error)})
 
 
 @app.get("/internal/status")
-def get_status():
-    return controller.status()
+def status(): return controller.status()
 
 
 @app.post("/internal/control/next", status_code=202)
-def next_tick():
-    try:
-        controller.start(1, 0)
-    except RuntimeError as error:
-        raise HTTPException(status_code=409, detail=str(error)) from error
-    return {"accepted": True}
+def next_tick(): return controller.start(1, 0)
 
 
 @app.post("/internal/control/run", status_code=202)
-def run_ticks(request: RunRequest):
-    try:
-        controller.start(request.count, request.delay_seconds)
-    except RuntimeError as error:
-        raise HTTPException(status_code=409, detail=str(error)) from error
-    return {"accepted": True}
+def run(request: RunRequest): return controller.start(request.count, request.delay_seconds)
 
 
 @app.post("/internal/control/pause")
 def pause():
-    controller.pause()
+    controller.pause_requested.set()
     return {"paused": True}
 
 
 @app.post("/internal/control/activate")
-def activate(request: ActivateRequest):
-    try:
-        return controller.activate_world(request.world_id)
-    except RuntimeError as error:
-        raise HTTPException(status_code=409, detail=str(error)) from error
-    except ValueError as error:
-        raise HTTPException(status_code=404, detail=str(error)) from error
+def activate(request: ActivateRequest): return controller.activate(request.world_id)
+
+
+@app.post("/internal/play/join")
+def join(request: JoinRequest): return controller.play(request, join=True)
+
+
+@app.post("/internal/play/action")
+def action(request: ActionRequest): return controller.play(request)

@@ -1,117 +1,35 @@
-import React, { useEffect, useState } from 'react'
+import React, {useState} from 'react'
+import {clock} from './api.js'
 
-async function request(path, body) {
-  const response = await fetch(path, body ? {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)} : {})
-  const value = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(value.detail || value.message || `请求失败：${response.status}`)
-  return value
-}
-
-export default function PlayMode({ worldId, tick, eventCount, revision }) {
-  const [state, setState] = useState(null)
-  const [notice, setNotice] = useState('')
-  const [loadError, setLoadError] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [partner, setPartner] = useState('')
+export default function PlayMode({world, command, busy}) {
+  const [name, setName] = useState('旅人')
+  const [location, setLocation] = useState('')
+  const [target, setTarget] = useState('')
   const [message, setMessage] = useState('')
-  const [destination, setDestination] = useState('')
-  const [heldId, setHeldId] = useState('')
-  const [containerId, setContainerId] = useState('')
-  useEffect(() => {
-    setState(null); setPartner(''); setHeldId(''); setDestination(''); setContainerId('')
-    setNotice(''); setLoadError('')
-  }, [worldId])
-  useEffect(() => {
-    let active = true
-    let retry
-    async function refresh() {
-      try {
-        const value = await request('/api/play/state')
-        if (active && value.world_id === worldId) { setState(value); setLoadError('') }
-      } catch (error) {
-        // 仅重试只读状态；NPC Tick 持锁时不会排队或重放玩家行动。
-        if (active) {
-          setLoadError(`暂时无法读取玩家状态：${error.message}。请检查 Java / Python 服务；读取会自动重试。`)
-          retry = setTimeout(refresh, 1000)
-        }
-      }
-    }
-    if (worldId) refresh()
-    return () => { active = false; clearTimeout(retry) }
-  }, [worldId, tick, eventCount, revision])
-
-  async function act(action, args = {}) {
-    if (!state || state.world_id !== worldId) return
-    setBusy(true); setNotice('')
-    try {
-      const result = await request('/api/play/action', {world_id: state.world_id, action, arguments: args})
-      setNotice(result.warning || result.output)
-      setMessage('')
-      try {
-        const next = await request('/api/play/state')
-        if (next.world_id === worldId) setState(next)
-      } catch (error) { setNotice(`${result.output}（行动已提交，页面刷新失败：${error.message}）`) }
-    } catch (error) { setNotice(error.message) }
-    finally { setBusy(false) }
+  const [activity, setActivity] = useState('')
+  const [object, setObject] = useState('')
+  if (!world) return <p className="muted">正在打开小镇……</p>
+  const player = world.characters?.[world.player_name]
+  const disabled = busy || world.running
+  const places = Object.keys(world.locations || {})
+  async function submit(action, args={}) {
+    try {await command('/api/play/action', {world_id: world.world_id, action, arguments: args}); setMessage('')}
+    catch (_) {}
   }
-  const actors = state?.nearby_characters || []
-  const listener = actors.some(actor => actor.name === partner) ? partner : state?.conversation?.partner || actors[0]?.name || ''
-  const held = state?.inventory || []
-  const selectedHeld = held.find(item => item.id === heldId) || held[0]
-  const containers = (state?.visible_objects || []).filter(item => item.affordances.includes('close') && item.state === 'open' && !item.portable)
-  async function end() {
-    setBusy(true)
-    try { setState(await request('/api/play/conversation/end', {world_id: state.world_id})) }
-    catch (error) { setNotice(error.message) }
-    finally { setBusy(false) }
-  }
-  return <section className="panel play-panel">
-    <h2>Play · 进入世界 · {state?.player?.name || '读取玩家…'}</h2>
-    {loadError && <p className="notice" role="status">{loadError}</p>}
-    {!state && !loadError && <p className="muted">正在读取本世界的玩家状态…</p>}
-    {notice && <p className="notice">{notice}</p>}
-    {state && <>
-      <p>生命 {state.player.hp} · 体力 {state.player.energy} · {state.player.status} · ⌖ {state.player.location} · {state.time}</p>
-      <p>{state.location_description}</p>
-      <div className="control-actions">
-        <select aria-label="移动地点" value={destination || state.locations[0]} onChange={event => setDestination(event.target.value)}>{state.locations.map(place => <option key={place}>{place}</option>)}</select>
-        <button disabled={busy} onClick={() => act('move', {location: destination || state.locations[0]})}>移动</button>
-        <button disabled={busy} onClick={() => act('inspect')}>观察地点</button>
-        <button disabled={busy} onClick={() => act('rest')}>休息</button>
-      </div>
-      <h3>附近角色 / 当前交流</h3>
-      {!actors.length && <p className="muted">当前地点没有可交谈的角色，可先移动或观察。</p>}
-      <select aria-label="交谈或交付对象" value={listener} onChange={event => setPartner(event.target.value)}>{actors.map(actor => <option key={actor.name}>{actor.name}</option>)}</select>
-      {state.conversation && <>
-        <p>{state.conversation.waiting_for_player ? '等待你输入' : '等待对方下一 Tick 回应'} · {state.conversation.partner}</p>
-        {state.conversation.messages.map((item, index) => <p className="memory-item" key={index}>{item.speaker}：{item.content}</p>)}
-        <button disabled={busy} onClick={end}>结束交流</button>
-      </>}
-      <form onSubmit={event => {event.preventDefault(); act('talk', {listener, message})}} className="intervention-form">
-        <input aria-label="说话内容" value={message} onChange={event => setMessage(event.target.value)} maxLength={2000} placeholder="对附近角色说…" />
-        <button disabled={busy || !listener || !message.trim()}>发送</button>
-      </form>
-      <h3>可见对象</h3>
-      {!state.visible_objects.length && <p className="muted">当前没有可见对象。</p>}
-      <div className="play-objects">{state.visible_objects.map(item => <div className="line-item" key={item.id}>
-        <strong>{item.name}</strong> [{item.state}] {' '}
-        <button disabled={busy} onClick={() => act('inspect', {object_id: item.id})}>查看</button>{' '}
-        {item.portable && !held.some(value => value.id === item.id) && <button disabled={busy} onClick={() => act('take', {object_id: item.id})}>拿取</button>}
-        {item.affordances.filter(action => ['open', 'close'].includes(action)).map(action => <button key={action} disabled={busy} onClick={() => act('interact', {object_id: item.id, action})}>{action === 'open' ? '打开' : '关闭'}</button>)}
-        {item.affordances.filter(action => ['light', 'extinguish', 'consume'].includes(action)).map(action => <button key={action} disabled={busy} onClick={() => act('use', {object_id: item.id, action})}>{({light: '点亮', extinguish: '熄灭', consume: '使用'})[action]}</button>)}
-      </div>)}</div>
-      <h3>持有物品</h3>
-      {!held.length && <p className="muted">尚未持有物品。</p>}
-      <div className="control-actions">
-        <select aria-label="持有物品" value={selectedHeld?.id || ''} onChange={event => setHeldId(event.target.value)}>{held.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
-        <button disabled={busy || !selectedHeld} onClick={() => act('put', {object_id: selectedHeld.id, location: state.player.location})}>放在当前地点</button>
-        <button disabled={busy || !selectedHeld || !listener} onClick={() => act('give', {object_id: selectedHeld.id, receiver: listener})}>交给所选角色</button>
-        <select aria-label="打开的容器" value={containers.some(item => item.id === containerId) ? containerId : containers[0]?.id || ''} onChange={event => setContainerId(event.target.value)}>{containers.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
-        <button disabled={busy || !selectedHeld || !containers.length} onClick={() => act('put', {object_id: selectedHeld.id, container_id: containers.some(item => item.id === containerId) ? containerId : containers[0].id})}>放入容器</button>
-      </div>
-      <h3>你感知到的事件</h3>
-      {[...state.events].reverse().map(event => <p className="memory-item" key={event.id}>{event.timestamp} · {event.description}</p>)}
-      <p className="muted">每次成功行动推进一个 Tick。NPC 在下一 Tick 自主回应；可使用上方运行控制继续世界。</p>
+  if (!player) return <section className="play-panel"><span className="eyebrow">从一声问候开始</span><h2>成为小镇里的旅人</h2><p>你会遇见现场的人。对方怎样回应、是否接受邀请，由他们自己决定。</p><div className="form-row"><input aria-label="旅人姓名" value={name} maxLength="40" onChange={e => setName(e.target.value)}/><select aria-label="起始地点" value={location || places[0]} onChange={e => setLocation(e.target.value)}>{places.map(p => <option key={p}>{p}</option>)}</select><button className="primary" disabled={disabled || !name.trim()} onClick={() => command('/api/play/join', {world_id: world.world_id, name, location: location || places[0]}).catch(() => {})}>走进小镇</button></div></section>
+  const session = world.conversations?.find(s => s.participants.includes(player.name))
+  const people = Object.keys(world.characters || {}).filter(n => n !== player.name)
+  const activities = Object.entries(world.activities || {}).filter(([, a]) => a.locations.includes(player.location) && (!a.roles.length || a.roles.includes(player.role)))
+  const objects = Object.entries(world.objects || {})
+  return <div className="play-layout"><section className="play-panel"><span className="eyebrow">你的视角</span><h2>{player.name} · {player.location}</h2><p>{world.locations[player.location]}</p><p>附近：{people.join('、') || '暂时没有其他人'}。{player.activity ? `你正在${player.activity.name}，${clock(player.activity.until)}结束。` : '你此刻空闲。'}</p>
+    {player.activity && <button disabled={disabled} onClick={() => submit('stop_activity')}>停下当前活动</button>}
+    {(world.invitations || []).filter(i => i.to === player.name).map(i => <div className="invitation-card" key={i.id}><b>{i.from}想与你聊聊</b><blockquote>{i.message}</blockquote><button disabled={disabled} onClick={() => submit('respond_invitation', {invitation_id: i.id, accept: true})}>接受</button><button disabled={disabled} onClick={() => submit('respond_invitation', {invitation_id: i.id, accept: false})}>婉拒</button></div>)}
+    {session ? <div className="play-conversation"><h3>与{session.participants.find(n => n !== player.name)}的交谈</h3>{session.messages.map(m => <p key={m.event_id}><b>{m.speaker}</b>：{m.message}</p>)}<textarea aria-label="说给对方的话" value={message} onChange={e => setMessage(e.target.value)} maxLength="1000" placeholder={session.next_speaker === player.name ? '说说你的想法……' : '运行下一轮，让对方回应。'}/><div className="form-row"><button className="primary" disabled={disabled || session.next_speaker !== player.name || !message.trim()} onClick={() => submit('say', {message})}>说给对方听</button><button disabled={disabled} onClick={() => submit('leave_conversation')}>结束交谈</button></div></div> : <>
+      <div className="person-section"><h3>去别处走走</h3><div className="form-row"><select aria-label="前往地点" value={location || places[0]} onChange={e => setLocation(e.target.value)}>{places.map(p => <option key={p}>{p}</option>)}</select><button disabled={disabled || !!player.activity || (location || places[0]) === player.location} onClick={() => submit('move', {location: location || places[0]})}>前往</button></div></div>
+      <div className="person-section"><h3>向附近的人问候</h3><select aria-label="邀请的人" value={people.includes(target) ? target : people[0] || ''} onChange={e => setTarget(e.target.value)}>{people.map(p => <option key={p}>{p}</option>)}</select><textarea aria-label="邀请内容" value={message} onChange={e => setMessage(e.target.value)} maxLength="600" placeholder="你想和他聊什么？"/><button disabled={disabled || !!player.activity || !people.length || !message.trim()} onClick={() => submit('invite', {target: people.includes(target) ? target : people[0], message})}>邀请交谈</button></div>
+      <div className="person-section"><h3>在这里做些什么</h3><div className="form-row"><select aria-label="活动" value={activities.some(([id]) => id === activity) ? activity : activities[0]?.[0] || ''} onChange={e => setActivity(e.target.value)}>{activities.map(([id, a]) => <option key={id} value={id}>{a.name} · {a.duration}分钟</option>)}</select><button disabled={disabled || !!player.activity || !activities.length} onClick={() => submit('start_activity', {activity_id: activities.some(([id]) => id === activity) ? activity : activities[0][0]})}>开始</button><button disabled={disabled || !!player.activity} onClick={() => submit('wait')}>静候片刻</button></div></div>
     </>}
-  </section>
+    {!!objects.length && <div className="person-section"><h3>看看现场的东西</h3><div className="form-row"><select aria-label="查看对象" value={objects.some(([id]) => id === object) ? object : objects[0][0]} onChange={e => setObject(e.target.value)}>{objects.map(([id, o]) => <option key={id} value={id}>{o.name}</option>)}</select><button disabled={disabled} onClick={() => submit('inspect', {object_id: objects.some(([id]) => id === object) ? object : objects[0][0]})}>查看</button></div></div>}
+    {(world.invitations || []).filter(i => i.from === player.name).map(i => <p className="muted" key={i.id}>你向{i.to}发出了邀请，等待他自主回应。</p>)}
+  </section><section className="play-panel"><span className="eyebrow">亲眼所见，亲耳所闻</span><h2>你的经历</h2>{[...(world.events || [])].reverse().map(e => <article className="player-event" key={e.id}><small>{clock(e.minute)} · {e.location}</small><p>{e.description}</p></article>)}{!world.events?.length && <p className="muted">先向一个人问候吧。</p>}</section></div>
 }

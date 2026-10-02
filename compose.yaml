@@ -1,4 +1,12 @@
 services:
+  redis:
+    image: redis:7.4-alpine
+    ports: ["127.0.0.1:${NOVELWORLD_REDIS_PORT:-6380}:6379"]
+    command: ["redis-server", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
   mysql:
     image: mysql:8.4
     environment:
