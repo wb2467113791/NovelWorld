@@ -68,7 +68,7 @@ class CurrentRuntimeTest(unittest.TestCase):
         self.assertEqual(requests[1][0][-1]["type"], "function_call_output")
         self.assertEqual(WORLD_STATE["characters"]["林默"].location, "县衙")
 
-    def test_failed_skill_tool_refreshes_plan_without_claiming_progress(self):
+    def test_failed_tool_keeps_professional_guidance_without_claiming_progress(self):
         su = WORLD_STATE["characters"]["苏晚"]
         responses = iter([
             SimpleNamespace(output=[SimpleNamespace(type="function_call", name="take",
@@ -100,7 +100,8 @@ class CurrentRuntimeTest(unittest.TestCase):
         self.assertEqual(result["final_answer"], "线索已变化，我先等待。")
         self.assertEqual(len(WORLD_STATE["events"]), before)
         self.assertIn("线索已不在现场", result["tool_results"][0]["output"])
-        self.assertIn("当前无可执行 Skill 步骤", requests[1][0][-1]["content"])
+        self.assertIn("保护与隐瞒专业知识", requests[1][0][-1]["content"])
+        self.assertNotIn("建议参数", requests[1][0][-1]["content"])
         self.assertTrue(requests[1][1])
 
     def test_old_snapshot_without_concealment_fields_restores(self):

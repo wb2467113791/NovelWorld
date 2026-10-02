@@ -259,7 +259,7 @@ class AgendaSchedulerTest(unittest.TestCase):
 
     def test_agenda_selection_does_not_use_skill_steps_or_force_actions(self):
         self.agenda(intention="想继续考虑调查方向")
-        with patch("skills.router.current_step", side_effect=AssertionError("Agenda 不能读取 Skill 步骤")):
+        with patch("skills.router.skill_for", side_effect=AssertionError("Agenda 不能读取 Skill 步骤")):
             result = self.scheduler().run_tick(self.decide)
         self.assertEqual(result["source"], "agenda")
         self.decide.assert_called_once()

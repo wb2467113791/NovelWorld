@@ -33,7 +33,7 @@ def _build_character_context(
 自己的秘密：{secrets}
 开局认知（initial，角色原有设定，不等同于 World Truth）：{known_facts}
 持有物品：{items}
-当前关系：{relationship_text}
+当前关系（系统中的简化社交倾向，不是精确心理真理）：{relationship_text}
 
 【近期经历（Memory，记住发生过什么）】
 {memory_text}
@@ -65,7 +65,7 @@ def build_action_prompt(
     active_goal_text = f"当前目标：{active_goal}\n"
     from skills.router import skill_for
     current_skill = skill_for(character, active_goal)
-    skill_section = f"【当前行动策略】\n{current_skill}\n" if current_skill else ""
+    skill_section = f"【角色技能知识】\n{current_skill}\n" if current_skill else ""
     observation_text = "\n".join(f"- {item}" for item in observations) or "- 暂无"
     observation_section = f"【本轮观察】\n{observation_text}\n"
     import json
@@ -124,7 +124,8 @@ Belief 由程序从可见事件维护；不得通过 belief_updates、cognition 
 不能在 cognition 或其他模型文本中创建或修改 ConversationSession、participants、消息、轮次和状态。
 会话轮次不调用 talk（包括等待）会结束本次交流；外部事件反应没有回复则可保留会话。
 每次结合最新观察重新考虑目标、意图与计划。Plan 只是一段粗粒度方向，可保留、修订或清空；
-不能是 Tool 步骤列表，不能据此声称行动已经完成。Skill 建议只是决策上下文。
+不能是 Tool 步骤列表，不能据此声称行动已经完成。Skill 是专业经验，不是必须执行的计划；具体行动由你结合当前情境选择。
+关系只由 Java 根据真实互动结算；不能自行声明关系数值，也不根据关系自动提高 Belief confidence。
 需要更新认知时，在本次回复文字中输出 JSON 对象：
 {{"cognition": {{"active_goal": "本人目标之一", "current_intention": "此刻想达成什么", "current_plan": "根据新信息可调整的方向"}}, "answer": "本轮回复及原因"}}
 cognition 仅允许 active_goal、current_intention、current_plan；省略字段保持原值，意图和计划可用 null 清空。

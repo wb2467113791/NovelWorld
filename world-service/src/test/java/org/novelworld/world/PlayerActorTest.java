@@ -28,6 +28,46 @@ class PlayerActorTest {
         return WorldObjects.map(events.get(events.size() - 1));
     }
 
+    @Test void socialEffectsShareActionCommitAndRestoreWithoutCrossWorldOrAgentOverrides() {
+        var initial = world();
+        var su = WorldObjects.map(WorldObjects.map(initial.get("characters")).get("苏晚"));
+        WorldObjects.map(su.get("relationships")).put("玩家", 99);
+        fixture.store.update(fixture.id, initial);
+        Object book = object("住客登记簿").get("id");
+        act("take", "object_id", book);
+        var before = world();
+        act("give", "object_id", book, "receiver", "苏晚");
+        var after = world();
+        assertEquals(((Number) before.get("revision")).longValue() + 1, ((Number) after.get("revision")).longValue());
+        assertEquals(WorldObjects.list(before.get("events")).size() + 1, WorldObjects.list(after.get("events")).size());
+        assertEquals(List.of(Map.of("owner", "苏晚", "target", "玩家", "delta", 1, "before", 99, "after", 100)),
+                WorldObjects.map(lastEvent().get("payload")).get("relationship_changes"));
+        reject("give", "object_id", book, "receiver", "苏晚");
+        var unchanged = world();
+        act("talk", "listener", "苏晚", "message", "谢谢");
+        assertEquals(WorldObjects.map(WorldObjects.map(unchanged.get("characters")).get("苏晚")).get("relationships"),
+                WorldObjects.map(WorldObjects.map(world().get("characters")).get("苏晚")).get("relationships"));
+        reject("world_action", "actor", "玩家", "action", "attack", "target", "林默");
+        var low = world();
+        WorldObjects.map(WorldObjects.map(WorldObjects.map(low.get("characters")).get("苏晚")).get("relationships")).put("玩家", -95);
+        fixture.store.update(fixture.id, low);
+        fixture.act("world_action", Map.of("actor", "玩家", "action", "attack", "target", "苏晚"), "玩家");
+        assertEquals(List.of(Map.of("owner", "苏晚", "target", "玩家", "delta", -5, "before", -95, "after", -100)),
+                WorldObjects.map(lastEvent().get("payload")).get("relationship_changes"));
+        var restored = new WorldStore(fixture.jdbc, fixture.mapper).load(fixture.id);
+        assertEquals(world(), restored);
+        assertFalse(WorldObjects.map(WorldObjects.map(WorldObjects.map(fixture.store.load(fixture.otherId).get("characters"))
+                .get("苏晚")).get("relationships")).containsKey("玩家"));
+        var forged = ObjectPersistenceTest.npcs(restored.get("characters"));
+        WorldObjects.map(WorldObjects.map(forged.get("苏晚")).get("relationships")).put("玩家", 100);
+        fixture.tools.saveAgentState(fixture.id, fixture.mapper.writeValueAsString(Map.of("characters", forged, "scheduler", Map.of("tick_count", 0))));
+        assertEquals(-100, WorldObjects.map(WorldObjects.map(WorldObjects.map(world().get("characters")).get("苏晚")).get("relationships")).get("玩家"));
+        var saved = world();
+        assertThrows(IllegalArgumentException.class, () -> fixture.act("update_relationship",
+                Map.of("character", "苏晚", "target", "玩家", "change", 20), "苏晚"));
+        assertEquals(saved, world());
+    }
+
     @Test void playerIsMinimalPersistedActorAndNotBootstrapNpc() {
         assertEquals(Set.of("name", "location", "energy", "hp", "status", "items", "relationships", "actor_type"), player().keySet());
         assertEquals("player", player().get("actor_type"));
@@ -130,7 +170,7 @@ class PlayerActorTest {
             assertThrows(IllegalArgumentException.class, () -> fixture.act(tool, args, "玩家"));
         }
         reject("update_relationship", "target", "苏晚", "change", 20);
-        reject("world_action", "actor", "玩家", "action", "attack", "target", "苏晚");
+        reject("world_action", "actor", "玩家", "action", "follow", "target", "苏晚");
         assertEquals(before, world());
     }
     @Test void actualPlayerTalkSessionAndNpcTurnPersistWithoutPlayerCognition() {

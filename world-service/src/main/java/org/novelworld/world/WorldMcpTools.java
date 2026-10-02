@@ -106,7 +106,7 @@ public class WorldMcpTools {
             case "talk" -> "speaker";
             case "give_item" -> "giver";
             case "world_action" -> "actor";
-            case "inspect", "take", "put", "give", "use", "interact", "update_relationship", "move_character",
+            case "inspect", "take", "put", "give", "use", "interact", "move_character",
                     "rest_character" -> "character";
             default -> null;
         };
@@ -115,7 +115,8 @@ public class WorldMcpTools {
         var actingActor = WorldObjects.map(WorldObjects.map(world.get("characters")).get(actingCharacter));
         if (actingActor == null) throw new IllegalArgumentException("角色不存在：" + actingCharacter);
         if (!WorldActors.isNpc(actingActor) && !java.util.Set.of("inspect", "take", "put", "give", "use",
-                "interact", "move_character", "talk", "rest_character").contains(name))
+                "interact", "move_character", "talk", "rest_character").contains(name)
+                && !("world_action".equals(name) && "attack".equals(arguments.get("action"))))
             throw new IllegalArgumentException("Player 不支持该工具");
         int before = ((List<?>) world.get("events")).size();
         String output = rules.apply(world, name, arguments);

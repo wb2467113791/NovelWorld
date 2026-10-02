@@ -16,7 +16,7 @@ from agent.state import create_initial_agent_state
 from agent.tick import WorldTickScheduler
 from characters.model import Character, PlayerActor, is_npc
 from retrieval.chroma_index import ChromaIndex
-from skills.router import choose_skill, current_step, skill_for
+from skills.router import choose_skill, skill_for
 from tests.support import committed_event
 from tools.remote_world import CommittedActionError, RemoteWorld, active_backend, use_backend
 from web_api import WorldController
@@ -113,7 +113,7 @@ class PlayerTest(unittest.TestCase):
 
     def test_player_never_runs_skill_agent_or_chroma(self):
         player = player_actor(); index = Mock(); model = Mock()
-        self.assertIsNone(choose_skill(player)); self.assertIsNone(current_step(player)); self.assertEqual(skill_for(player), "")
+        self.assertIsNone(choose_skill(player)); self.assertEqual(skill_for(player), "")
         with self.assertRaisesRegex(ValueError, "Player"):
             create_initial_agent_state(player, index)
         with self.assertRaisesRegex(ValueError, "Player"):
@@ -137,11 +137,15 @@ class PlayerTest(unittest.TestCase):
 
     def test_action_surface_and_injected_identity(self):
         schemas = action_schemas()
-        self.assertEqual({value["name"] for value in schemas}, {"inspect", "take", "put", "give", "use", "interact", "move", "talk", "rest"})
+        self.assertEqual({value["name"] for value in schemas}, {"inspect", "take", "put", "give", "use", "interact", "move", "talk", "rest", "attack"})
         for schema in schemas:
             self.assertFalse({"character", "speaker", "actor", "giver"}.intersection(schema["parameters"]["properties"]))
         submit_action("talk", {"listener": "苏晚", "message": "你好"})
         self.backend.execute.assert_called_once_with("talk", {"listener": "苏晚", "message": "你好", "speaker": "玩家"}, "玩家")
+        submit_action("attack", {"target": "苏晚"})
+        self.backend.execute.assert_called_with("world_action", {"target": "苏晚", "actor": "玩家", "action": "attack"}, "玩家")
+        with self.assertRaises(ValueError):
+            submit_action("attack", {"target": "苏晚", "action": "flee"})
 
     def test_impersonation_unknown_tools_and_parameters_rejected_before_mcp(self):
         for identity in ("character", "speaker", "actor", "giver", "actingCharacter"):

@@ -247,7 +247,9 @@ final class WorldObjects {
         var event = new LinkedHashMap<String, Object>(); event.put("id", UUID.randomUUID().toString().replace("-", ""));
         event.put("timestamp", world.get("time")); event.put("type", type); event.put("actor", actor); event.put("target", target);
         event.put("location", place); event.put("payload", payload); event.put("description", result);
-        event.put("perceived_by", WorldRules.perceivedBy(world, type, actor, target, place)); list(world.get("events")).add(event);
+        event.put("perceived_by", WorldRules.perceivedBy(world, type, actor, target, place));
+        WorldSocial.apply(world, event);
+        list(world.get("events")).add(event);
         return result;
     }
 }

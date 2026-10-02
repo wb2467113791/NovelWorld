@@ -15,7 +15,7 @@ from agent.state import create_initial_agent_state
 from agent.tick import WorldTickScheduler
 from characters.model import Character
 from characters.prompt import build_action_prompt
-from skills.router import current_step
+from skills.router import choose_skill
 from tools.remote_world import RemoteWorld
 from world.persistence import load_world, restore_snapshot, save_world, snapshot_world
 from world.state import WORLD_STATE
@@ -58,7 +58,7 @@ class AgentRuntimeTest(unittest.TestCase):
         self.index.retrieve_memory.assert_called_once_with(lin, "保护线索 晚风客栈")
         # 使用不带捕快角色的角色区分两种 Skill。
         lin.role = "守卫"
-        self.assertEqual(current_step(lin).tool, "take")
+        self.assertEqual(choose_skill(lin), "concealment")
         self.assertIn("当前目标：保护线索", build_model_prompt(state))
 
     def test_goal_selection_keeps_choice_and_handles_removed_or_empty_goals(self):
@@ -104,10 +104,13 @@ class AgentRuntimeTest(unittest.TestCase):
         remote = deepcopy(snapshot_world())
         self.lin().runtime_state = self.cognition()
         remote["characters"]["林默"]["location"] = "晚风客栈"
+        remote["characters"]["林默"]["relationships"] = {"苏晚": 2}
+        self.lin().relationships["苏晚"] = 99  # 本地旧业务镜像不能覆盖 Java。
         backend = RemoteWorld(WORLD_STATE["world_id"])
         with patch.object(backend, "_call", return_value=json.dumps(remote, ensure_ascii=False)):
             backend._refresh_business_state()
         self.assertEqual(self.lin().location, "晚风客栈")
+        self.assertEqual(self.lin().relationships, {"苏晚": 2})
         self.assertEqual(self.lin().runtime_state.to_dict(), self.cognition().to_dict())
 
     def test_cognition_is_saved_over_existing_mcp_payload(self):

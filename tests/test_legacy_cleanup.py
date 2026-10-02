@@ -8,7 +8,7 @@ from agent.director import Director
 from agent.tick import WorldTickScheduler
 from characters.prompt import build_action_prompt
 from memory.retrieval import eligible_archived_entries
-from skills.router import current_step
+from skills.router import choose_skill
 from tools.remote_world import RemoteWorld
 from tools.world_tools import NPC_ACTION_TOOL_SCHEMAS, execute_tool
 from web_api import WorldController
@@ -109,7 +109,7 @@ class LegacyCleanupTest(unittest.TestCase):
     def test_formal_tools_reject_removed_plot_tools_and_hide_old_aliases(self):
         schema = {entry["name"]: entry for entry in NPC_ACTION_TOOL_SCHEMAS}
         self.assertNotIn("give_item", schema)
-        for name in ("conceal_clue", "recover_clue", "give_item"):
+        for name in ("conceal_clue", "recover_clue", "give_item", "update_relationship"):
             with self.assertRaises(ValueError):
                 execute_tool(name, {"character": "苏晚"}, "苏晚")
         for action in ("use_item", "interact"):
@@ -130,10 +130,9 @@ class LegacyCleanupTest(unittest.TestCase):
         WORLD_STATE["inspectable_objects"] = {}
         WORLD_STATE["concealable_objects"] = {}
         WORLD_STATE["concealed_objects"] = {person.location: {"住客登记簿": {"observation": "伪造隐藏状态"}}}
-        step = current_step(person)
-        self.assertEqual(step.tool, "take")
+        self.assertEqual(choose_skill(person), "concealment")
         prompt = build_action_prompt(person, active_goal=person.goals[0], memories=[], retrieved_context=[], lore_context=[], observations=[])
-        self.assertIn("【当前行动策略】", prompt)
+        self.assertIn("【角色技能知识】", prompt)
         self.assertNotIn("凭空物件", prompt)
         self.assertNotIn("伪造隐藏状态", prompt)
         self.assertNotIn("recover_clue", prompt)

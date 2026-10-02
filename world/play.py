@@ -10,7 +10,7 @@ from world.state import WORLD_STATE
 
 PLAYER_TOOLS = {"inspect": "inspect", "take": "take", "put": "put", "give": "give",
                 "use": "use", "interact": "interact", "move": "move_character", "talk": "talk",
-                "rest": "rest_character"}
+                "rest": "rest_character", "attack": "world_action"}
 IDENTITY_FIELDS = {"character", "speaker", "actor", "giver", "actingCharacter"}
 
 
@@ -30,6 +30,10 @@ def action_schemas() -> list[dict]:
         value = deepcopy(schema)
         value["name"] = reverse[schema["name"]]
         parameters = value["parameters"]
+        if value["name"] == "attack":
+            parameters["properties"] = {"target": parameters["properties"]["target"]}
+            parameters["required"] = ["target"]
+            value["description"] = "攻击同地点目标；由 Java 校验并结算伤害与社交影响。"
         parameters["properties"] = {key: raw for key, raw in parameters["properties"].items() if key not in IDENTITY_FIELDS}
         parameters["required"] = [key for key in parameters["required"] if key not in IDENTITY_FIELDS]
         parameters["additionalProperties"] = False
@@ -53,7 +57,10 @@ def submit_action(action: str, arguments: dict) -> str:
         raise ValueError("消息不能超过 2000 字")
     player = player_actor()
     tool = PLAYER_TOOLS[action]
-    return execute_tool(tool, {**arguments, TOOL_ACTOR_ARGUMENTS[tool]: player.name}, acting_character=player.name)
+    normalized = {**arguments, TOOL_ACTOR_ARGUMENTS[tool]: player.name}
+    if action == "attack":
+        normalized["action"] = "attack"
+    return execute_tool(tool, normalized, acting_character=player.name)
 
 
 def state_view(tick_count: int) -> dict:

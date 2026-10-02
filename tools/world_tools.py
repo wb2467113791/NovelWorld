@@ -79,29 +79,6 @@ NPC_ACTION_TOOL_SCHEMAS = [
     },
     {
         "type": "function",
-        "name": "update_relationship",
-        "description": "增加或减少一个角色对另一个角色的关系值，结果限制在 -100 到 100。",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "character": {
-                    "type": "string",
-                    "description": "关系发生变化的角色名称。",
-                },
-                "target": {
-                    "type": "string",
-                    "description": "该角色态度所指向的目标角色名称。",
-                },
-                "change": {
-                    "type": "integer",
-                    "description": "关系值的增减量，正数表示改善，负数表示恶化。",
-                },
-            },
-            "required": ["character", "target", "change"],
-        },
-    },
-    {
-        "type": "function",
         "name": "move_character",
         "description": "让当前角色移动到世界中的合法目标地点。",
         "parameters": {
@@ -122,7 +99,7 @@ NPC_ACTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "name": "rest_character",
-        "description": "休息一轮，恢复20点体力，上限100。移动消耗5点，调查3点，对话和交付2点，修改关系1点。体力不足时应休息。",
+        "description": "休息一轮，恢复20点体力，上限100。移动消耗5点，调查3点，对话和交付2点。体力不足时应休息。",
         "parameters": {
             "type": "object",
             "properties": {"character": {"type": "string", "description": "休息的角色名称。"}},
@@ -166,7 +143,6 @@ TOOL_ACTOR_ARGUMENTS = {
     "world_action": "actor",
     "inspect": "character",
     "talk": "speaker",
-    "update_relationship": "character",
     "move_character": "character",
     "rest_character": "character",
 }

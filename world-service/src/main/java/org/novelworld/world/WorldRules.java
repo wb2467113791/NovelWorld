@@ -12,7 +12,7 @@ public class WorldRules {
     private static final Pattern REVIEW_CLAIM = Pattern.compile("(?:我|本人)(?:已|已经)?(?:看过|查过|翻过|过目|调查过|核对过|看了|查了|调查了)");
     private static final Map<String, String> OBJECT_ALIASES = Map.of("住客登记簿", "登记簿", "柴房门锁", "柴房");
     private static final Map<String, Integer> ENERGY_COSTS = Map.of(
-            "move_character", 5, "talk", 2, "update_relationship", 1);
+            "move_character", 5, "talk", 2);
     @SuppressWarnings("unchecked")
     private static Map<String, Object> map(Object value) { return (Map<String, Object>) value; }
     @SuppressWarnings("unchecked")
@@ -95,22 +95,6 @@ public class WorldRules {
                 type = "talk"; payload = Map.of("message", message);
                 break;
             }
-            case "update_relationship": {
-                actor = str(args, "character"); target = str(args, "target");
-                if (actor.equals(target)) throw new IllegalArgumentException("角色不能修改与自己的关系");
-                var person = character(world, actor); character(world, target);
-                Object raw = args.get("change");
-                if (!(raw instanceof Number number) || number.doubleValue() != number.intValue()) throw new IllegalArgumentException("关系变化值必须是整数");
-                var relationships = map(person.get("relationships"));
-                int old = ((Number) relationships.getOrDefault(target, 0)).intValue();
-                int next = Math.max(-100, Math.min(100, old + number.intValue()));
-                requireEnergy(person, actor, name);
-                relationships.put(target, next);
-                location = (String) person.get("location");
-                result = actor + "对" + target + "的关系值从" + old + "变为" + next + "。";
-                type = "relationship"; payload = Map.of("change", number.intValue(), "old_value", old, "new_value", next);
-                break;
-            }
             case "rest_character": {
                 actor = str(args, "character"); var person = character(world, actor);
                 int before = ((Number) person.get("energy")).intValue();
@@ -142,6 +126,7 @@ public class WorldRules {
         }
         event.put("perceived_by", witnesses);
         event.put("payload", payload); event.put("description", result);
+        WorldSocial.apply(world, event);
         list(world.get("events")).add(event);
         return result;
     }
@@ -232,6 +217,7 @@ public class WorldRules {
         }
         event.put("perceived_by", witnesses);
         event.put("payload", payload); event.put("description", result);
+        WorldSocial.apply(world, event);
         list(world.get("events")).add(event);
         return result;
     }

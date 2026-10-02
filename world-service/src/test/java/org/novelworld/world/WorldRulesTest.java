@@ -35,11 +35,14 @@ class WorldRulesTest {
         assertThrows(IllegalArgumentException.class, () -> rules.apply(world, "world_action",
                 Map.of("action", "attack", "actor", "林默", "target", "苏晚")));
         assertEquals(0, ((List<?>) world.get("events")).size());
+        assertEquals(0, ((Map<?, ?>) ((Map<?, ?>) ((Map<?, ?>) world.get("characters")).get("苏晚")).get("relationships")).get("林默"));
         rules.apply(world, "move_character", Map.of("character", "林默", "location", "客栈"));
         rules.apply(world, "world_action", Map.of("action", "attack", "actor", "林默", "target", "苏晚"));
         var su = (Map<?, ?>) ((Map<?, ?>) world.get("characters")).get("苏晚");
         assertEquals(80, su.get("hp"));
         assertEquals("injured", su.get("status"));
+        assertEquals(-15, ((Map<?, ?>) su.get("relationships")).get("林默"));
+        assertEquals(2, ((List<?>) world.get("events")).size());
         var event = (Map<?, ?>) ((List<?>) world.get("events")).get(1);
         assertEquals(List.of("林默", "苏晚"), event.get("perceived_by"));
     }
@@ -67,10 +70,14 @@ class WorldRulesTest {
     @Test void inventoryRequiresOwnershipAndColocation() {
         var world = world();
         assertThrows(IllegalArgumentException.class, () -> rules.apply(world, "give_item", Map.of("giver", "苏晚", "receiver", "林默", "item", "账本")));
+        assertEquals(0, ((Map<?, ?>) ((Map<?, ?>) ((Map<?, ?>) world.get("characters")).get("林默")).get("relationships")).get("苏晚"));
         rules.apply(world, "move_character", Map.of("character", "林默", "location", "客栈"));
         rules.apply(world, "give_item", Map.of("giver", "苏晚", "receiver", "林默", "item", "账本"));
         assertTrue(((List<?>) ((Map<?, ?>) ((Map<?, ?>) world.get("characters")).get("林默")).get("items")).contains("账本"));
+        assertEquals(2, ((Map<?, ?>) ((Map<?, ?>) ((Map<?, ?>) world.get("characters")).get("林默")).get("relationships")).get("苏晚"));
+        assertEquals(2, ((List<?>) world.get("events")).size());
         assertThrows(IllegalArgumentException.class, () -> rules.apply(world, "give_item", Map.of("giver", "苏晚", "receiver", "林默", "item", "账本")));
+        assertEquals(2, ((Map<?, ?>) ((Map<?, ?>) ((Map<?, ?>) world.get("characters")).get("林默")).get("relationships")).get("苏晚"));
     }
 
     @Test void repeatedInspectionDoesNotCreateEvent() {

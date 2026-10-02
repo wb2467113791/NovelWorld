@@ -91,8 +91,8 @@ def execute_pending_tools(state: AgentState) -> dict:
         character = WORLD_STATE["characters"][state["npc_id"]]
         updated = skill_for(character, state["goal"])
         conversation.append({"role": "user", "content":
-            "工具未成功。重新考虑当前可执行步骤；不要重复相同的失败调用。"
-            + (f"\n{updated}" if updated else "\n当前无可执行 Skill 步骤，可等待或处理其他可见事件。")})
+            "工具未成功。结合目标、观察与专业经验重新选择行动；不要重复相同的失败调用。"
+            + (f"\n{updated}" if updated else "\n当前无相关专业指导，可等待或处理其他可见事件。")})
     return {
         "pending_tool_calls": [],
         "tool_results": state["tool_results"] + new_results,
