@@ -174,6 +174,46 @@ class AgentRuntimeTest(unittest.TestCase):
         self.assertFalse(requests.call_args.args[1])
         self.assertEqual(self.lin().runtime_state.current_intention, "评估移动结果")
 
+    def test_model_cannot_create_replace_clear_or_complete_system_schedule(self):
+        self.lin().runtime_state = self.cognition()
+        before = self.lin().runtime_state.to_dict()
+        proposed_agendas = [None, []]
+        for status in ("pending", "completed", "cancelled"):
+            entry = {**before["agenda"][0], "status": status, "id": "model-generated", "due_tick": 999}
+            proposed_agendas.append([entry])
+        changes_list = [{"agenda": agenda} for agenda in proposed_agendas]
+        changes_list.extend({"busy_until": value} for value in (None, 0, 999))
+        for changes in changes_list:
+            with self.subTest(changes=changes):
+                # 即使同时提出有效目标切换，也必须整次拒绝，不能部分落地。
+                request = Mock(return_value=self.response({"active_goal": self.lin().goals[0], **changes}))
+                result = build_agent_loop_graph(request).invoke(create_initial_agent_state(self.lin(), self.index))
+                self.assertIn("调度状态由程序维护", result["final_answer"])
+                self.assertEqual(self.lin().runtime_state.to_dict(), before)
+
+    def test_activity_wishes_do_not_change_schedule_and_system_statuses_restore(self):
+        for status in ("pending", "completed", "cancelled"):
+            with self.subTest(status=status):
+                runtime = self.cognition()
+                runtime.agenda[0].status = status  # 程序维护的持久化 fixture。
+                self.lin().runtime_state = runtime
+                restore_snapshot(deepcopy(snapshot_world()))
+                request = Mock(return_value=self.response({"current_intention": "希望明早继续调查",
+                                                          "current_plan": "等新线索出现再调整方向"}))
+                build_agent_loop_graph(request).invoke(create_initial_agent_state(self.lin(), self.index))
+                self.assertEqual(self.lin().runtime_state.agenda, runtime.agenda)
+                self.assertEqual(self.lin().runtime_state.busy_until, runtime.busy_until)
+                self.assertEqual(self.lin().runtime_state.current_intention, "希望明早继续调查")
+
+    def test_prompt_separates_writable_cognition_from_readonly_schedule(self):
+        self.lin().runtime_state = self.cognition()
+        prompt = build_model_prompt(create_initial_agent_state(self.lin(), self.index))
+        cognition = json.loads(prompt.split("【本人认知状态（意图，不是世界事实）】\n")[1].splitlines()[0])
+        scheduling = json.loads(prompt.split("【系统调度状态（只读）】\n")[1].splitlines()[0])
+        self.assertEqual(set(cognition), {"active_goal", "current_intention", "current_plan"})
+        self.assertEqual(scheduling, {"agenda": self.cognition().to_dict()["agenda"], "busy_until": 290})
+        self.assertIn("不得在 cognition 中写入或清空 agenda、busy_until", prompt)
+
     def test_private_cognition_only_enters_owner_prompt(self):
         WORLD_STATE["characters"]["苏晚"].runtime_state.current_plan = "秘密计划：保护弟弟"
         self.assertNotIn("秘密计划", build_model_prompt(create_initial_agent_state(self.lin(), self.index)))

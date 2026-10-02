@@ -66,6 +66,21 @@ class WorldMcpToolsTest {
         assertEquals(runtime, ((Map<?, ?>) ((Map<?, ?>) store.load(firstId).get("characters"))
                 .get("林默")).get("runtime_state"));
 
+        // save_agent_state 是内部 Runtime 的完整持久化通道，不是模型 cognition 更新接口。
+        // 程序维护的调度状态仍需无损保存，不能随模型字段白名单一起被删除。
+        for (String status : List.of("completed", "cancelled")) {
+            var systemRuntime = new HashMap<String, Object>(runtime);
+            systemRuntime.put("agenda", List.of(Map.of("id", "visit", "character", "林默", "due_tick", 310,
+                    "intention", "继续调查", "status", status)));
+            systemRuntime.put("busy_until", null);
+            linPayload.put("runtime_state", systemRuntime);
+            tools.saveAgentState(firstId, mapper.writeValueAsString(payload));
+            assertEquals(systemRuntime, ((Map<?, ?>) ((Map<?, ?>) reconnected.load(firstId).get("characters"))
+                    .get("林默")).get("runtime_state"));
+            assertFalse(((Map<?, ?>) ((Map<?, ?>) reconnected.load(secondId).get("characters"))
+                    .get("林默")).containsKey("runtime_state"));
+        }
+
         for (var invalid : List.of(Map.of("location", "晚风客栈"),
                 Map.of("current_plan", List.of("move", "inspect")),
                 Map.of("active_goal", "别人的目标"), Map.of("busy_until", true),

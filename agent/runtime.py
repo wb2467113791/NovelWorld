@@ -2,6 +2,8 @@
 
 from dataclasses import asdict, dataclass, field
 
+MODEL_COGNITION_FIELDS = frozenset({"active_goal", "current_intention", "current_plan"})
+
 
 def _text(value, name, *, nullable=True):
     if value is None and nullable:
@@ -38,8 +40,9 @@ class AgentRuntimeState:
     active_goal: str | None = None
     current_intention: str | None = None
     current_plan: str | None = None
+    # 系统维护的调度状态；不能由模型 cognition 更新。
     agenda: list[AgendaEntry] = field(default_factory=list)
-    # 世界累计 Tick 序号；只是预留认知元数据，尚不影响调度。
+    # 世界累计 Tick 序号；由程序根据真实执行结果维护，尚不影响调度。
     busy_until: int | None = None
 
     def select_goal(self, goals: list[str]) -> str:
@@ -56,6 +59,7 @@ class AgentRuntimeState:
 
     @classmethod
     def from_dict(cls, data: dict, *, character: str):
+        """解析程序持久化的完整状态；模型更新必须通过 revised 的字段白名单。"""
         if not isinstance(data, dict) or set(data) - set(cls.__dataclass_fields__):
             raise ValueError("Agent runtime 字段无效")
         for name in ("active_goal", "current_intention", "current_plan"):
@@ -75,9 +79,11 @@ class AgentRuntimeState:
         return cls(**{**data, "agenda": agenda})
 
     def revised(self, changes: dict, *, character: str, goals: list[str]):
-        """原子校验模型提出的认知更新，不接受位置、事实或工具步骤。"""
+        """模型只修订目标、意图和计划；系统调度字段连清空也不允许。"""
         if not isinstance(changes, dict):
             raise ValueError("认知更新必须是对象")
+        if set(changes) - MODEL_COGNITION_FIELDS:
+            raise ValueError("模型仅可更新 active_goal、current_intention、current_plan；调度状态由程序维护")
         data = self.to_dict()
         if "active_goal" in changes and changes["active_goal"] != self.active_goal:
             data.update(current_intention=None, current_plan=None)
