@@ -19,7 +19,7 @@ class LegacyCleanupTest {
         var legacy = fixture.store.load(fixture.id);
         WorldObjects.list(legacy.get("events")).add(Map.of("id", "old-text", "type", "narration", "actor", "林默", "description", "旧叙述"));
         fixture.jdbc.update("UPDATE world_saves SET snapshot = ? WHERE world_id = ?", fixture.mapper.writeValueAsString(legacy), fixture.id);
-        fixture.tools.saveAgentState(fixture.id, fixture.mapper.writeValueAsString(Map.of("characters", legacy.get("characters"),
+        fixture.tools.saveAgentState(fixture.id, fixture.mapper.writeValueAsString(Map.of("characters", ObjectPersistenceTest.npcs(legacy.get("characters")),
                 "scheduler", legacy.get("scheduler"), "events", List.of())));
         assertEquals(legacy.get("events"), fixture.store.load(fixture.id).get("events"));
     }
@@ -28,7 +28,7 @@ class LegacyCleanupTest {
         var scheduler = WorldObjects.map(world.get("scheduler"));
         assertEquals(0, scheduler.get("tick_count")); assertEquals(0, scheduler.get("event_cursor"));
         var pending = WorldObjects.list(scheduler.get("pending"));
-        assertEquals(WorldObjects.map(world.get("characters")).size(), pending.size());
+        assertEquals(ObjectPersistenceTest.npcs(world.get("characters")).size(), pending.size());
         assertEquals(pending.size(), pending.stream().map(WorldObjects::map).map(item -> item.get("name")).distinct().count());
         assertTrue(pending.stream().map(WorldObjects::map).allMatch(item -> "bootstrap".equals(item.get("source"))));
         assertFalse(scheduler.containsKey("skill_views"));

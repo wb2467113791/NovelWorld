@@ -52,7 +52,7 @@ class ConversationPersistenceTest {
     }
 
     Map<String, Object> payload(String id, List<?> conversations) {
-        return new HashMap<>(Map.of("characters", store.load(id).get("characters"),
+        return new HashMap<>(Map.of("characters", ObjectPersistenceTest.npcs(store.load(id).get("characters")),
                 "scheduler", Map.of("tick_count", 12, "pending", List.of()), "active_conversations", conversations));
     }
 

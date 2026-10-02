@@ -29,6 +29,11 @@ class ObjectPersistenceTest {
         tools.executeWorldTool(id, tool, mapper.writeValueAsString(args), actor);
     }
     void move() { act("move_character", Map.of("character", "林默", "location", "晚风客栈"), "林默"); }
+    static Map<String, Object> npcs(Object raw) {
+        var result = new LinkedHashMap<String, Object>();
+        WorldObjects.map(raw).forEach((name, actor) -> { if (WorldActors.isNpc(WorldObjects.map(actor))) result.put(name, actor); });
+        return result;
+    }
     @Test void heldObjectsPersistAcrossDatabaseReconnectAndWorldsStayIndependent() {
         move(); var book = named(store.load(id), "住客登记簿");
         act("take", Map.of("character", "林默", "object_id", book.get("id")), "林默");
@@ -52,7 +57,7 @@ class ObjectPersistenceTest {
         var before = store.load(id); var payload = new LinkedHashMap<String, Object>();
         var characters = mapper.readValue(mapper.writeValueAsString(before.get("characters")), Map.class);
         WorldObjects.map(characters.get("林默")).put("items", List.of("凭空钥匙"));
-        payload.put("characters", characters); payload.put("objects", Map.of());
+        payload.put("characters", npcs(characters)); payload.put("objects", Map.of());
         payload.put("inspectable_objects", Map.of()); payload.put("scheduler", Map.of("tick_count", 1));
         tools.saveAgentState(id, mapper.writeValueAsString(payload));
         var after = store.load(id); assertEquals(before.get("objects"), after.get("objects"));

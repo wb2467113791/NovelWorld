@@ -5,7 +5,7 @@ from copy import deepcopy
 from dataclasses import asdict, fields
 from pathlib import Path
 
-from characters.model import Character
+from characters.model import Character, PlayerActor, is_npc
 from agent.runtime import AgentRuntimeState
 from agent.conversation import restore_sessions, sessions
 from lore.catalog import load_lore
@@ -32,6 +32,10 @@ def _memory_entry_from_dict(data: dict) -> MemoryEntry:
 
 
 def _character_to_dict(character: Character) -> dict:
+    if not is_npc(character):
+        result = asdict(character)
+        result["items"] = inventory(character)
+        return result
     result = {
         item.name: deepcopy(getattr(character, item.name))
         for item in fields(Character)
@@ -56,6 +60,10 @@ def _character_to_dict(character: Character) -> dict:
 
 
 def _character_from_dict(data: dict) -> Character:
+    if data.get("actor_type", "npc") == "player":
+        return PlayerActor(**{item.name: data[item.name] for item in fields(PlayerActor) if item.name in data})
+    if data.get("actor_type", "npc") != "npc":
+        raise ValueError("未知 actor_type")
     memory_data = data["memory"]
     memory = ShortTermMemory(
         max_items=memory_data["max_items"],
@@ -72,8 +80,8 @@ def _character_from_dict(data: dict) -> Character:
         superseded_event_ids=set(semantic_data["superseded_event_ids"]),
     )
     ordinary_fields = {
-        item.name: (data.get(item.name, 100 if item.name == "hp" else "normal")
-                    if item.name in {"hp", "status"} else data[item.name])
+        item.name: (data.get(item.name, {"hp": 100, "status": "normal", "actor_type": "npc"}[item.name])
+                    if item.name in {"hp", "status", "actor_type"} else data[item.name])
         for item in fields(Character)
         if item.name not in {"memory", "semantic_memory", "runtime_state"}
     }

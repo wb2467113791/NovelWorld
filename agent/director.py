@@ -3,6 +3,7 @@
 from collections.abc import Callable
 
 from world.state import WORLD_STATE
+from characters.model import is_npc
 
 
 DIRECTOR_COOLDOWN = 6
@@ -22,7 +23,7 @@ class Director:
 
     @staticmethod
     def occupied_location(preferred: str | None = None) -> str:
-        characters = list(WORLD_STATE["characters"].values())
+        characters = [actor for actor in WORLD_STATE["characters"].values() if is_npc(actor)]
         available = next((character for character in characters
                           if character.location == preferred and character.status != "unconscious"), None)
         if available is None:
@@ -43,7 +44,7 @@ class Director:
 
         if tick_count >= 6:
             active = {event["actor"] for event in recent}
-            quiet = [name for name in WORLD_STATE["characters"] if name not in active]
+            quiet = [name for name, actor in WORLD_STATE["characters"].items() if is_npc(actor) and name not in active]
             if quiet:
                 return "participation", WORLD_STATE["characters"][quiet[0]].location
 

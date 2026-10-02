@@ -2,7 +2,7 @@
 
 from typing import Any, TypedDict
 
-from characters.model import Character
+from characters.model import Character, is_npc
 from memory.retrieval import recent_memory_texts
 from agent.perception import observe
 
@@ -57,6 +57,8 @@ def create_initial_agent_state(
     index: Any,
 ) -> AgentState:
     """根据角色当前信息创建一次全新的 Agent 流程状态。"""
+    if not is_npc(character):
+        raise ValueError("Player 不运行 NPC Agent")
     active_goal = character.runtime_state.select_goal(character.goals)
     query = f"{active_goal} {character.location}"
 

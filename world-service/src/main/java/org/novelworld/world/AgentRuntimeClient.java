@@ -42,4 +42,17 @@ public class AgentRuntimeClient {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Python Agent Runtime 不可用", error);
         }
     }
+
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> play(String operation, Map<String, Object> body) {
+        try {
+            if ("state".equals(operation))
+                return client.get().uri("/internal/play/state").retrieve().body(Map.class);
+            return client.post().uri("/internal/play/" + operation).body(body).retrieve().body(Map.class);
+        } catch (RestClientResponseException error) {
+            throw new ResponseStatusException(error.getStatusCode(), error.getResponseBodyAsString(), error);
+        } catch (RestClientException error) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Python Agent Runtime 不可用", error);
+        }
+    }
 }

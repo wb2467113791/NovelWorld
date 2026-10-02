@@ -108,6 +108,11 @@ public class WorldMcpTools {
         };
         if (actorKey != null && !actingCharacter.equals(arguments.get(actorKey)))
             throw new IllegalArgumentException(actingCharacter + "不能通过" + name + "替其他角色行动");
+        var actingActor = WorldObjects.map(WorldObjects.map(world.get("characters")).get(actingCharacter));
+        if (actingActor == null) throw new IllegalArgumentException("角色不存在：" + actingCharacter);
+        if (!WorldActors.isNpc(actingActor) && !java.util.Set.of("inspect", "take", "put", "give", "use",
+                "interact", "move_character", "talk", "rest_character").contains(name))
+            throw new IllegalArgumentException("Player 不支持该工具");
         int before = ((List<?>) world.get("events")).size();
         String output = rules.apply(world, name, arguments);
         Object event = null;
@@ -130,16 +135,18 @@ public class WorldMcpTools {
         // 旧客户端的空 events 可兼容；任何新事件只能由 Java 世界行动产生。
         if (state.containsKey("events") && (!(state.get("events") instanceof List<?> events) || !events.isEmpty()))
             throw new IllegalArgumentException("Agent 状态保存不能创建世界事件");
-        if (memories == null || !characters.keySet().equals(memories.keySet())) throw new IllegalArgumentException("角色集合不一致");
+        var npcNames = characters.entrySet().stream().filter(entry -> WorldActors.isNpc(WorldObjects.map(entry.getValue())))
+                .map(Map.Entry::getKey).collect(java.util.stream.Collectors.toSet());
+        if (memories == null || !npcNames.equals(memories.keySet())) throw new IllegalArgumentException("NPC 角色集合不一致");
         if (state.containsKey("active_conversations"))
             validateConversations(state.get("active_conversations"), world);
         // 先验证所有角色的认知；意图不是世界事实，不能夹带业务字段或其他角色的 Agenda。
-        for (var name : characters.keySet()) {
+        for (var name : npcNames) {
             var memory = (Map<String, Object>) memories.get(name);
             if (memory.containsKey("runtime_state"))
                 validateRuntime(memory.get("runtime_state"), name, (Map<String, Object>) characters.get(name));
         }
-        for (var name : characters.keySet()) {
+        for (var name : npcNames) {
             var person = (Map<String, Object>) characters.get(name);
             var memory = (Map<String, Object>) memories.get(name);
             person.put("memory", memory.get("memory"));

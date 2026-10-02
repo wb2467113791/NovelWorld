@@ -1,6 +1,6 @@
 """把角色可见信息整理成 Prompt。"""
 
-from characters.model import Character
+from characters.model import Character, is_npc
 from agent.runtime import MODEL_COGNITION_FIELDS
 from world.state import WORLD_STATE
 
@@ -10,6 +10,8 @@ def _build_character_context(
     memories: list[str],
 ) -> str:
     """组装当前 NPC 的独立角色视角。"""
+    if not is_npc(character):
+        raise ValueError("Player 不使用 NPC Prompt")
     goals = "；".join(character.goals)
     secrets = "；".join(character.secrets) or "暂无"
     known_facts = "；".join(character.known_facts) or "暂无"

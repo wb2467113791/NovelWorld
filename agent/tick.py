@@ -5,7 +5,7 @@ from copy import deepcopy
 
 from agent.runtime import DEFAULT_AGENDA_DELAY
 from agent.conversation import accept_talk, end, expire, for_participant, sessions
-from characters.model import Character
+from characters.model import Character, is_npc
 from memory.reflection import reflect_on_new_memories
 from tools.world_tools import execute_tool
 from world.state import WORLD_STATE, advance_world_time
@@ -25,7 +25,7 @@ class WorldTickScheduler:
         self._event_cursor = len(WORLD_STATE["events"])
         self._current_depth = 0
         self._pending: list[dict] = [{"name": name, "depth": 0, "source": "bootstrap"}
-                                    for name in WORLD_STATE["characters"]]
+                                    for name, actor in WORLD_STATE["characters"].items() if is_npc(actor)]
 
     def snapshot(self) -> dict:
         return {"tick_count": self._tick_count, "event_cursor": self._event_cursor,
@@ -57,6 +57,8 @@ class WorldTickScheduler:
         # 无 source 的历史队列仍可能包含真实事件，保留原顺序和反应优先级。
         self._pending = []
         for item in pending:
+            if not is_npc(WORLD_STATE["characters"][item["name"]]):
+                continue
             if item.get("source") == "skill":
                 character = WORLD_STATE["characters"][item["name"]]
                 entry = character.runtime_state.schedule_next_agenda(
@@ -67,18 +69,20 @@ class WorldTickScheduler:
                 self._pending.append({**item, "source": item.get("source", "legacy")})
         self._current_depth = depth
 
-    def _collect_events(self) -> None:
+    def _collect_events(self, *, event_tick: int | None = None) -> None:
         from world.events import recipients_for_event
         events = WORLD_STATE["events"]
         awakened: list[dict] = []
         for event in events[self._event_cursor:]:
             if event["type"] in {"narration", "rest"}:
                 continue
-            conversational = accept_talk(event, self._tick_count)
+            conversational = accept_talk(event, self._tick_count if event_tick is None else event_tick)
             depth = 0 if event["actor"] == "世界" else self._current_depth + 1
             if depth > MAX_REACTION_DEPTH:
                 continue
             for name in recipients_for_event(event, WORLD_STATE["characters"]):
+                if not is_npc(WORLD_STATE["characters"][name]):
+                    continue
                 if name == event["actor"]:
                     continue
                 if conversational and name == event["target"]:
@@ -97,7 +101,8 @@ class WorldTickScheduler:
         if reaction is not None:
             self._pending.remove(reaction)
             return reaction
-        active = sessions()
+        active = [session for session in sessions()
+                  if is_npc(WORLD_STATE["characters"][session.next_speaker])]
         if active:
             conversation = min(enumerate(active), key=lambda item: (item[1].last_activity_tick, item[0]))[1]
             name = conversation.next_speaker
@@ -105,6 +110,8 @@ class WorldTickScheduler:
             return {"name": name, "depth": 0, "source": "conversation", "conversation_id": conversation.id}
         candidates = []
         for order, (name, character) in enumerate(WORLD_STATE["characters"].items()):
+            if not is_npc(character):
+                continue
             runtime = character.runtime_state
             runtime.prune_agenda()
             if for_participant(name) is not None or character.status == "unconscious" or (
@@ -144,7 +151,7 @@ class WorldTickScheduler:
         decide_action: Callable[[Character], str],
     ) -> dict[str, str]:
         """选择一名 NPC，并让其 Agent 决定本轮行动。"""
-        from tools.remote_world import active_backend
+        from tools.remote_world import active_backend, CommittedActionError
         backend = active_backend()
         if backend is None:
             raise RuntimeError("世界调度需要已连接的世界服务")
@@ -157,6 +164,7 @@ class WorldTickScheduler:
         self._current_depth = scheduled["depth"] if scheduled else 0
         tick_time = WORLD_STATE["time"]
         event_count_before = len(WORLD_STATE["events"])
+        committed_refresh_failed = False
         try:
             if character is None:
                 action_result = "暂无需要回应的事件或到期安排"
@@ -168,12 +176,13 @@ class WorldTickScheduler:
             else:
                 action_result = decide_action(character)
         except Exception as error:
-            if len(WORLD_STATE["events"]) == event_count_before:
+            if not isinstance(error, CommittedActionError) and len(WORLD_STATE["events"]) == event_count_before:
                 # 尚无已提交的行动，本次 Tick 不应消耗角色的轮次。
                 if scheduled and scheduled["source"] not in {"agenda", "conversation"}:
                     self._pending.insert(0, scheduled)
                 raise
             # 工具已改变世界；模型的后续总结失败也不能重放同一行动。
+            committed_refresh_failed = isinstance(error, CommittedActionError)
             action_result = f"行动已发生，后续总结失败：{error}"
 
         # 先登记真实 talk；总结失败仍只追加一次，并从独立会话轮次继续。
@@ -182,7 +191,7 @@ class WorldTickScheduler:
             conversation = for_participant(character.name)
             if conversation is not None and (
                 getattr(action_result, "continue_conversation", None) is False or (
-                    scheduled["source"] == "conversation" and not any(
+                    scheduled["source"] == "conversation" and not committed_refresh_failed and not any(
                         event["type"] == "talk" and event["actor"] == character.name
                         and event["target"] in conversation.participants
                         for event in WORLD_STATE["events"][event_count_before:]
@@ -202,6 +211,8 @@ class WorldTickScheduler:
         self._collect_events()
         if self._tick_count % REFLECTION_INTERVAL == 0:
             for current_character in WORLD_STATE["characters"].values():
+                if not is_npc(current_character):
+                    continue
                 reflect_on_new_memories(
                     current_character.memory,
                     superseded_event_ids=current_character.semantic_memory.superseded_event_ids,
@@ -215,3 +226,28 @@ class WorldTickScheduler:
             "agenda_id": scheduled.get("agenda_id", "") if scheduled else "",
             "conversation_id": scheduled.get("conversation_id", "") if scheduled else "",
         }
+
+    def run_player_action(self, action: str, arguments: dict) -> dict:
+        """Java 成功行动占用独立 Tick；不选择或执行任何 NPC 机会。"""
+        from tools.remote_world import active_backend, CommittedActionError
+        from world.play import submit_action
+        backend = active_backend()
+        if backend is None:
+            raise RuntimeError("世界服务尚未连接")
+        backend.sync_events()
+        warning = None
+        try:
+            output = submit_action(action, arguments)
+        except CommittedActionError as error:
+            output, warning = error.output, str(error)
+        # 此时已提交。即使后续时钟/同步失败，也记录已消费 Tick，且绝不重放工具。
+        self._current_depth = 0
+        event_tick = self._tick_count
+        self._tick_count += 1
+        try:
+            self._collect_events(event_tick=event_tick)
+            advance_world_time(TICK_MINUTES)
+            expire(self._tick_count)
+        except Exception as error:
+            warning = f"行动已提交，后续处理失败：{error}"
+        return {"committed": True, "output": output, "warning": warning, "tick_count": self._tick_count}

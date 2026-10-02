@@ -29,6 +29,7 @@ class WorldMcpToolsTest {
         var payloadCharacters = new HashMap<String, Object>();
         for (var entry : characters.entrySet()) {
             var person = (Map<String, Object>) entry.getValue();
+            if (!WorldActors.isNpc(person)) continue;
             payloadCharacters.put(entry.getKey(), new HashMap<>(Map.of(
                     "memory", person.get("memory"), "semantic_memory", person.get("semantic_memory"))));
         }

@@ -58,3 +58,20 @@ class WorldSession:
             backend.save_agent_state(self.scheduler.snapshot())
             save_world(self.save_path, scheduler_state=self.scheduler.snapshot())
             self.index.sync_world(WORLD_STATE["characters"])
+
+    def player_action(self, action: str, arguments: dict) -> dict:
+        result = self.scheduler.run_player_action(action, arguments)
+        try:
+            self.save_runtime()
+        except Exception as error:
+            result["warning"] = f"行动已提交，运行状态保存失败：{error}"
+        return result
+
+    def save_runtime(self) -> None:
+        backend = active_backend()
+        if backend is None:
+            raise RuntimeError("世界服务尚未连接")
+        self.completed_ticks = self.scheduler.snapshot()["tick_count"]
+        backend.save_agent_state(self.scheduler.snapshot())
+        save_world(self.save_path, scheduler_state=self.scheduler.snapshot())
+        self.index.sync_world(WORLD_STATE["characters"])

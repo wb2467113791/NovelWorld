@@ -3,7 +3,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from characters.model import Character
+from characters.model import Character, is_npc
 from skills.investigation.workflow import next_step
 from skills.concealment.workflow import next_step as concealment_step
 
@@ -12,6 +12,8 @@ SKILL_ROOT = Path(__file__).resolve().parent
 
 
 def choose_skill(character: Character, goal: str | None = None) -> str | None:
+    if not is_npc(character):
+        return None
     objective = goal if goal is not None else character.runtime_state.select_goal(character.goals)
     if next_step(character, objective):
         return "investigation"
@@ -19,6 +21,8 @@ def choose_skill(character: Character, goal: str | None = None) -> str | None:
 
 
 def current_step(character: Character, goal: str | None = None):
+    if not is_npc(character):
+        return None
     objective = goal if goal is not None else character.runtime_state.select_goal(character.goals)
     return next_step(character, objective) or concealment_step(character, objective)
 
@@ -32,6 +36,8 @@ def skill_for(
     character: Character,
     goal: str | None = None,
 ) -> str:
+    if not is_npc(character):
+        return ""
     objective = goal if goal is not None else character.runtime_state.select_goal(character.goals)
     kind = choose_skill(character, objective)
     step = current_step(character, objective)

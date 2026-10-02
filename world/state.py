@@ -4,6 +4,7 @@ from dataclasses import asdict
 from uuid import uuid4
 
 from characters.presets import CHARACTERS
+from characters.model import is_npc
 from lore.catalog import load_lore
 from memory.event_summary import event_memory_metadata, summarize_event
 from world.events import Event, recipients_for_event
@@ -55,6 +56,8 @@ def remember_event(event: Event) -> None:
     actor = event["actor"]
     for character_name in recipients_for_event(event, WORLD_STATE["characters"]):
         character = WORLD_STATE["characters"][character_name]
+        if not is_npc(character):
+            continue
         entry_id = f"{event['id']}:{character_name}"
         if any(entry.id == entry_id for entry in character.memory.all_entries()):
             continue
@@ -89,7 +92,7 @@ def reconcile_event_memories() -> int:
                 recipients.append(event["target"])
         for name in recipients:
             character = WORLD_STATE["characters"].get(name)
-            if character is None:
+            if character is None or not is_npc(character):
                 continue
             entry_id = f"{event['id']}:{name}"
             if any(entry.id == entry_id for entry in character.memory.all_entries()):

@@ -52,6 +52,7 @@ public class WorldWebController {
         var characters = new LinkedHashMap<String, Object>();
         map(world.get("characters")).forEach((name, raw) -> {
             var person = map(raw);
+            if (!WorldActors.isNpc(person)) return;
             var summary = new LinkedHashMap<String, Object>();
             for (String field : List.of("name", "role", "location", "energy", "hp", "status", "goals", "items", "relationships"))
                 summary.put(field, person.get(field));
@@ -81,6 +82,7 @@ public class WorldWebController {
         var personValue = map(savedWorld(status).get("characters")).get(name);
         if (personValue == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "角色不存在");
         var person = map(personValue);
+        if (!WorldActors.isNpc(person)) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Player 没有 NPC 记忆视角");
         var memory = map(person.get("memory"));
         var archive = list(memory.get("archive"));
         var semantic = map(person.get("semantic_memory"));
@@ -107,6 +109,19 @@ public class WorldWebController {
     @PostMapping("/control/pause")
     public Map<String, Object> pause() { return runtime.control("pause", Map.of()); }
 
+    @GetMapping("/play/state")
+    public Map<String, Object> playState() { return runtime.play("state", Map.of()); }
+
+    @PostMapping("/play/action")
+    public Map<String, Object> playAction(@RequestBody Map<String, Object> request) {
+        return runtime.play("action", request);
+    }
+
+    @PostMapping("/play/conversation/end")
+    public Map<String, Object> endPlayerConversation(@RequestBody Map<String, Object> request) {
+        return runtime.play("conversation/end", request);
+    }
+
     @GetMapping("/world-events")
     public Map<String, Object> worldEvents(@RequestParam(defaultValue = "0") int after) {
         var status = runtime.status();
@@ -117,7 +132,9 @@ public class WorldWebController {
     }
 
     @GetMapping(value = "/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter events() {
+    public SseEmitter events(@RequestParam(defaultValue = "observe") String mode) {
+        if (!List.of("observe", "play").contains(mode))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "观察模式无效");
         var emitter = new SseEmitter(0L);
         CompletableFuture.runAsync(() -> {
             String previous = null;
@@ -126,7 +143,7 @@ public class WorldWebController {
                 while (true) {
                     var status = runtime.status();
                     var saved = savedWorld(status);
-                    String json = mapper.writeValueAsString(publicWorld(saved, status));
+                    String json = mapper.writeValueAsString("play".equals(mode) ? playRefresh(saved, status) : publicWorld(saved, status));
                     if (!json.equals(previous)) {
                         emitter.send(SseEmitter.event().name("state").data(json));
                         previous = json;
@@ -145,5 +162,14 @@ public class WorldWebController {
             }
         });
         return emitter;
+    }
+
+    static Map<String, Object> playRefresh(Map<String, Object> world, Map<String, Object> status) {
+        var view = new LinkedHashMap<String, Object>();
+        for (String field : List.of("world_id", "tick_count", "running")) view.put(field, status.get(field));
+        view.put("time", world.get("time"));
+        view.put("event_count", list(world.get("events")).size());
+        view.put("revision", world.get("revision"));
+        return view;
     }
 }
