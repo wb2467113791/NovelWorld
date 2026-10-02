@@ -28,6 +28,7 @@ def build_model_prompt(state: AgentState) -> str:
         retrieved_context=state["retrieved_context"],
         lore_context=state.get("lore_context", []),
         observations=state.get("perception", []) + state["observations"],
+        runtime_context=state.get("runtime_context"),
     )
 
 
@@ -90,8 +91,8 @@ def execute_pending_tools(state: AgentState) -> dict:
         character = WORLD_STATE["characters"][state["npc_id"]]
         updated = skill_for(character, state["goal"])
         conversation.append({"role": "user", "content":
-            "工具未成功。重新考虑当前可执行步骤；不要重复相同的失败调用。"
-            + (f"\n{updated}" if updated else "\n当前无可执行 Skill 步骤，可等待或处理其他可见事件。")})
+            "工具未成功。结合目标、观察与专业经验重新选择行动；不要重复相同的失败调用。"
+            + (f"\n{updated}" if updated else "\n当前无相关专业指导，可等待或处理其他可见事件。")})
     return {
         "pending_tool_calls": [],
         "tool_results": state["tool_results"] + new_results,
@@ -123,7 +124,34 @@ def build_agent_loop_graph(
         )
         allow_tools = state["step"] < DEFAULT_MAX_TOOL_ROUNDS and not action_done
         response = request_model(conversation, allow_tools)
+        # 同一次模型回复可提出认知修订；它不执行世界行为，也不消耗行动额度。
+        character = WORLD_STATE["characters"][state["npc_id"]]
+        answer = response.output_text or "已达到工具轮数上限，本轮结束。"
+        cognition_error = None
+        try:
+            envelope = json.loads(answer)
+        except (ValueError, TypeError):
+            envelope = None
+        if isinstance(envelope, dict) and "cognition" in envelope:
+            try:
+                if not isinstance(envelope.get("answer"), str):
+                    raise ValueError("认知回复缺少 answer 文字")
+                character.runtime_state = character.runtime_state.revised(
+                    envelope["cognition"], character=character.name, goals=character.goals)
+                conversation = conversation + [{"role": "assistant", "content": response.output_text}]
+                answer = envelope["answer"]
+            except ValueError as error:
+                cognition_error = f"认知更新未保存：{error}"
+                answer = cognition_error
         tool_calls = _extract_tool_calls(response) if allow_tools else []
+        continuation = state.get("continue_conversation")
+        if isinstance(envelope, dict) and "continue_conversation" in envelope:
+            if type(envelope["continue_conversation"]) is bool and isinstance(envelope.get("answer"), str):
+                continuation = envelope["continue_conversation"]
+                if cognition_error is None:
+                    answer = envelope["answer"]
+            else:
+                answer = "交流意愿未保存：continue_conversation 必须是布尔值且含 answer 文字"
         call_messages = [
             {
                 "type": "function_call",
@@ -133,15 +161,18 @@ def build_agent_loop_graph(
             }
             for call in tool_calls
         ]
-        answer = response.output_text or "已达到工具轮数上限，本轮结束。"
         if not tool_calls:
             unverified_object = unverified_inspection_claim(state["npc_id"], answer)
             if unverified_object:
                 answer = f"本轮回复声称已调查{unverified_object}，但缺少工具记录。原因：需要先执行调查工具。"
         return {
-            "conversation": conversation + call_messages,
+            "conversation": conversation + call_messages + (
+                [{"role": "user", "content": cognition_error}] if cognition_error else []),
+            "goal": character.runtime_state.select_goal(character.goals),
+            "runtime_context": character.runtime_state.to_dict(),
             "pending_tool_calls": tool_calls,
             "final_answer": None if tool_calls else answer,
+            "continue_conversation": continuation,
         }
 
     builder = StateGraph(AgentState)

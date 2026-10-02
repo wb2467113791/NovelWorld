@@ -17,11 +17,8 @@ OBJECT_ALIASES = {
 
 def unverified_inspection_claim(character: str, text: str) -> str | None:
     """检查角色自称调查过的对象是否有对应的已提交事件。"""
-    object_names = {
-        name
-        for objects in WORLD_STATE["inspectable_objects"].values()
-        for name in objects
-    }
+    from world.objects import visible_objects
+    object_names = {item["name"] for item in visible_objects(WORLD_STATE["characters"][character])}
     for sentence in re.split(r"[。！？\n]", text):
         if not REVIEW_CLAIM.search(sentence):
             continue
@@ -42,33 +39,16 @@ def unverified_inspection_claim(character: str, text: str) -> str | None:
 # Tool Schema 是给模型看的工具说明书，不负责执行 Python 函数。
 NPC_ACTION_TOOL_SCHEMAS = [
     {
-        "type": "function", "name": "conceal_clue",
-        "description": "藏起当前位置被明确标记为可藏匿的线索；Java 保存原文并留下可调查痕迹。",
-        "parameters": {"type": "object", "properties": {
-            "character": {"type": "string"}, "object_name": {"type": "string"},
-        }, "required": ["character", "object_name"]},
-    },
-    {
-        "type": "function", "name": "recover_clue",
-        "description": "亲自调查异常痕迹后，找回当前位置被藏匿的线索。",
-        "parameters": {"type": "object", "properties": {
-            "character": {"type": "string"}, "object_name": {"type": "string"},
-        }, "required": ["character", "object_name"]},
-    },
-    {
         "type": "function",
         "name": "inspect",
-        "description": "调查角色当前地点；可选 object_name 查看本轮 Prompt 列出的当地对象。重复调查未变化的内容不会产生新发现。",
+        "description": "调查角色当前地点；用 object_id 查看本轮 Prompt 列出的可见对象。重复调查未变化的内容不会产生新发现。",
         "parameters": {
             "type": "object",
             "properties": {
+                "object_id": {"type": "string", "description": "当前可见对象 ID，优先使用；省略时可调查地点。"},
                 "character": {
                     "type": "string",
                     "description": "执行调查的角色名称，例如苏晚或林默。",
-                },
-                "object_name": {
-                    "type": "string",
-                    "description": "可选的当地调查对象名称；省略时调查所在地点。",
                 },
             },
             "required": ["character"],
@@ -99,29 +79,6 @@ NPC_ACTION_TOOL_SCHEMAS = [
     },
     {
         "type": "function",
-        "name": "update_relationship",
-        "description": "增加或减少一个角色对另一个角色的关系值，结果限制在 -100 到 100。",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "character": {
-                    "type": "string",
-                    "description": "关系发生变化的角色名称。",
-                },
-                "target": {
-                    "type": "string",
-                    "description": "该角色态度所指向的目标角色名称。",
-                },
-                "change": {
-                    "type": "integer",
-                    "description": "关系值的增减量，正数表示改善，负数表示恶化。",
-                },
-            },
-            "required": ["character", "target", "change"],
-        },
-    },
-    {
-        "type": "function",
         "name": "move_character",
         "description": "让当前角色移动到世界中的合法目标地点。",
         "parameters": {
@@ -141,22 +98,8 @@ NPC_ACTION_TOOL_SCHEMAS = [
     },
     {
         "type": "function",
-        "name": "give_item",
-        "description": "把自己持有的物品交给同一地点的另一名角色。",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "giver": {"type": "string", "description": "交付物品的角色名称。"},
-                "receiver": {"type": "string", "description": "接收物品的角色名称。"},
-                "item": {"type": "string", "description": "要交付的物品名称。"},
-            },
-            "required": ["giver", "receiver", "item"],
-        },
-    },
-    {
-        "type": "function",
         "name": "rest_character",
-        "description": "休息一轮，恢复20点体力，上限100。移动消耗5点，调查3点，对话和交付2点，修改关系1点。体力不足时应休息。",
+        "description": "休息一轮，恢复20点体力，上限100。移动消耗5点，调查3点，对话和交付2点。体力不足时应休息。",
         "parameters": {
             "type": "object",
             "properties": {"character": {"type": "string", "description": "休息的角色名称。"}},
@@ -170,31 +113,38 @@ NPC_ACTION_TOOL_SCHEMAS = [
     },
     {
         "type": "function", "name": "world_action",
-        "description": "提出攻击、使用药物、逃跑、跟随或与场景对象互动的意图；由世界规则结算。",
+        "description": "提出攻击、逃跑或跟随的意图；由世界规则结算。",
         "parameters": {"type": "object", "properties": {
-            "action": {"type": "string", "enum": ["attack", "use_item", "flee", "follow", "interact"]},
+            "action": {"type": "string", "enum": ["attack", "flee", "follow"]},
             "actor": {"type": "string"},
             "target": {"type": "string"},
-            "item": {"type": "string"},
             "location": {"type": "string"},
-            "object_name": {"type": "string"},
         }, "required": ["action", "actor"]},
     },
 ]
 
 
 
+for name, description, extra, required in (
+    ("take", "拿起当前可见、可接近且可携带的对象。", {}, []),
+    ("put", "放下本人持有的对象，只选择当前 location 或已打开的 container_id。", {"location": {"type": "string"}, "container_id": {"type": "string"}}, []),
+    ("give", "把本人持有的对象交给同地点角色，owner 保留，可用于借用。", {"receiver": {"type": "string"}}, ["receiver"]),
+    ("use", "仅按对象声明用途使用：consume/light/extinguish。", {"action": {"type": "string", "enum": ["consume", "light", "extinguish"]}}, ["action"]),
+    ("interact", "仅按对象 affordance 和当前状态操作：open/close。", {"action": {"type": "string", "enum": ["open", "close"]}}, ["action"]),
+):
+    NPC_ACTION_TOOL_SCHEMAS.append({"type": "function", "name": name, "description": description,
+        "parameters": {"type": "object", "properties": {"character": {"type": "string"}, "object_id": {"type": "string"}, **extra},
+                       "required": ["character", "object_id", *required], "additionalProperties": False}})
+
+# Python / Java 正式行动入口均只接受当前 Tool；旧 Event 仅用于历史读取。
 TOOL_NAMES = frozenset(schema["name"] for schema in NPC_ACTION_TOOL_SCHEMAS)
 TOOL_ACTOR_ARGUMENTS = {
+    "take": "character", "put": "character", "give": "character", "use": "character", "interact": "character",
     "world_action": "actor",
     "inspect": "character",
     "talk": "speaker",
-    "update_relationship": "character",
     "move_character": "character",
-    "give_item": "giver",
     "rest_character": "character",
-    "conceal_clue": "character",
-    "recover_clue": "character",
 }
 
 
@@ -206,6 +156,8 @@ def execute_tool(
     """校验当前角色并通过 MCP 请求 Java；等待不生成世界事件。"""
     if name not in TOOL_NAMES:
         raise ValueError(f"未知工具：{name}")
+    if name == "world_action" and arguments.get("action") not in {"attack", "flee", "follow"}:
+        raise ValueError("正式 world_action 仅支持 attack、flee、follow")
     actor_argument = TOOL_ACTOR_ARGUMENTS.get(name)
     if actor_argument and arguments.get(actor_argument) != acting_character:
         raise ValueError(f"{acting_character}不能通过{name}替其他角色行动")

@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from tools.remote_world import active_backend, use_backend
+from agent.runtime import AgentRuntimeState, AgendaEntry
 from web_api import WorldController
 from world.persistence import restore_snapshot, snapshot_world
 from world.state import WORLD_STATE
@@ -31,10 +32,17 @@ class WorldSwitchTest(unittest.TestCase):
         use_backend(old_backend)
 
         old_snapshot = deepcopy(snapshot_world(scheduler_state={"tick_count": 4}))
+        old_runtime = AgentRuntimeState(active_goal="找到失踪者的下落", current_intention="核对线索",
+                                        current_plan="继续调查，根据新信息调整方向",
+                                        agenda=[AgendaEntry("old", "林默", 8, "调查")], busy_until=6)
+        old_snapshot["characters"]["林默"]["runtime_state"] = old_runtime.to_dict()
         new_world = deepcopy(old_snapshot)
         new_world["world_id"] = "another_world"
         new_world["scheduler"] = {"tick_count": 0}
         new_world["characters"]["林默"]["goals"] = ["寻找一封信"]
+        new_runtime = AgentRuntimeState(active_goal="寻找一封信", current_intention="寻找收信人",
+                                        current_plan="留意本人可见的信件消息")
+        new_world["characters"]["林默"]["runtime_state"] = new_runtime.to_dict()
         new_world["lore"] = [{"id": "new-lore", "category": "地理",
                               "audience": "public", "text": "新的世界设定"}]
         new_backend = Mock()
@@ -48,6 +56,7 @@ class WorldSwitchTest(unittest.TestCase):
             result = controller.activate_world("another_world")
         self.assertEqual(result["world_id"], "another_world")
         self.assertEqual(WORLD_STATE["characters"]["林默"].goals, ["寻找一封信"])
+        self.assertEqual(WORLD_STATE["characters"]["林默"].runtime_state.to_dict(), new_runtime.to_dict())
         self.assertEqual(WORLD_STATE["lore"][0]["text"], "新的世界设定")
         self.assertIs(active_backend(), new_backend)
         old_backend.save_agent_state.assert_called_once_with({"tick_count": 4})
@@ -60,6 +69,7 @@ class WorldSwitchTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "索引初始化失败"):
                 controller.activate_world(self.original_world["world_id"])
         self.assertEqual(WORLD_STATE["world_id"], "another_world")
+        self.assertEqual(WORLD_STATE["characters"]["林默"].runtime_state.to_dict(), new_runtime.to_dict())
         self.assertIs(controller.session, new_session)
         self.assertIs(active_backend(), new_backend)
 

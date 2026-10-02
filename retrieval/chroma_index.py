@@ -3,7 +3,7 @@
 from pathlib import Path
 from functools import lru_cache
 
-from characters.model import Character
+from characters.model import Character, is_npc
 from world.state import WORLD_STATE
 from memory.retrieval import eligible_archived_entries
 from retrieval.embedding import DashScopeEmbedder
@@ -62,6 +62,8 @@ class ChromaIndex:
 
     def sync_character(self, character: Character) -> None:
         """从角色记忆重建其索引，并移除被新调查取代的旧内容。"""
+        if not is_npc(character):
+            return
         documents: dict[str, tuple[str, dict]] = {}
         order_by_event = {
             entry.source_event_id: index
@@ -95,12 +97,15 @@ class ChromaIndex:
 
     def sync_world(self, characters: dict[str, Character]) -> None:
         for character in characters.values():
-            self.sync_character(character)
+            if is_npc(character):
+                self.sync_character(character)
         self.sync_lore()
 
     def retrieve_memory(
         self, character: Character, query: str, *, max_items: int = 3, max_chars: int = 600,
     ) -> list[str]:
+        if not is_npc(character):
+            raise ValueError("Player 不使用 NPC RAG")
         self.sync_character(character)
         count = len(self.memories.get(where={"owner": character.name}, include=[])["ids"])
         if not count or not query.strip():

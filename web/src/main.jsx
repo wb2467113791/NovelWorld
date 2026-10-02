@@ -1,13 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import WorldSetup from './WorldSetup.jsx'
+import PlayMode from './PlayMode.jsx'
 import './style.css'
 
 const typeLabels = {
-  move: '移动', talk: '交谈', inspect: '调查', relationship: '关系',
-  give_item: '物品', director: '世界事件', narration: '叙述',
-  intervention: '人为干预', rest: '休息',
-  attack: '攻击', use_item: '使用物品', flee: '逃跑', follow: '跟随', interact: '互动',
+  move: '移动', talk: '交谈', inspect: '调查', director: '世界事件',
+  intervention: '人为干预', rest: '休息', attack: '攻击', flee: '逃跑', follow: '跟随',
+  take: '拿取', put: '放置', give: '交付', use: '使用物品', interact: '互动',
+  // legacy history only：保留旧存档时间线标签，不是当前 Tool。
+  relationship: '关系', give_item: '物品', narration: '叙述', use_item: '使用物品',
   conceal: '藏匿线索', recover: '找回线索',
 }
 const initial = name => name.slice(0, 1)
@@ -53,6 +55,7 @@ function RelationshipMap({ characters, selected, onSelect }) {
 }
 
 function App() {
+  const [mode, setMode] = useState('observe')
   const [world, setWorld] = useState(null)
   const [connected, setConnected] = useState(false)
   const [selected, setSelected] = useState('林默')
@@ -69,17 +72,23 @@ function App() {
   }, [world?.characters, selected])
 
   useEffect(() => {
-    fetch('/api/world').then(response => response.json()).then(setWorld).catch(error => setNotice(error.message))
-    const stream = new EventSource('/api/events')
-    stream.addEventListener('state', event => { setWorld(JSON.parse(event.data)); setConnected(true) })
+    let active = true
+    setWorld(null); setView(null)
+    fetch(mode === 'play' ? '/api/play/state' : '/api/world').then(response => response.json())
+      .then(value => { if (active) setWorld(value) }).catch(error => { if (active) setNotice(error.message) })
+    const stream = new EventSource(`/api/events?mode=${mode}`)
+    stream.addEventListener('state', event => { if (active) {setWorld(JSON.parse(event.data)); setConnected(true)} })
     stream.onerror = () => setConnected(false)
-    return () => stream.close()
-  }, [])
+    return () => {active = false; stream.close()}
+  }, [mode])
 
   useEffect(() => {
+    if (mode !== 'observe') return
+    let active = true
     fetch(`/api/characters/${encodeURIComponent(selected)}/view`)
-      .then(response => response.json()).then(setView).catch(() => setView(null))
-  }, [selected, world?.world_id, world?.tick_count, world?.events?.length])
+      .then(response => response.json()).then(value => {if (active) setView(value)}).catch(() => {if (active) setView(null)})
+    return () => { active = false }
+  }, [mode, selected, world?.world_id, world?.tick_count, world?.events?.length])
 
   const events = useMemo(() => {
     const all = [...(world?.events || [])].reverse()
@@ -111,7 +120,7 @@ function App() {
 
   return <div className="app-shell">
     <aside className="sidebar">
-      <div className="brand"><span className="brand-mark">✦</span><div><strong>NOVELWORLD</strong><small>动态叙事引擎 · V3</small></div></div>
+      <div className="brand"><span className="brand-mark">✦</span><div><strong>NOVELWORLD</strong><small>持续 AI 角色世界 · V4</small></div></div>
       <div className="side-label">世界导航</div>
       <a className="nav-link active" href="#overview"><span>◫</span> 世界总览</a>
       <a className="nav-link" href="#timeline"><span>◷</span> 事件时间线</a>
@@ -123,7 +132,7 @@ function App() {
     </aside>
 
     <main className="main-content" id="overview">
-      <header className="topbar"><div><div className="eyebrow">WORLD OBSERVATORY / 世界观测台</div><h1>每个选择，都让世界继续生长。</h1></div><div className="version-pill">● LIVE WORLD <span>V3.0</span></div></header>
+      <header className="topbar"><div><div className="eyebrow">WORLD OBSERVATORY / 世界观测台</div><h1>每个选择，都让世界继续生长。</h1></div><div className="version-pill">● LIVE WORLD <span>V4.0</span></div></header>
 
       {notice && <div className="notice">{notice}<button onClick={() => setNotice('')}>×</button></div>}
       {world?.error && <div className="notice">运行中断：{world.error}</div>}
@@ -136,7 +145,7 @@ function App() {
       </section>
 
       <section className="control-panel">
-        <div><div className="panel-kicker">WORLD CONTROL</div><h2>让故事继续</h2><p>事件唤醒相关角色；没有待处理事件时，世界时间继续前进而不会调用 NPC 模型。</p></div>
+        <div><div className="panel-kicker">WORLD CONTROL</div><h2>让故事继续</h2><p>事件、会话和 Agenda 为 NPC 提供行动机会；没有任何可调度机会时才进入 Idle。</p></div>
         <div className="control-actions">
           <button className="primary-button" disabled={busy || world?.running} onClick={() => command('/api/control/next')}>▶ 下一 Tick</button>
           <button className="secondary-button" disabled={busy || world?.running} onClick={() => command('/api/control/run', {count: 10, delay_seconds: Number(speed)})}>运行 10 Tick</button>
@@ -146,6 +155,8 @@ function App() {
         </div>
       </section>
 
+      <div className="control-actions"><button className={mode === 'observe' ? 'primary-button' : 'secondary-button'} onClick={() => setMode('observe')}>Observe</button><button className={mode === 'play' ? 'primary-button' : 'secondary-button'} onClick={() => setMode('play')}>Play</button></div>
+      {mode === 'play' ? <PlayMode worldId={world?.world_id} tick={world?.tick_count} eventCount={world?.event_count} revision={world?.revision} /> : <>
       <section className="panel intervention-panel"><div className="section-heading"><div><div className="panel-kicker">WORLD INTERVENTION</div><h2>向世界投放线索</h2></div><span className="view-tag">角色自行决定反应</span></div>
         <p>线索会成为 Java 保存的世界事件；只有事件发生时在该地点的角色会被唤醒。</p>
         <form onSubmit={injectEvent} className="intervention-form">
@@ -168,12 +179,13 @@ function App() {
         </div>
       </div>
 
-      <section className="panel perspective-panel"><div className="section-heading"><div><div className="panel-kicker">PERSPECTIVE</div><h2>{selected}的视角</h2></div><span className="view-tag">独立知识与记忆</span></div>{world?.skills?.[selected] && <p className="line-item">当前 Skill：{world.skills[selected].name} · {world.skills[selected].phase}（{world.skills[selected].reason}）</p>}<div className="perspective-grid"><div><h3>当前目标</h3>{view?.goals?.map(goal => <p className="line-item" key={goal}>{goal}</p>) || <p className="muted">加载中</p>}<h3>已知事实</h3>{view?.known_facts?.map(fact => <p className="line-item" key={fact}>{fact}</p>) || <p className="muted">暂无</p>}</div><div><h3>近期记忆</h3>{view?.recent_memories?.length ? view.recent_memories.map((memory, index) => <p className="memory-item" key={index}>{memory}</p>) : <p className="muted">暂无近期记忆</p>}</div><div><h3>长期记忆与调查事实</h3>{[...(view?.semantic_facts || []), ...(view?.archived_memories || [])].length ? [...(view?.semantic_facts || []), ...(view?.archived_memories || [])].slice(-8).map((memory, index) => <p className="memory-item" key={index}>{memory}</p>) : <p className="muted">暂无长期记忆</p>}</div></div></section>
+      <section className="panel perspective-panel"><div className="section-heading"><div><div className="panel-kicker">PERSPECTIVE</div><h2>{selected}的视角</h2></div><span className="view-tag">独立知识与记忆</span></div><div className="perspective-grid"><div><h3>当前目标</h3>{view?.goals?.map(goal => <p className="line-item" key={goal}>{goal}</p>) || <p className="muted">加载中</p>}<h3>已知事实</h3>{view?.known_facts?.map(fact => <p className="line-item" key={fact}>{fact}</p>) || <p className="muted">暂无</p>}</div><div><h3>近期记忆</h3>{view?.recent_memories?.length ? view.recent_memories.map((memory, index) => <p className="memory-item" key={index}>{memory}</p>) : <p className="muted">暂无近期记忆</p>}</div><div><h3>长期记忆与调查事实</h3>{[...(view?.semantic_facts || []), ...(view?.archived_memories || [])].length ? [...(view?.semantic_facts || []), ...(view?.archived_memories || [])].slice(-8).map((memory, index) => <p className="memory-item" key={index}>{memory}</p>) : <p className="muted">暂无长期记忆</p>}</div></div></section>
       <WorldSetup running={Boolean(world?.running)} activeWorldId={world?.world_id} onActivated={async () => {
-        const response = await fetch('/api/world')
+      const response = await fetch(mode === 'play' ? '/api/play/state' : '/api/world')
         if (!response.ok) throw new Error(`读取切换后的世界失败：${response.status}`)
         setWorld(await response.json())
       }} />
+      </>}
       <footer>NovelWorld · Agent 决策由模型完成，世界状态由程序执行和保存。自动运行会产生模型 API 费用。</footer>
     </main>
   </div>

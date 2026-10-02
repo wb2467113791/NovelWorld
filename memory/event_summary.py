@@ -3,6 +3,7 @@
 from world.events import Event
 
 
+# legacy history only：narration/relationship/give_item/conceal/recover/use_item 仅供旧 Event 读取。
 EVENT_IMPORTANCE = {
     "narration": 1,
     "move": 2,
@@ -14,6 +15,7 @@ EVENT_IMPORTANCE = {
     "director": 4,
     "conceal": 4,
     "recover": 4,
+    "take": 3, "put": 3, "give": 3, "use": 3, "interact": 3,
 }
 
 
@@ -43,7 +45,7 @@ def summarize_event(event: Event, observer: str) -> str:
             return f"我对{target}说：“{message}”"
         return f"{actor}对我说：“{message}”"
 
-    if kind == "give_item":
+    if kind in {"give_item", "give"}:
         item = payload["item"]
         if observer == actor:
             return f"我把{item}交给了{target}。"
@@ -72,8 +74,5 @@ def summarize_event(event: Event, observer: str) -> str:
     if kind == "director":
         return f"我在{location}注意到：{event['description']}"
 
-    if kind in {"conceal", "recover"}:
-        return event["description"]
-
-    # narration 是 NPC 本轮未执行工具时的文字，本身没有更多结构化细节。
+    # legacy history only：旧 narration/conceal/recover/use_item 历史仍可显示原描述。
     return event["description"]

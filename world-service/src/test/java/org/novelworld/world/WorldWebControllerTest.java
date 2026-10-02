@@ -36,7 +36,8 @@ class WorldWebControllerTest {
         assertEquals(75, ((Map<?, ?>) ((Map<?, ?>) controller.world().get("characters")).get("苏晚")).get("energy"));
         assertFalse(controller.world().toString().contains("弟弟涉案"));
         assertFalse(controller.world().toString().contains("原件秘密"));
-        assertTrue(controller.world().toString().contains("保护与隐瞒"));
+        assertFalse(controller.world().containsKey("skills"));
+        assertFalse(controller.world().toString().contains("藏匿可疑线索"));
         assertEquals(List.of("见过林默"), controller.characterView("苏晚").get("recent_memories"));
         assertFalse(controller.characterView("苏晚").toString().contains("弟弟涉案"));
         var mvc = org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(controller).build();

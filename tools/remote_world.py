@@ -9,6 +9,14 @@ from typing import Any
 _active_backend = None
 
 
+class CommittedActionError(RuntimeError):
+    """Java 已提交，随后镜像刷新失败；调用者不可重新执行该行动。"""
+
+    def __init__(self, output: str, error: Exception):
+        super().__init__(f"行动已提交，刷新失败：{error}")
+        self.output = output
+
+
 def active_backend():
     return _active_backend
 
@@ -92,8 +100,11 @@ class RemoteWorld:
         event = response["event"]
         if event:
             # 服务端已写入业务状态与事件；重新读取后只补 Python 专属的角色记忆。
-            self._refresh_business_state()
-            remember_event(event)
+            try:
+                self._refresh_business_state()
+                remember_event(event)
+            except Exception as error:
+                raise CommittedActionError(response["output"], error) from error
         return response["output"]
 
     def _refresh_business_state(self) -> None:
@@ -102,14 +113,14 @@ class RemoteWorld:
         remote = json.loads(self._call("get_world", {"worldId": self.world_id}))
         if WORLD_STATE.get("world_id") == self.world_id:
             local = snapshot_world()
+            remote["active_conversations"] = local["active_conversations"]
             for name, character in remote["characters"].items():
+                if character.get("actor_type", "npc") != "npc" or name not in local["characters"]:
+                    continue
                 character["memory"] = local["characters"][name]["memory"]
                 character["semantic_memory"] = local["characters"][name]["semantic_memory"]
-            remote_ids = {event["id"] for event in remote["events"]}
-            remote["events"].extend(
-                event for event in local["events"]
-                if event["id"] not in remote_ids and event["type"] == "narration"
-            )
+                character["runtime_state"] = local["characters"][name]["runtime_state"]
+                character["belief_memory"] = local["characters"][name]["belief_memory"]
         restore_snapshot(remote)
         reconcile_event_memories()
 
@@ -139,11 +150,14 @@ class RemoteWorld:
                 name: {
                     "memory": character["memory"],
                     "semantic_memory": character["semantic_memory"],
+                    "runtime_state": character["runtime_state"],
+                    "belief_memory": character["belief_memory"],
                 }
                 for name, character in snapshot["characters"].items()
+                if character.get("actor_type", "npc") == "npc"
             },
             "scheduler": scheduler_state,
-            "events": [event for event in snapshot["events"] if event["type"] == "narration"],
+            "active_conversations": snapshot["active_conversations"],
         }
         self._call("save_agent_state", {
             "worldId": self.world_id,

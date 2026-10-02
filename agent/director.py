@@ -3,6 +3,7 @@
 from collections.abc import Callable
 
 from world.state import WORLD_STATE
+from characters.model import is_npc
 
 
 DIRECTOR_COOLDOWN = 6
@@ -22,7 +23,7 @@ class Director:
 
     @staticmethod
     def occupied_location(preferred: str | None = None) -> str:
-        characters = list(WORLD_STATE["characters"].values())
+        characters = [actor for actor in WORLD_STATE["characters"].values() if is_npc(actor)]
         available = next((character for character in characters
                           if character.location == preferred and character.status != "unconscious"), None)
         if available is None:
@@ -36,15 +37,15 @@ class Director:
             return "stagnation", self.occupied_location()
         if tick_count < 3:
             return None
-        history = [event for event in WORLD_STATE["events"] if event["type"] != "director"]
+        # legacy history only：narration 不计行动，relationship 仍可用于旧历史过滤。
+        history = [event for event in WORLD_STATE["events"] if event["type"] not in {"director", "narration"}]
         recent = history[-6:]
-        if len(history) >= 3 and (all(event["type"] == "narration" for event in history[-3:])
-                                  or len({event["description"] for event in history[-3:]}) == 1):
+        if len(history) >= 3 and len({event["description"] for event in history[-3:]}) == 1:
             return "stagnation", self.occupied_location("晚风客栈")
 
         if tick_count >= 6:
-            active = {event["actor"] for event in recent if event["type"] not in {"narration"}}
-            quiet = [name for name in WORLD_STATE["characters"] if name not in active]
+            active = {event["actor"] for event in recent}
+            quiet = [name for name, actor in WORLD_STATE["characters"].items() if is_npc(actor) and name not in active]
             if quiet:
                 return "participation", WORLD_STATE["characters"][quiet[0]].location
 

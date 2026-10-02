@@ -22,11 +22,13 @@ public class WorldStore {
         var rows = jdbc.queryForList("SELECT snapshot FROM world_saves WHERE world_id = ?", String.class, worldId);
         if (rows.isEmpty()) throw new IllegalArgumentException("世界不存在：" + worldId);
         String json = rows.get(0);
-        try { return mapper.readValue(json, Map.class); }
+        try { Map<String, Object> world = mapper.readValue(json, Map.class); WorldActors.ensure(world); WorldObjects.ensure(world); return world; }
         catch (JacksonException e) { throw new IllegalStateException("世界存档格式无效", e); }
     }
 
     public void insert(String worldId, Map<String, Object> snapshot) {
+        WorldActors.ensure(snapshot);
+        WorldObjects.ensure(snapshot);
         jdbc.update("INSERT INTO world_saves(world_id, snapshot, revision) VALUES (?, ?, 0)", worldId, json(snapshot));
     }
 
@@ -39,6 +41,8 @@ public class WorldStore {
     }
 
     public void update(String worldId, Map<String, Object> snapshot) {
+        WorldActors.ensure(snapshot);
+        WorldObjects.ensure(snapshot);
         long revision = ((Number) snapshot.get("revision")).longValue();
         snapshot.put("revision", revision + 1);
         int changed;

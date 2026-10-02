@@ -10,16 +10,6 @@
     "县衙": "案桌上放着尚未整理完的失踪案卷宗。",
     "青石街": "清晨的街面有些潮湿，行人正渐渐多起来。"
   },
-  "inspectable_objects": {
-    "晚风客栈": {
-      "住客登记簿": "登记簿记载失踪者案发前夜入住晚风客栈，但离店时辰被涂改；仅凭记录无法确定其去向。",
-      "后门": "后门通向客栈外；仅凭眼前环境无法确认案发夜经过的人是谁。",
-      "柴房门锁": "柴房门锁已有锈迹；仅凭外观无法确认近期是否被打开过。"
-    }
-  },
-  "concealable_objects": {
-    "晚风客栈": ["住客登记簿"]
-  },
   "characters": {
     "林默": {
       "name": "林默",
@@ -39,10 +29,7 @@
       "relationships": {
         "苏晚": 0,
         "赵无极": -5
-      },
-      "items": [
-        "捕快腰牌"
-      ]
+      }
     },
     "苏晚": {
       "name": "苏晚",
@@ -64,10 +51,7 @@
       "relationships": {
         "林默": 0,
         "赵无极": 0
-      },
-      "items": [
-        "私人账本"
-      ]
+      }
     },
     "赵无极": {
       "name": "赵无极",
@@ -89,10 +73,7 @@
       "relationships": {
         "林默": -10,
         "苏晚": 5
-      },
-      "items": [
-        "商会令牌"
-      ]
+      }
     }
   },
   "lore": [
@@ -138,5 +119,138 @@
       "audience": "林默",
       "text": "县衙办案时应先核对卷宗原文，再把传闻和可验证证据分开记录。"
     }
-  ]
+  ],
+  "objects": {
+    "obj-d6d7ab6070ceefbbaae15ee2": {
+      "id": "obj-d6d7ab6070ceefbbaae15ee2",
+      "name": "住客登记簿",
+      "type": "item",
+      "description": "登记簿记载失踪者案发前夜入住晚风客栈，但离店时辰被涂改；仅凭记录无法确定其去向。",
+      "location": "晚风客栈",
+      "container": null,
+      "holder": null,
+      "owner": null,
+      "portable": true,
+      "visible": true,
+      "state": "normal",
+      "properties": {},
+      "affordances": []
+    },
+    "obj-c241dc9eb65d6110efda3a50": {
+      "id": "obj-c241dc9eb65d6110efda3a50",
+      "name": "后门",
+      "type": "door",
+      "description": "后门通向客栈外；仅凭眼前环境无法确认案发夜经过的人是谁。",
+      "location": "晚风客栈",
+      "container": null,
+      "holder": null,
+      "owner": null,
+      "portable": false,
+      "visible": true,
+      "state": "closed",
+      "properties": {},
+      "affordances": [
+        "open",
+        "close"
+      ]
+    },
+    "obj-d6134455ba24d5ea22afc8a0": {
+      "id": "obj-d6134455ba24d5ea22afc8a0",
+      "name": "柴房门锁",
+      "type": "door",
+      "description": "柴房门锁已有锈迹；仅凭外观无法确认近期是否被打开过。",
+      "location": "晚风客栈",
+      "container": null,
+      "holder": null,
+      "owner": null,
+      "portable": false,
+      "visible": true,
+      "state": "closed",
+      "properties": {},
+      "affordances": [
+        "open",
+        "close"
+      ]
+    },
+    "obj-c0e2c2987d4670c1000a6a18": {
+      "id": "obj-c0e2c2987d4670c1000a6a18",
+      "name": "木箱",
+      "type": "container",
+      "description": "一个可打开存放物品的木箱。",
+      "location": "晚风客栈",
+      "container": null,
+      "holder": null,
+      "owner": null,
+      "portable": false,
+      "visible": true,
+      "state": "closed",
+      "properties": {
+        "container": true
+      },
+      "affordances": [
+        "open",
+        "close"
+      ]
+    },
+    "obj-d1cc3840300bfa0ded2f0310": {
+      "id": "obj-d1cc3840300bfa0ded2f0310",
+      "name": "钥匙",
+      "type": "item",
+      "description": "一把普通小钥匙。",
+      "location": "晚风客栈",
+      "container": null,
+      "holder": null,
+      "owner": null,
+      "portable": true,
+      "visible": true,
+      "state": "normal",
+      "properties": {},
+      "affordances": []
+    },
+    "obj-7440624baaec30e05cccd209": {
+      "id": "obj-7440624baaec30e05cccd209",
+      "name": "捕快腰牌",
+      "type": "item",
+      "description": "一件捕快腰牌。",
+      "location": null,
+      "container": null,
+      "holder": "林默",
+      "owner": "林默",
+      "portable": true,
+      "visible": true,
+      "state": "normal",
+      "properties": {},
+      "affordances": []
+    },
+    "obj-51713e55915284b7f4799afe": {
+      "id": "obj-51713e55915284b7f4799afe",
+      "name": "私人账本",
+      "type": "item",
+      "description": "一件私人账本。",
+      "location": null,
+      "container": null,
+      "holder": "苏晚",
+      "owner": "苏晚",
+      "portable": true,
+      "visible": true,
+      "state": "normal",
+      "properties": {},
+      "affordances": []
+    },
+    "obj-e6eacded1da5a11e0f578c4c": {
+      "id": "obj-e6eacded1da5a11e0f578c4c",
+      "name": "商会令牌",
+      "type": "item",
+      "description": "一件商会令牌。",
+      "location": null,
+      "container": null,
+      "holder": "赵无极",
+      "owner": "赵无极",
+      "portable": true,
+      "visible": true,
+      "state": "normal",
+      "properties": {},
+      "affordances": []
+    }
+  }
 }

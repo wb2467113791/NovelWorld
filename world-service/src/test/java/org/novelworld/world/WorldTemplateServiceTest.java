@@ -48,7 +48,7 @@ class WorldTemplateServiceTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void concealedClueStaysInItsOwnWorld() {
+    void takenObjectStaysInItsOwnWorld() {
         var source = new JdbcDataSource();
         source.setURL("jdbc:h2:mem:conceal-isolation;DB_CLOSE_DELAY=-1");
         var jdbc = new JdbcTemplate(source);
@@ -58,13 +58,15 @@ class WorldTemplateServiceTest {
         String firstId = service.createWorld(service.defaultTemplate());
         String secondId = service.createWorld(service.defaultTemplate());
         var first = store.load(firstId);
-        new WorldRules().apply(first, "conceal_clue", Map.of("character", "苏晚", "object_name", "住客登记簿"));
+        new WorldRules().apply(first, "take", Map.of("character", "苏晚", "object_id", WorldObjects.stableId("scene\0晚风客栈\0住客登记簿")));
         store.update(firstId, first);
-        assertFalse(((Map<?, ?>) ((Map<?, ?>) store.load(firstId).get("inspectable_objects"))
-                .get("晚风客栈")).containsKey("住客登记簿"));
-        assertTrue(((Map<?, ?>) ((Map<?, ?>) store.load(secondId).get("inspectable_objects"))
-                .get("晚风客栈")).containsKey("住客登记簿"));
-        assertTrue(((Map<?, ?>) store.load(secondId).get("concealed_objects")).isEmpty());
+        String bookId = WorldObjects.stableId("scene\0晚风客栈\0住客登记簿");
+        var firstBook = WorldObjects.map(WorldObjects.map(store.load(firstId).get("objects")).get(bookId));
+        var secondBook = WorldObjects.map(WorldObjects.map(store.load(secondId).get("objects")).get(bookId));
+        assertEquals("苏晚", firstBook.get("holder"));
+        assertNull(secondBook.get("holder")); assertEquals("晚风客栈", secondBook.get("location"));
+        for (String field : java.util.List.of("inspectable_objects", "concealable_objects", "concealed_objects"))
+            assertFalse(store.load(firstId).containsKey(field));
     }
 
     @Test
@@ -92,9 +94,13 @@ class WorldTemplateServiceTest {
         assertEquals(java.util.List.of("寻找遗失的信"),
                 ((Map<?, ?>) ((Map<?, ?>) newWorld.get("characters")).get("林默")).get("goals"));
         assertTrue(((java.util.List<?>) newWorld.get("events")).isEmpty());
-        assertEquals(java.util.List.of("住客登记簿"),
-                ((Map<?, ?>) newWorld.get("concealable_objects")).get("晚风客栈"));
-        assertTrue(((Map<?, ?>) newWorld.get("concealed_objects")).isEmpty());
+        assertEquals(2, newWorld.get("version"));
+        assertEquals(service.defaultTemplate().get("objects"), newWorld.get("objects"));
+        for (String field : java.util.List.of("inspectable_objects", "concealable_objects", "concealed_objects")) {
+            assertFalse(newWorld.containsKey(field)); assertFalse(service.defaultTemplate().containsKey(field));
+        }
+        assertFalse(((Map<?, ?>) ((Map<?, ?>) service.defaultTemplate().get("characters")).get("林默")).containsKey("items"));
+        assertEquals(java.util.List.of("捕快腰牌"), ((Map<?, ?>) ((Map<?, ?>) newWorld.get("characters")).get("林默")).get("items"));
         assertFalse(((java.util.List<?>) newWorld.get("lore")).isEmpty());
         assertTrue(((java.util.List<?>) ((Map<?, ?>) ((Map<?, ?>) ((Map<?, ?>) newWorld.get("characters"))
                 .get("林默")).get("memory")).get("entries")).isEmpty());
@@ -123,6 +129,13 @@ class WorldTemplateServiceTest {
         var invalidConcealable = service.defaultTemplate();
         invalidConcealable.put("concealable_objects", Map.of("晚风客栈", java.util.List.of("不存在的线索")));
         assertThrows(IllegalArgumentException.class, () -> service.createWorld(invalidConcealable));
+        var conflictingInventory = service.defaultTemplate();
+        WorldObjects.map(WorldObjects.map(conflictingInventory.get("characters")).get("林默")).put("items", java.util.List.of("伪造物品"));
+        assertThrows(IllegalArgumentException.class, () -> service.createWorld(conflictingInventory));
+        var invalidHolder = service.defaultTemplate();
+        var item = WorldObjects.map(WorldObjects.map(invalidHolder.get("objects")).values().iterator().next());
+        item.put("holder", "不存在的人"); item.put("location", null);
+        assertThrows(IllegalArgumentException.class, () -> service.createWorld(invalidHolder));
         verifyNoInteractions(store);
     }
 

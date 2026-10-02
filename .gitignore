@@ -22,3 +22,6 @@ world-service/target/
 # V3 Web build dependencies and output
 web/node_modules/
 web/dist/
+
+# Offline evaluation output, not source
+eval/results/

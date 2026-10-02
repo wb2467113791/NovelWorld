@@ -1,36 +1,20 @@
 """保存 NovelWorld 当前的世界状态。"""
 
-from dataclasses import asdict
+from copy import deepcopy
 from uuid import uuid4
 
-from characters.presets import CHARACTERS
-from lore.catalog import load_lore
+from characters.presets import CHARACTERS, DEFAULT_TEMPLATE
+from characters.model import is_npc
 from memory.event_summary import event_memory_metadata, summarize_event
 from world.events import Event, recipients_for_event
 
 
 WORLD_STATE = {
     "world_id": uuid4().hex,
-    "time": "08:00",
-    "locations": ["晚风客栈", "县衙", "青石街"],
-    # 世界状态直接保存 Character 对象，不再复制位置、体力和关系。
+    **{key: deepcopy(DEFAULT_TEMPLATE[key]) for key in ("time", "locations", "inspectables", "objects", "lore")},
     "characters": CHARACTERS,
-    "inspectables": {
-        "晚风客栈": "一楼桌椅摆放整齐，柜台后方挂着一串旧钥匙。",
-        "县衙": "案桌上放着尚未整理完的失踪案卷宗。",
-        "青石街": "清晨的街面有些潮湿，行人正渐渐多起来。",
-    },
-    "inspectable_objects": {
-        "晚风客栈": {
-            "住客登记簿": "登记簿记载失踪者案发前夜入住晚风客栈，但离店时辰被涂改；仅凭记录无法确定其去向。",
-            "后门": "后门通向客栈外；仅凭眼前环境无法确认案发夜经过的人是谁。",
-            "柴房门锁": "柴房门锁已有锈迹；仅凭外观无法确认近期是否被打开过。",
-        },
-    },
-    "concealable_objects": {"晚风客栈": ["住客登记簿"]},
-    "concealed_objects": {},
-    "lore": [asdict(entry) for entry in load_lore()],
     "events": [],
+    "active_conversations": [],
 }
 
 def advance_world_time(minutes: int) -> str:
@@ -52,6 +36,14 @@ def remember_event(event: Event) -> None:
     actor = event["actor"]
     for character_name in recipients_for_event(event, WORLD_STATE["characters"]):
         character = WORLD_STATE["characters"][character_name]
+        if not is_npc(character):
+            continue
+        if event_type == "talk":
+            # 使用快照中已提交的来源，不把传入文本或模型认知当成证据。
+            source = next(((order, actual) for order, actual in enumerate(WORLD_STATE["events"])
+                           if actual["id"] == event["id"]), None)
+            if source is not None:
+                character.belief_memory.learn_report(source[1], owner=character_name, order=source[0])
         entry_id = f"{event['id']}:{character_name}"
         if any(entry.id == entry_id for entry in character.memory.all_entries()):
             continue
@@ -70,30 +62,23 @@ def remember_event(event: Event) -> None:
                 observation=event["payload"]["observation"],
                 source_event_id=event["id"],
                 timestamp=event["timestamp"],
+                object_id=event["payload"].get("object_id"),
             )
-        if event_type == "recover" and character_name == actor:
-            trace_name = event["payload"]["object_name"] + "被移动的痕迹"
-            character.semantic_memory.forget_inspection(event["location"], trace_name)
-        if event_type == "conceal":
-            trace_name = event["payload"]["object_name"] + "被移动的痕迹"
-            character.semantic_memory.forget_inspection(event["location"], trace_name)
 
 
 def reconcile_event_memories() -> int:
     """从已提交事件补写缺失记忆；旧事件只补给直接参与者以免泄密。"""
     added = 0
     for event in WORLD_STATE["events"]:
-        if event["type"] == "narration" and event["actor"] not in WORLD_STATE["characters"]:
-            continue
         if "perceived_by" in event:
             recipients = event["perceived_by"]
         else:
             recipients = [event["actor"]]
-            if event["type"] in {"talk", "give_item"} and event["target"] is not None:
+            if event["type"] in {"talk", "give_item", "give"} and event["target"] is not None:
                 recipients.append(event["target"])
         for name in recipients:
             character = WORLD_STATE["characters"].get(name)
-            if character is None:
+            if character is None or not is_npc(character):
                 continue
             entry_id = f"{event['id']}:{name}"
             if any(entry.id == entry_id for entry in character.memory.all_entries()):

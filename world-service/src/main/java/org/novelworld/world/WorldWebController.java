@@ -9,6 +9,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -33,6 +34,19 @@ public class WorldWebController {
         this.mapper = mapper;
     }
 
+    /** 展示规则/服务错误的可读原因，不把内部异常堆栈发送给浏览器。 */
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<Map<String, String>> requestError(ResponseStatusException error) {
+        String message = error.getReason() == null ? "请求无法完成" : error.getReason();
+        try {
+            var body = mapper.readValue(message, Map.class);
+            message = body.get("detail") instanceof String detail ? detail : "请求参数无效";
+        } catch (RuntimeException ignored) {
+            // Java 的服务/规则提示本身已经是可读文字。
+        }
+        return ResponseEntity.status(error.getStatusCode()).body(Map.of("detail", message));
+    }
+
     @SuppressWarnings("unchecked")
     private static Map<String, Object> map(Object value) { return (Map<String, Object>) value; }
     @SuppressWarnings("unchecked")
@@ -52,15 +66,13 @@ public class WorldWebController {
         var characters = new LinkedHashMap<String, Object>();
         map(world.get("characters")).forEach((name, raw) -> {
             var person = map(raw);
+            if (!WorldActors.isNpc(person)) return;
             var summary = new LinkedHashMap<String, Object>();
             for (String field : List.of("name", "role", "location", "energy", "hp", "status", "goals", "items", "relationships"))
                 summary.put(field, person.get(field));
             characters.put(name, summary);
         });
         view.put("characters", characters);
-        Object scheduler = world.get("scheduler");
-        view.put("skills", scheduler instanceof Map<?, ?>
-                ? map(scheduler).getOrDefault("skill_views", Map.of()) : Map.of());
         var events = list(world.get("events"));
         view.put("events", new ArrayList<>(events.subList(Math.max(0, events.size() - 80), events.size())));
         view.put("running", status.get("running"));
@@ -84,6 +96,7 @@ public class WorldWebController {
         var personValue = map(savedWorld(status).get("characters")).get(name);
         if (personValue == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "角色不存在");
         var person = map(personValue);
+        if (!WorldActors.isNpc(person)) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Player 没有 NPC 记忆视角");
         var memory = map(person.get("memory"));
         var archive = list(memory.get("archive"));
         var semantic = map(person.get("semantic_memory"));
@@ -110,6 +123,19 @@ public class WorldWebController {
     @PostMapping("/control/pause")
     public Map<String, Object> pause() { return runtime.control("pause", Map.of()); }
 
+    @GetMapping("/play/state")
+    public Map<String, Object> playState() { return runtime.play("state", Map.of()); }
+
+    @PostMapping("/play/action")
+    public Map<String, Object> playAction(@RequestBody Map<String, Object> request) {
+        return runtime.play("action", request);
+    }
+
+    @PostMapping("/play/conversation/end")
+    public Map<String, Object> endPlayerConversation(@RequestBody Map<String, Object> request) {
+        return runtime.play("conversation/end", request);
+    }
+
     @GetMapping("/world-events")
     public Map<String, Object> worldEvents(@RequestParam(defaultValue = "0") int after) {
         var status = runtime.status();
@@ -120,7 +146,9 @@ public class WorldWebController {
     }
 
     @GetMapping(value = "/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter events() {
+    public SseEmitter events(@RequestParam(defaultValue = "observe") String mode) {
+        if (!List.of("observe", "play").contains(mode))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "观察模式无效");
         var emitter = new SseEmitter(0L);
         CompletableFuture.runAsync(() -> {
             String previous = null;
@@ -129,7 +157,7 @@ public class WorldWebController {
                 while (true) {
                     var status = runtime.status();
                     var saved = savedWorld(status);
-                    String json = mapper.writeValueAsString(publicWorld(saved, status));
+                    String json = mapper.writeValueAsString("play".equals(mode) ? playRefresh(saved, status) : publicWorld(saved, status));
                     if (!json.equals(previous)) {
                         emitter.send(SseEmitter.event().name("state").data(json));
                         previous = json;
@@ -148,5 +176,14 @@ public class WorldWebController {
             }
         });
         return emitter;
+    }
+
+    static Map<String, Object> playRefresh(Map<String, Object> world, Map<String, Object> status) {
+        var view = new LinkedHashMap<String, Object>();
+        for (String field : List.of("world_id", "tick_count", "running")) view.put(field, status.get(field));
+        view.put("time", world.get("time"));
+        view.put("event_count", list(world.get("events")).size());
+        view.put("revision", world.get("revision"));
+        return view;
     }
 }

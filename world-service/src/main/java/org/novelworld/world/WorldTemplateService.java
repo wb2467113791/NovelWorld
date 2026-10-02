@@ -18,7 +18,7 @@ import tools.jackson.databind.ObjectMapper;
 public class WorldTemplateService {
     private static final List<String> CHARACTER_FIELDS = List.of(
             "name", "role", "background", "personality", "goals", "location", "energy",
-            "secrets", "known_facts", "relationships", "items");
+            "secrets", "known_facts", "relationships");
     private final WorldStore store;
     private final ObjectMapper mapper;
 
@@ -40,17 +40,15 @@ public class WorldTemplateService {
         validate(template);
         var world = new LinkedHashMap<String, Object>();
         String worldId = UUID.randomUUID().toString().replace("-", "");
-        world.put("version", 1);
+        world.put("version", 2);
         world.put("world_id", worldId);
         world.put("revision", 0);
         world.put("time", template.get("time"));
         world.put("locations", copy(template.get("locations")));
         world.put("inspectables", copy(template.get("inspectables")));
-        world.put("inspectable_objects", copy(template.get("inspectable_objects")));
-        world.put("concealable_objects", copy(template.getOrDefault("concealable_objects", Map.of())));
-        world.put("concealed_objects", new LinkedHashMap<String, Object>());
         world.put("lore", copy(template.getOrDefault("lore", List.of())));
         world.put("events", new ArrayList<>());
+        world.put("active_conversations", new ArrayList<>());
         var characters = new LinkedHashMap<String, Object>();
         map(template.get("characters"), "characters").forEach((name, raw) -> {
             var source = map(raw, "角色 " + name);
@@ -64,7 +62,12 @@ public class WorldTemplateService {
             characters.put(name, character);
         });
         world.put("characters", characters);
-        world.put("scheduler", Map.of("tick_count", 0));
+        world.put("objects", copy(template.get("objects")));
+        world.put("scheduler", Map.of("tick_count", 0, "event_cursor", 0, "pending",
+                characters.keySet().stream().map(name -> Map.of("name", name, "depth", 0, "source", "bootstrap")).toList()));
+        WorldActors.ensure(world, template.containsKey("player") ? map(template.get("player"), "player") : null);
+        WorldObjects.validate(world);
+        WorldObjects.projectInventory(world);
         store.insert(worldId, world);
         return worldId;
     }
@@ -87,29 +90,12 @@ public class WorldTemplateService {
             text(inspectables.get(location), "地点描述 " + location);
         if (!locationSet.containsAll(inspectables.keySet()))
             throw new IllegalArgumentException("地点描述引用了不存在的地点");
-        var objects = map(template.get("inspectable_objects"), "inspectable_objects");
-        for (var place : objects.entrySet()) {
-            if (!locationSet.contains(place.getKey()))
-                throw new IllegalArgumentException("线索引用了不存在的地点：" + place.getKey());
-            for (var object : map(place.getValue(), "地点线索 " + place.getKey()).entrySet()) {
-                text(object.getKey(), "线索名称");
-                text(object.getValue(), "线索内容");
-            }
-        }
-        var concealable = map(template.getOrDefault("concealable_objects", Map.of()), "concealable_objects");
-        for (var place : concealable.entrySet()) {
-            if (!locationSet.contains(place.getKey())) throw new IllegalArgumentException("可藏匿线索地点不存在");
-            var available = map(objects.getOrDefault(place.getKey(), Map.of()), "地点线索 " + place.getKey());
-            for (String objectName : textList(place.getValue(), "可藏匿线索", false)) {
-                if (!available.containsKey(objectName)) throw new IllegalArgumentException("可藏匿线索不存在：" + objectName);
-                if (available.containsKey(objectName + "被移动的痕迹"))
-                    throw new IllegalArgumentException("可藏匿线索与痕迹名称冲突：" + objectName);
-            }
-        }
+        map(template.get("objects"), "objects");
+        for (String field : List.of("inspectable_objects", "concealable_objects", "concealed_objects"))
+            if (template.containsKey(field)) throw new IllegalArgumentException("旧浏览器模板请重新创建；对象只接受 objects");
 
         var characters = map(template.get("characters"), "characters");
         if (characters.isEmpty()) throw new IllegalArgumentException("至少需要一名 NPC");
-        Set<String> ownedItems = new HashSet<>();
         for (var entry : characters.entrySet()) {
             String name = text(entry.getKey(), "角色标识");
             var character = map(entry.getValue(), "角色 " + name);
@@ -126,8 +112,7 @@ public class WorldTemplateService {
             if (!(energy instanceof Number number) || number.intValue() != number.doubleValue()
                     || number.intValue() < 0 || number.intValue() > 100)
                 throw new IllegalArgumentException(name + " 的体力必须在 0 到 100 之间");
-            for (String item : textList(character.get("items"), name + " 的 items", false))
-                if (!ownedItems.add(item)) throw new IllegalArgumentException("物品重复归属：" + item);
+            if (character.containsKey("items")) throw new IllegalArgumentException("模板物品请用 objects.holder 声明");
             for (var relation : map(character.get("relationships"), name + " 的 relationships").entrySet()) {
                 if (name.equals(relation.getKey()) || !characters.containsKey(relation.getKey()))
                     throw new IllegalArgumentException(name + " 的关系对象无效：" + relation.getKey());

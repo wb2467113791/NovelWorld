@@ -31,14 +31,20 @@ public class WorldMcpTools {
         catch (JacksonException e) { throw new IllegalArgumentException("状态无法序列化", e); }
     }
 
-    @McpTool(name = "create_world", description = "从 V1.5 存档创建世界；相同 world_id 不可覆盖")
+    @McpTool(name = "create_world", description = "从 V1/V2 兼容存档创建世界；相同 world_id 不可覆盖")
     public String createWorld(@McpToolParam(description = "完整世界 JSON 存档") String snapshotJson) {
         var snapshot = parse(snapshotJson);
-        if (!Integer.valueOf(1).equals(snapshot.get("version"))) throw new IllegalArgumentException("存档版本不支持");
+        if (!Integer.valueOf(1).equals(snapshot.get("version")) && !Integer.valueOf(2).equals(snapshot.get("version"))) throw new IllegalArgumentException("存档版本不支持");
         String worldId = String.valueOf(snapshot.get("world_id"));
         if (worldId.isBlank() || "null".equals(worldId) || !(snapshot.get("characters") instanceof Map))
             throw new IllegalArgumentException("世界 ID 或角色缺失");
         snapshot.put("revision", 0);
+        if (snapshot.containsKey("active_conversations"))
+            validateConversations(snapshot.get("active_conversations"), snapshot);
+        WorldObjects.map(snapshot.get("characters")).forEach((name, raw) -> {
+            var person = WorldObjects.map(raw);
+            if (person.containsKey("belief_memory")) WorldBeliefs.validate(person.get("belief_memory"), name, snapshot);
+        });
         store.insert(worldId, snapshot);
         return worldId;
     }
@@ -66,13 +72,16 @@ public class WorldMcpTools {
             throw new IllegalArgumentException("线索名称或内容无效");
         var world = store.load(worldId);
         if (!((List<?>) world.get("locations")).contains(location)) throw new IllegalArgumentException("地点不存在：" + location);
-        var objects = (Map<String, Object>) world.get("inspectable_objects");
-        var place = (Map<String, Object>) objects.computeIfAbsent(location, ignored -> new LinkedHashMap<String, Object>());
-        var hidden = (Map<String, Object>) world.getOrDefault("concealed_objects", Map.of());
-        var hiddenPlace = (Map<String, Object>) hidden.getOrDefault(location, Map.of());
-        if (place.containsKey(objectName) || hiddenPlace.containsKey(objectName))
-            throw new IllegalArgumentException("该地点已有同名线索");
-        place.put(objectName, observation);
+        WorldObjects.ensure(world);
+        var objects = WorldObjects.map(world.get("objects"));
+        if (objects.values().stream().map(WorldObjects::map).anyMatch(item -> objectName.equals(item.get("name"))
+                && location.equals(WorldObjects.location(world, item))))
+            throw new IllegalArgumentException("该地点已有同名对象");
+        var object = WorldObjects.sceneObject(location, objectName, observation);
+        if (((Map<?, ?>) world.get("objects")).containsKey(object.get("id")))
+            throw new IllegalArgumentException("该线索已存在，不能覆盖其物理状态");
+        ((Map<String, Object>) world.get("objects")).put((String) object.get("id"), object);
+        WorldObjects.projectInventory(world);
         var event = new LinkedHashMap<String, Object>();
         event.put("id", UUID.randomUUID().toString().replace("-", ""));
         event.put("timestamp", world.get("time")); event.put("type", "intervention");
@@ -93,12 +102,21 @@ public class WorldMcpTools {
             @McpToolParam(description = "当前行动角色") String actingCharacter) {
         var world = store.load(worldId);
         var arguments = parse(argumentsJson);
-        String actorKey = Map.of("inspect", "character", "talk", "speaker",
-                "update_relationship", "character", "move_character", "character", "give_item", "giver",
-                "rest_character", "character", "world_action", "actor",
-                "conceal_clue", "character", "recover_clue", "character").get(name);
+        String actorKey = switch (name) {
+            case "talk" -> "speaker";
+            case "world_action" -> "actor";
+            case "inspect", "take", "put", "give", "use", "interact", "move_character",
+                    "rest_character" -> "character";
+            default -> null;
+        };
         if (actorKey != null && !actingCharacter.equals(arguments.get(actorKey)))
             throw new IllegalArgumentException(actingCharacter + "不能通过" + name + "替其他角色行动");
+        var actingActor = WorldObjects.map(WorldObjects.map(world.get("characters")).get(actingCharacter));
+        if (actingActor == null) throw new IllegalArgumentException("角色不存在：" + actingCharacter);
+        if (!WorldActors.isNpc(actingActor) && !java.util.Set.of("inspect", "take", "put", "give", "use",
+                "interact", "move_character", "talk", "rest_character").contains(name)
+                && !("world_action".equals(name) && "attack".equals(arguments.get("action"))))
+            throw new IllegalArgumentException("Player 不支持该工具");
         int before = ((List<?>) world.get("events")).size();
         String output = rules.apply(world, name, arguments);
         Object event = null;
@@ -109,7 +127,7 @@ public class WorldMcpTools {
         return json(Map.of("output", output, "event", event == null ? Map.of() : event, "revision", world.get("revision")));
     }
 
-    @McpTool(name = "save_agent_state", description = "保存 Python 的记忆和 Tick 调度进度；不覆盖 Java 的世界业务状态")
+    @McpTool(name = "save_agent_state", description = "保存 Python 的记忆、角色认知和 Tick 调度进度；不覆盖 Java 的世界业务状态")
     @SuppressWarnings("unchecked")
     public synchronized String saveAgentState(
             @McpToolParam(description = "世界 ID") String worldId,
@@ -118,25 +136,131 @@ public class WorldMcpTools {
         var state = parse(agentStateJson);
         var characters = (Map<String, Object>) world.get("characters");
         var memories = (Map<String, Object>) state.get("characters");
-        if (memories == null || !characters.keySet().equals(memories.keySet())) throw new IllegalArgumentException("角色集合不一致");
-        for (var name : characters.keySet()) {
+        // 旧客户端的空 events 可兼容；任何新事件只能由 Java 世界行动产生。
+        if (state.containsKey("events") && (!(state.get("events") instanceof List<?> events) || !events.isEmpty()))
+            throw new IllegalArgumentException("Agent 状态保存不能创建世界事件");
+        var npcNames = characters.entrySet().stream().filter(entry -> WorldActors.isNpc(WorldObjects.map(entry.getValue())))
+                .map(Map.Entry::getKey).collect(java.util.stream.Collectors.toSet());
+        if (memories == null || !npcNames.equals(memories.keySet())) throw new IllegalArgumentException("NPC 角色集合不一致");
+        if (state.containsKey("active_conversations"))
+            validateConversations(state.get("active_conversations"), world);
+        // 先验证所有角色的认知；意图不是世界事实，不能夹带业务字段或其他角色的 Agenda。
+        for (var name : npcNames) {
+            var memory = (Map<String, Object>) memories.get(name);
+            if (memory.containsKey("runtime_state"))
+                validateRuntime(memory.get("runtime_state"), name, (Map<String, Object>) characters.get(name));
+            if (memory.containsKey("belief_memory"))
+                WorldBeliefs.validate(memory.get("belief_memory"), name, world);
+        }
+        for (var name : npcNames) {
             var person = (Map<String, Object>) characters.get(name);
             var memory = (Map<String, Object>) memories.get(name);
             person.put("memory", memory.get("memory"));
             person.put("semantic_memory", memory.get("semantic_memory"));
+            if (memory.containsKey("runtime_state")) person.put("runtime_state", memory.get("runtime_state"));
+            if (memory.containsKey("belief_memory")) person.put("belief_memory", memory.get("belief_memory"));
         }
         world.put("scheduler", state.get("scheduler"));
-        var existingEvents = (List<Map<String, Object>>) world.get("events");
-        var suppliedEvents = (List<Map<String, Object>>) state.get("events");
-        if (suppliedEvents != null) {
-            var ids = existingEvents.stream().map(event -> event.get("id")).collect(java.util.stream.Collectors.toSet());
-            for (var event : suppliedEvents) {
-                if (!"narration".equals(event.get("type"))) throw new IllegalArgumentException("只能同步叙述事件");
-                if (ids.add(event.get("id"))) existingEvents.add(event);
-            }
-        }
+        if (state.containsKey("active_conversations")) world.put("active_conversations", state.get("active_conversations"));
         store.update(worldId, world);
         return String.valueOf(world.get("revision"));
+    }
+
+    private static void validateRuntime(Object raw, String owner, Map<String, Object> person) {
+        if (!(raw instanceof Map<?, ?> runtime) || !java.util.Set.of(
+                "active_goal", "current_intention", "current_plan", "agenda", "busy_until").containsAll(runtime.keySet()))
+            throw new IllegalArgumentException("Agent runtime 字段无效");
+        for (String field : List.of("active_goal", "current_intention", "current_plan")) {
+            Object value = runtime.get(field);
+            if (value != null && (!(value instanceof String text) || text.isBlank()))
+                throw new IllegalArgumentException(field + " 必须是非空文字");
+        }
+        Object goal = runtime.get("active_goal");
+        if (goal != null && !((List<?>) person.get("goals")).contains(goal))
+            throw new IllegalArgumentException("active_goal 必须来自本人目标");
+        validateTick(runtime.get("busy_until"), true);
+        Object agendaValue = runtime.getOrDefault("agenda", null);
+        if (agendaValue == null && !runtime.containsKey("agenda")) return;
+        if (!(agendaValue instanceof List<?> agenda)) throw new IllegalArgumentException("Agenda 必须是列表");
+        var ids = new java.util.HashSet<String>();
+        for (Object item : agenda) {
+            if (!(item instanceof Map<?, ?> entry) || !java.util.Set.of(
+                    "id", "character", "due_tick", "intention", "status").containsAll(entry.keySet()))
+                throw new IllegalArgumentException("Agenda 字段无效");
+            for (String field : List.of("id", "character", "intention")) {
+                if (!(entry.get(field) instanceof String text) || text.isBlank())
+                    throw new IllegalArgumentException("Agenda 文字字段无效");
+            }
+            if (!owner.equals(entry.get("character")) || !ids.add((String) entry.get("id")))
+                throw new IllegalArgumentException("Agenda 归属或 ID 无效");
+            validateTick(entry.get("due_tick"), false);
+            Object status = entry.containsKey("status") ? entry.get("status") : "pending";
+            if (!List.of("pending", "completed", "cancelled").contains(status))
+                throw new IllegalArgumentException("Agenda status 无效");
+        }
+    }
+
+    private static void validateTick(Object value, boolean nullable) {
+        if (value == null && nullable) return;
+        if (!(value instanceof Integer || value instanceof Long) || ((Number) value).longValue() < 0)
+            throw new IllegalArgumentException("时间必须是非负累计 Tick 序号");
+    }
+
+    /** 内部 runtime 可维护会话，但不能伪造说话事实；每条消息必须对应本世界已提交 talk。 */
+    private static void validateConversations(Object raw, Map<String, Object> world) {
+        if (!(raw instanceof List<?> sessions)) throw new IllegalArgumentException("Conversation 必须是列表");
+        var characters = (Map<?, ?>) world.get("characters");
+        var events = (List<?>) world.get("events");
+        var committed = new java.util.HashMap<Object, Map<?, ?>>();
+        var positions = new java.util.HashMap<Object, Integer>();
+        for (int index = 0; index < events.size(); index++) {
+            var event = (Map<?, ?>) events.get(index);
+            committed.put(event.get("id"), event); positions.put(event.get("id"), index);
+        }
+        var ids = new java.util.HashSet<Object>();
+        var participants = new java.util.HashSet<Object>();
+        var messageIds = new java.util.HashSet<Object>();
+        for (var item : sessions) {
+            if (!(item instanceof Map<?, ?> session) || !java.util.Set.of("id", "participants", "location", "status",
+                    "messages", "started_tick", "last_activity_tick", "next_speaker").equals(session.keySet()))
+                throw new IllegalArgumentException("Conversation 字段无效");
+            if (!(session.get("id") instanceof String id) || id.isBlank() || !ids.add(id)
+                    || !"active".equals(session.get("status"))) throw new IllegalArgumentException("Conversation ID / status 无效");
+            if (!(session.get("participants") instanceof List<?> names) || names.size() != 2
+                    || !characters.keySet().containsAll(names) || names.get(0).equals(names.get(1))
+                    || !names.contains(session.get("next_speaker"))) throw new IllegalArgumentException("Conversation participants 无效");
+            for (Object name : names) if (!participants.add(name))
+                throw new IllegalArgumentException("角色不能同时参与多个 active Conversation");
+            if (!((List<?>) world.get("locations")).contains(session.get("location")))
+                throw new IllegalArgumentException("Conversation location 无效");
+            validateTick(session.get("started_tick"), false); validateTick(session.get("last_activity_tick"), false);
+            long started = ((Number) session.get("started_tick")).longValue();
+            long previousTick = started;
+            int previousPosition = -1;
+            if (!(session.get("messages") instanceof List<?> messages) || messages.isEmpty() || messages.size() > 12)
+                throw new IllegalArgumentException("Conversation messages 数量无效");
+            Map<?, ?> lastEvent = null;
+            for (int index = 0; index < messages.size(); index++) {
+                if (!(messages.get(index) instanceof Map<?, ?> message) || !java.util.Set.of("speaker", "content", "tick", "event_id").equals(message.keySet()))
+                    throw new IllegalArgumentException("Conversation message 字段无效");
+                validateTick(message.get("tick"), false);
+                long tick = ((Number) message.get("tick")).longValue();
+                var event = committed.get(message.get("event_id"));
+                if (event == null || !messageIds.add(message.get("event_id")) || !"talk".equals(event.get("type"))
+                        || !names.contains(event.get("actor")) || !names.contains(event.get("target"))
+                        || event.get("actor").equals(event.get("target")) || !event.get("actor").equals(message.get("speaker"))
+                        || !event.get("location").equals(session.get("location"))
+                        || !((Map<?, ?>) event.get("payload")).get("message").equals(message.get("content"))
+                        || !(event.get("perceived_by") instanceof List<?> witnesses) || !witnesses.containsAll(names)
+                        || tick < previousTick || (index == 0 && tick != started)
+                        || positions.get(message.get("event_id")) <= previousPosition)
+                    throw new IllegalArgumentException("Conversation message 必须匹配真实 talk event 和顺序");
+                previousTick = tick; previousPosition = positions.get(message.get("event_id")); lastEvent = event;
+            }
+            if (((Number) session.get("last_activity_tick")).longValue() != previousTick
+                    || !lastEvent.get("target").equals(session.get("next_speaker")))
+                throw new IllegalArgumentException("Conversation 时间或轮次无效");
+        }
     }
 
     @McpTool(name = "introduce_narrative_event", description = "由规则触发的 Director 提议环境线索，Java 校验并结算")
@@ -154,12 +278,16 @@ public class WorldMcpTools {
         if (tickCount < 1) throw new IllegalArgumentException("Tick 数无效");
         var world = store.load(worldId);
         if (!((List<?>) world.get("locations")).contains(location)) throw new IllegalArgumentException("地点不存在：" + location);
-        var objects = (Map<String, Object>) world.get("inspectable_objects");
-        var place = (Map<String, Object>) objects.computeIfAbsent(location, ignored -> new LinkedHashMap<String, Object>());
+        WorldObjects.ensure(world);
+        var objects = WorldObjects.map(world.get("objects"));
         int sequence = ((List<?>) world.get("events")).size() + 1;
-        while (place.containsKey("新线索" + sequence)) sequence++;
+        while (objects.containsKey(WorldObjects.stableId("scene\0" + location + "\0新线索" + sequence))) sequence++;
         String objectName = "新线索" + sequence;
-        place.put(objectName, observation);
+        var object = WorldObjects.sceneObject(location, objectName, observation);
+        if (((Map<?, ?>) world.get("objects")).containsKey(object.get("id")))
+            throw new IllegalArgumentException("该线索已存在，不能覆盖其物理状态");
+        ((Map<String, Object>) world.get("objects")).put((String) object.get("id"), object);
+        WorldObjects.projectInventory(world);
         var event = new LinkedHashMap<String, Object>();
         event.put("id", UUID.randomUUID().toString().replace("-", ""));
         event.put("timestamp", world.get("time")); event.put("type", "director");

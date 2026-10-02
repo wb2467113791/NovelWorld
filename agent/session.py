@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from agent.graph import build_agent_loop_graph
+from agent.conversation import DecisionResult
 from agent.state import create_initial_agent_state
 from agent.tick import WorldTickScheduler
 from characters.model import Character
@@ -25,13 +26,13 @@ def make_graph_decide_action(
         answer = result["final_answer"]
         if answer is None:
             raise RuntimeError("NPC Graph 未返回最终回答")
-        return answer
+        return DecisionResult(answer, result.get("continue_conversation"))
 
     return decide_npc_action
 
 
 class WorldSession:
-    """按事件调度 NPC，并在每个 Tick 后保存记忆与调度进度。"""
+    """按事件和 Agenda 调度 NPC，并在每个 Tick 后保存记忆与调度进度。"""
 
     def __init__(self, decide_action: Callable[[Character], str], *,
                  save_path: Path, index: ChromaIndex,
@@ -50,9 +51,27 @@ class WorldSession:
             raise RuntimeError("世界会话需要已连接的世界服务")
         try:
             result = self.scheduler.run_tick(self.decide_action)
-            self.completed_ticks += 1
             return result
         finally:
+            # 时钟已推进但后续 Director 失败时，状态展示仍应与保存的累计 Tick 一致。
+            self.completed_ticks = self.scheduler.snapshot()["tick_count"]
             backend.save_agent_state(self.scheduler.snapshot())
             save_world(self.save_path, scheduler_state=self.scheduler.snapshot())
             self.index.sync_world(WORLD_STATE["characters"])
+
+    def player_action(self, action: str, arguments: dict) -> dict:
+        result = self.scheduler.run_player_action(action, arguments)
+        try:
+            self.save_runtime()
+        except Exception as error:
+            result["warning"] = f"行动已提交，运行状态保存失败：{error}"
+        return result
+
+    def save_runtime(self) -> None:
+        backend = active_backend()
+        if backend is None:
+            raise RuntimeError("世界服务尚未连接")
+        self.completed_ticks = self.scheduler.snapshot()["tick_count"]
+        backend.save_agent_state(self.scheduler.snapshot())
+        save_world(self.save_path, scheduler_state=self.scheduler.snapshot())
+        self.index.sync_world(WORLD_STATE["characters"])

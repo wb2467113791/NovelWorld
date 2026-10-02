@@ -68,18 +68,21 @@ class CurrentRuntimeTest(unittest.TestCase):
         self.assertEqual(requests[1][0][-1]["type"], "function_call_output")
         self.assertEqual(WORLD_STATE["characters"]["林默"].location, "县衙")
 
-    def test_failed_skill_tool_refreshes_plan_without_claiming_progress(self):
+    def test_failed_tool_keeps_professional_guidance_without_claiming_progress(self):
         su = WORLD_STATE["characters"]["苏晚"]
         responses = iter([
-            SimpleNamespace(output=[SimpleNamespace(type="function_call", name="conceal_clue",
-                arguments='{"character":"苏晚","object_name":"住客登记簿"}', call_id="hide-1")], output_text=""),
+            SimpleNamespace(output=[SimpleNamespace(type="function_call", name="take",
+                arguments='{"character":"苏晚","object_id":"test-ledger"}', call_id="hide-1")], output_text=""),
             SimpleNamespace(output=[], output_text="线索已变化，我先等待。"),
         ])
         requests = []
         backend = Mock()
 
         def reject_changed_clue(*_):
-            WORLD_STATE["inspectable_objects"][su.location].pop("住客登记簿")
+            from world.objects import current_objects
+            for item in current_objects().values():
+                if item["portable"] and item["holder"] is None:
+                    item["visible"] = False
             raise ValueError("线索已不在现场")
 
         backend.execute.side_effect = reject_changed_clue
@@ -97,23 +100,24 @@ class CurrentRuntimeTest(unittest.TestCase):
         self.assertEqual(result["final_answer"], "线索已变化，我先等待。")
         self.assertEqual(len(WORLD_STATE["events"]), before)
         self.assertIn("线索已不在现场", result["tool_results"][0]["output"])
-        self.assertIn("当前无可执行 Skill 步骤", requests[1][0][-1]["content"])
+        self.assertIn("保护与隐瞒专业知识", requests[1][0][-1]["content"])
+        self.assertNotIn("建议参数", requests[1][0][-1]["content"])
         self.assertTrue(requests[1][1])
 
     def test_old_snapshot_without_concealment_fields_restores(self):
         snapshot = deepcopy(snapshot_world())
-        snapshot.pop("concealable_objects")
-        snapshot.pop("concealed_objects")
+        snapshot.pop("objects")  # 模拟真正的旧存档；新存档只信任 objects。
+        snapshot["version"] = 1
         restore_snapshot(snapshot)
-        self.assertEqual(WORLD_STATE["concealable_objects"], {})
-        self.assertEqual(WORLD_STATE["concealed_objects"], {})
+        self.assertFalse({"inspectable_objects", "concealable_objects", "concealed_objects"} & WORLD_STATE.keys())
+        self.assertEqual(2, snapshot_world()["version"])
 
     def test_same_failed_tool_is_not_sent_to_java_twice_in_one_tick(self):
         index = Mock()
         index.retrieve_memory.return_value = []
         index.retrieve_lore.return_value = []
         state = create_initial_agent_state(WORLD_STATE["characters"]["苏晚"], index)
-        call = {"name": "conceal_clue", "arguments": '{"character":"苏晚","object_name":"住客登记簿"}',
+        call = {"name": "take", "arguments": '{"character":"苏晚","object_id":"test-ledger"}',
                 "call_id": "retry"}
         state["pending_tool_calls"] = [call]
         state["tool_results"] = [{**call, "call_id": "first", "output": "工具错误：线索已不在现场"}]
@@ -144,7 +148,9 @@ class CurrentRuntimeTest(unittest.TestCase):
         saved = scheduler.snapshot()
         restored = WorldTickScheduler()
         restored.restore(saved)
-        self.assertEqual(restored.run_tick(decide)["character"], "世界")
+        # 新事件仍只唤醒知情者，等待不会自造事件循环；到期 Agenda 是独立的长期来源。
+        next_result = restored.run_tick(decide)
+        self.assertEqual((next_result["character"], next_result["source"]), ("林默", "agenda"))
         self.assertEqual(calls.count("苏晚"), 2)
 
     def test_director_only_proposes_after_rule_and_never_moves_npc(self):
@@ -159,7 +165,7 @@ class CurrentRuntimeTest(unittest.TestCase):
         with patch("tools.remote_world.active_backend", return_value=backend):
             self.assertIsNone(director.maybe_inject(1))
             for actor in WORLD_STATE["characters"]:
-                committed_event("narration", actor, "无人行动")
+                committed_event("inspect", actor, "重复观察", payload={"observation": "无变化"})
             before = {name: person.location for name, person in WORLD_STATE["characters"].items()}
             event = director.maybe_inject(3)
         self.assertEqual(event["perceived_by"], ["苏晚"])
