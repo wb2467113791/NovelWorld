@@ -57,11 +57,17 @@ class AgentRuntimeState:
         return self.active_goal or ""
 
     def to_dict(self) -> dict:
+        self.prune_agenda()
         return asdict(self)
+
+    def prune_agenda(self) -> None:
+        """Agenda 只保存当前安排；终态不是历史日志，行为历史由 Event / Memory 表达。"""
+        self.agenda[:] = [entry for entry in self.agenda if entry.status == "pending"]
 
     def schedule_next_agenda(self, *, character: str, current_tick: int, goals: list[str]) -> AgendaEntry | None:
         """程序创建一次未来思考机会；不解析时间愿望，也不生成工具步骤。"""
         _tick(current_tick, "current_tick", nullable=False)
+        self.prune_agenda()
         pending = next((entry for entry in self.agenda if entry.status == "pending"), None)
         if pending is not None:
             return pending
@@ -94,7 +100,7 @@ class AgentRuntimeState:
             raise ValueError("Agenda 只能属于当前角色")
         if len({entry.id for entry in agenda}) != len(agenda):
             raise ValueError("Agenda ID 重复")
-        return cls(**{**data, "agenda": agenda})
+        return cls(**{**data, "agenda": [entry for entry in agenda if entry.status == "pending"]})
 
     def revised(self, changes: dict, *, character: str, goals: list[str]):
         """模型只修订目标、意图和计划；系统调度字段连清空也不允许。"""

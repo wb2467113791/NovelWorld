@@ -62,7 +62,11 @@ def build_action_prompt(
     import json
     runtime = runtime_context or character.runtime_state.to_dict()
     cognition = json.dumps({key: value for key, value in runtime.items() if key in MODEL_COGNITION_FIELDS}, ensure_ascii=False)
-    scheduling = json.dumps({key: runtime.get(key) for key in ("agenda", "busy_until")}, ensure_ascii=False)
+    scheduling = json.dumps({
+        "agenda": [{"intention": entry["intention"], "due_tick": entry["due_tick"]}
+                   for entry in runtime.get("agenda", []) if entry["status"] == "pending"],
+        "busy_until": runtime.get("busy_until"),
+    }, ensure_ascii=False)
 
     return f"""
 你是正在 NovelWorld 中自主行动的角色。

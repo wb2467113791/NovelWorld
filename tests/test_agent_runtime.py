@@ -14,6 +14,7 @@ from agent.session import WorldSession
 from agent.state import create_initial_agent_state
 from agent.tick import WorldTickScheduler
 from characters.model import Character
+from characters.prompt import build_action_prompt
 from skills.router import current_step
 from tools.remote_world import RemoteWorld
 from world.persistence import load_world, restore_snapshot, save_world, snapshot_world
@@ -211,8 +212,45 @@ class AgentRuntimeTest(unittest.TestCase):
         cognition = json.loads(prompt.split("【本人认知状态（意图，不是世界事实）】\n")[1].splitlines()[0])
         scheduling = json.loads(prompt.split("【系统调度状态（只读）】\n")[1].splitlines()[0])
         self.assertEqual(set(cognition), {"active_goal", "current_intention", "current_plan"})
-        self.assertEqual(scheduling, {"agenda": self.cognition().to_dict()["agenda"], "busy_until": 290})
+        self.assertEqual(scheduling, {"agenda": [{"intention": "继续调查", "due_tick": 300}], "busy_until": 290})
+        self.assertNotIn('"id": "visit"', prompt)
         self.assertIn("不得在 cognition 中写入或清空 agenda、busy_until", prompt)
+
+    def test_old_snapshot_history_is_pruned_but_pending_and_busy_restore(self):
+        saved = deepcopy(snapshot_world())
+        raw = self.cognition().to_dict()
+        raw["agenda"] += [dict(id=f"old-{i}", character="林默", due_tick=i,
+                               intention="已结束的活动", status="completed" if i % 2 else "cancelled")
+                          for i in range(1000)]
+        saved["characters"]["林默"]["runtime_state"] = raw
+        restore_snapshot(saved)
+        self.assertEqual(self.lin().runtime_state.to_dict(), self.cognition().to_dict())
+        self.assertEqual(len(self.lin().runtime_state.agenda), 1)
+
+    def test_mcp_payload_and_local_snapshot_exclude_terminal_agenda(self):
+        runtime = self.cognition()
+        runtime.agenda.extend(AgendaEntry(f"old-{i}", "林默", i, "历史安排", "cancelled") for i in range(1000))
+        self.lin().runtime_state = runtime
+        backend = RemoteWorld(WORLD_STATE["world_id"])
+        with patch.object(backend, "_call") as call:
+            backend.save_agent_state({"tick_count": 7})
+        payload = json.loads(call.call_args.args[1]["agentStateJson"])
+        self.assertEqual(payload["characters"]["林默"]["runtime_state"], self.cognition().to_dict())
+        self.assertEqual(snapshot_world()["characters"]["林默"]["runtime_state"], self.cognition().to_dict())
+        self.assertEqual(len(runtime.agenda), 1)
+
+    def test_prompt_projects_pending_only_even_with_historical_runtime_context(self):
+        raw = self.cognition().to_dict()
+        raw["agenda"][0]["id"] = "private-internal-uuid"
+        raw["agenda"].extend(dict(id=f"old-{status}", character="林默", due_tick=1,
+                                 intention=f"hidden-{status}-history", status=status)
+                             for status in ("completed", "cancelled"))
+        prompt = build_action_prompt(self.lin(), active_goal=self.lin().goals[1], memories=[],
+                                     retrieved_context=[], lore_context=[], observations=[], runtime_context=raw)
+        scheduling = json.loads(prompt.split("【系统调度状态（只读）】\n")[1].splitlines()[0])
+        self.assertEqual(scheduling, {"agenda": [{"intention": "继续调查", "due_tick": 300}], "busy_until": 290})
+        for private in ("private-internal-uuid", "hidden-completed-history", "hidden-cancelled-history"):
+            self.assertNotIn(private, prompt)
 
     def test_private_cognition_only_enters_owner_prompt(self):
         WORLD_STATE["characters"]["苏晚"].runtime_state.current_plan = "秘密计划：保护弟弟"

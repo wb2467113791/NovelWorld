@@ -89,6 +89,7 @@ class WorldTickScheduler:
         candidates = []
         for order, (name, character) in enumerate(WORLD_STATE["characters"].items()):
             runtime = character.runtime_state
+            runtime.prune_agenda()
             if character.status == "unconscious" or (
                 runtime.busy_until is not None and self._tick_count < runtime.busy_until
             ):
@@ -117,6 +118,7 @@ class WorldTickScheduler:
             elif scheduled["source"] != "agenda" and entry.due_tick <= self._tick_count:
                 # 事件优先获得机会后，保留提醒并冷却，避免下一 Tick 再次重复唤醒。
                 entry.due_tick = next_tick + DEFAULT_AGENDA_DELAY
+        runtime.prune_agenda()
         if character.status != "unconscious":
             runtime.schedule_next_agenda(character=character.name, current_tick=next_tick, goals=character.goals)
 

@@ -103,6 +103,21 @@ class WorldMcpToolsTest {
                 .get("林默")).get("runtime_state"));
         assertEquals(Map.of("tick_count", 0), reconnected.load(secondId).get("scheduler"));
 
+        // Python 清理后的当前 Agenda 替换旧列表，Java 快照不追加历史，也不改变世界业务字段。
+        for (int round = 0; round < 40; round++) {
+            phase2Runtime.put("agenda", List.of(Map.of("id", "pending-" + round, "character", "林默",
+                    "due_tick", 320 + round, "intention", "再次考虑调查方向", "status", "pending")));
+            tools.saveAgentState(firstId, mapper.writeValueAsString(payload));
+            var current = (Map<?, ?>) ((Map<?, ?>) reconnected.load(firstId).get("characters")).get("林默");
+            assertEquals(phase2Runtime, current.get("runtime_state"));
+            assertEquals(1, ((List<?>) ((Map<?, ?>) current.get("runtime_state")).get("agenda")).size());
+            assertEquals("县衙", current.get("location"));
+        }
+        phase2Runtime.put("agenda", List.of());
+        tools.saveAgentState(firstId, mapper.writeValueAsString(payload));
+        assertEquals(phase2Runtime, ((Map<?, ?>) ((Map<?, ?>) reconnected.load(firstId).get("characters"))
+                .get("林默")).get("runtime_state"));
+
         for (var invalid : List.of(Map.of("location", "晚风客栈"),
                 Map.of("current_plan", List.of("move", "inspect")),
                 Map.of("active_goal", "别人的目标"), Map.of("busy_until", true),

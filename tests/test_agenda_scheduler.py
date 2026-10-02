@@ -183,7 +183,7 @@ class AgendaSchedulerTest(unittest.TestCase):
             return "完成决策"
         scheduler.run_tick(action)
         current_agenda = self.character().runtime_state.agenda
-        self.assertEqual(next(item for item in current_agenda if item.id == entry.id).status, "completed")
+        self.assertFalse(any(item.id == entry.id for item in current_agenda))
         self.assertEqual([item.intention for item in current_agenda if item.status == "pending"], ["改为观察新信"])
 
     def test_program_creation_deduplicates_and_uses_intention_plan_or_goal(self):
@@ -219,6 +219,43 @@ class AgendaSchedulerTest(unittest.TestCase):
                                         for result in results), 3)
             self.assertEqual(sum(item.status == "pending" for item in self.character(name).runtime_state.agenda), 1)
         self.assertEqual(WORLD_STATE["events"], [])
+
+    def test_long_running_agenda_remains_bounded_in_runtime_and_saved_payload(self):
+        scheduler = WorldTickScheduler(director=None)
+        counts = {name: 0 for name in WORLD_STATE["characters"]}
+        for tick in range(1000):
+            result = scheduler.run_tick(self.decide)
+            if result["source"] == "agenda":
+                counts[result["character"]] += 1
+            for character in WORLD_STATE["characters"].values():
+                self.assertLessEqual(len(character.runtime_state.agenda), 1)
+                self.assertTrue(all(entry.status == "pending" for entry in character.runtime_state.agenda))
+            if tick % 100 == 0:
+                saved = deepcopy(snapshot_world(scheduler_state=scheduler.snapshot()))
+                for person in saved["characters"].values():
+                    self.assertLessEqual(len(person["runtime_state"]["agenda"]), 1)
+                scheduler.restore(restore_snapshot(saved))
+        self.assertTrue(all(count > 100 for count in counts.values()))
+        self.assertEqual(WORLD_STATE["events"], [])
+
+    def test_consumed_agenda_is_removed_even_when_no_next_agenda_can_be_created(self):
+        for status in ("normal", "unconscious"):
+            with self.subTest(status=status):
+                self.character().status = "normal"
+                entry = self.agenda()
+                def finish(character):
+                    character.goals = []
+                    character.status = status
+                    return "等待"
+                self.scheduler().run_tick(finish)
+                self.assertEqual(entry.status, "completed")
+                self.assertEqual(self.character().runtime_state.agenda, [])
+
+    def test_cancelled_agenda_is_removed_without_cancelling_other_pending(self):
+        self.agenda(status="cancelled")
+        pending = self.agenda(due=10)
+        self.assertEqual(self.scheduler().run_tick(self.decide)["source"], "idle")
+        self.assertEqual(self.character().runtime_state.agenda, [pending])
 
     def test_agenda_selection_does_not_use_skill_steps_or_force_actions(self):
         self.agenda(intention="想继续考虑调查方向")
@@ -278,8 +315,8 @@ class AgendaSchedulerTest(unittest.TestCase):
             restored = WorldTickScheduler()
             restored.restore(load_world(path))
             self.assertEqual(snapshot_world(scheduler_state=restored.snapshot()), expected)
-            self.assertEqual(self.character().runtime_state.agenda[0].id, entry.id)
-            self.assertEqual(self.character().runtime_state.agenda[0].status, "completed")
+            self.assertNotEqual(self.character().runtime_state.agenda[0].id, entry.id)
+            self.assertEqual(self.character().runtime_state.agenda[0].status, "pending")
             self.assertEqual(restored.run_tick(self.decide)["source"], "idle")
         self.backend.save_agent_state.assert_called_once_with(session.scheduler.snapshot())
 
@@ -323,8 +360,8 @@ class AgendaSchedulerTest(unittest.TestCase):
             self.assertEqual(session.completed_ticks, 1)
             saved = load_world(path)
             self.assertEqual(saved["tick_count"], 1)
-            self.assertEqual(self.character().runtime_state.agenda[0].status, "completed")
-            self.assertEqual(self.character().runtime_state.agenda[0].id, entry.id)
+            self.assertEqual(self.character().runtime_state.agenda[0].status, "pending")
+            self.assertNotEqual(self.character().runtime_state.agenda[0].id, entry.id)
 
     def test_done_and_cancelled_agendas_do_not_wake(self):
         self.agenda(status="completed")
