@@ -102,6 +102,7 @@ class RemoteWorld:
         remote = json.loads(self._call("get_world", {"worldId": self.world_id}))
         if WORLD_STATE.get("world_id") == self.world_id:
             local = snapshot_world()
+            remote["active_conversations"] = local["active_conversations"]
             for name, character in remote["characters"].items():
                 character["memory"] = local["characters"][name]["memory"]
                 character["semantic_memory"] = local["characters"][name]["semantic_memory"]
@@ -145,6 +146,7 @@ class RemoteWorld:
                 for name, character in snapshot["characters"].items()
             },
             "scheduler": scheduler_state,
+            "active_conversations": snapshot["active_conversations"],
             "events": [event for event in snapshot["events"] if event["type"] == "narration"],
         }
         self._call("save_agent_state", {

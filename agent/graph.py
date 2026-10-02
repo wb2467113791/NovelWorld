@@ -144,6 +144,14 @@ def build_agent_loop_graph(
                 cognition_error = f"认知更新未保存：{error}"
                 answer = cognition_error
         tool_calls = _extract_tool_calls(response) if allow_tools else []
+        continuation = state.get("continue_conversation")
+        if isinstance(envelope, dict) and "continue_conversation" in envelope:
+            if type(envelope["continue_conversation"]) is bool and isinstance(envelope.get("answer"), str):
+                continuation = envelope["continue_conversation"]
+                if cognition_error is None:
+                    answer = envelope["answer"]
+            else:
+                answer = "交流意愿未保存：continue_conversation 必须是布尔值且含 answer 文字"
         call_messages = [
             {
                 "type": "function_call",
@@ -164,6 +172,7 @@ def build_agent_loop_graph(
             "runtime_context": character.runtime_state.to_dict(),
             "pending_tool_calls": tool_calls,
             "final_answer": None if tool_calls else answer,
+            "continue_conversation": continuation,
         }
 
     builder = StateGraph(AgentState)

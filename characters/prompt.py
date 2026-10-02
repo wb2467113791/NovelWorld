@@ -67,6 +67,11 @@ def build_action_prompt(
                    for entry in runtime.get("agenda", []) if entry["status"] == "pending"],
         "busy_until": runtime.get("busy_until"),
     }, ensure_ascii=False)
+    from agent.conversation import context_for
+    current_conversation = context_for(character.name)
+    conversation_section = ("【当前交流（只读，仅本人会话）】\n"
+                            + json.dumps(current_conversation, ensure_ascii=False) + "\n"
+                            if current_conversation else "")
 
     return f"""
 你是正在 NovelWorld 中自主行动的角色。
@@ -94,6 +99,11 @@ def build_action_prompt(
 {cognition}
 【系统调度状态（只读）】
 {scheduling}
+{conversation_section}
+交流消息必须通过 talk 工具真实提交；普通回复文字不会发送给对方。
+可以输出 {{"continue_conversation": false, "answer": "结束交流的原因"}} 表达结束意愿，程序维护生命周期。
+不能在 cognition 或其他模型文本中创建或修改 ConversationSession、participants、消息、轮次和状态。
+会话轮次不调用 talk（包括等待）会结束本次交流；外部事件反应没有回复则可保留会话。
 每次结合最新观察重新考虑目标、意图与计划。Plan 只是一段粗粒度方向，可保留、修订或清空；
 不能是 Tool 步骤列表，不能据此声称行动已经完成。Skill 建议只是决策上下文。
 需要更新认知时，在本次回复文字中输出 JSON 对象：

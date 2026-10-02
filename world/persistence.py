@@ -7,6 +7,7 @@ from pathlib import Path
 
 from characters.model import Character
 from agent.runtime import AgentRuntimeState
+from agent.conversation import restore_sessions, sessions
 from lore.catalog import load_lore
 from memory.episodic import EpisodicArchive, MemoryEntry
 from memory.semantic import SemanticFact, SemanticMemory
@@ -91,6 +92,7 @@ def snapshot_world(*, scheduler_state: dict | None = None) -> dict:
         "concealed_objects": WORLD_STATE.get("concealed_objects", {}),
         "lore": WORLD_STATE["lore"],
         "events": WORLD_STATE["events"],
+        "active_conversations": [session.to_dict() for session in sessions() if session.status == "active"],
         "characters": {
             name: _character_to_dict(character)
             for name, character in WORLD_STATE["characters"].items()
@@ -109,6 +111,7 @@ def restore_snapshot(snapshot: dict) -> dict:
     }
     if not snapshot.get("world_id") or not characters:
         raise ValueError("世界存档缺少世界 ID 或角色")
+    conversations = restore_sessions(snapshot.get("active_conversations", []), characters, snapshot["events"])
     restored = {
         key: snapshot[key]
         for key in ("world_id", "time", "locations", "inspectables", "inspectable_objects", "events")
@@ -118,6 +121,7 @@ def restore_snapshot(snapshot: dict) -> dict:
     restored["concealable_objects"] = snapshot.get("concealable_objects", {})
     restored["concealed_objects"] = snapshot.get("concealed_objects", {})
     restored["characters"] = characters
+    restored["active_conversations"] = conversations
     WORLD_STATE.clear()
     WORLD_STATE.update(restored)
     return snapshot["scheduler"]

@@ -39,6 +39,8 @@ public class WorldMcpTools {
         if (worldId.isBlank() || "null".equals(worldId) || !(snapshot.get("characters") instanceof Map))
             throw new IllegalArgumentException("世界 ID 或角色缺失");
         snapshot.put("revision", 0);
+        if (snapshot.containsKey("active_conversations"))
+            validateConversations(snapshot.get("active_conversations"), snapshot);
         store.insert(worldId, snapshot);
         return worldId;
     }
@@ -119,6 +121,8 @@ public class WorldMcpTools {
         var characters = (Map<String, Object>) world.get("characters");
         var memories = (Map<String, Object>) state.get("characters");
         if (memories == null || !characters.keySet().equals(memories.keySet())) throw new IllegalArgumentException("角色集合不一致");
+        if (state.containsKey("active_conversations"))
+            validateConversations(state.get("active_conversations"), world);
         // 先验证所有角色的认知；意图不是世界事实，不能夹带业务字段或其他角色的 Agenda。
         for (var name : characters.keySet()) {
             var memory = (Map<String, Object>) memories.get(name);
@@ -133,6 +137,7 @@ public class WorldMcpTools {
             if (memory.containsKey("runtime_state")) person.put("runtime_state", memory.get("runtime_state"));
         }
         world.put("scheduler", state.get("scheduler"));
+        if (state.containsKey("active_conversations")) world.put("active_conversations", state.get("active_conversations"));
         var existingEvents = (List<Map<String, Object>>) world.get("events");
         var suppliedEvents = (List<Map<String, Object>>) state.get("events");
         if (suppliedEvents != null) {
@@ -184,6 +189,63 @@ public class WorldMcpTools {
         if (value == null && nullable) return;
         if (!(value instanceof Integer || value instanceof Long) || ((Number) value).longValue() < 0)
             throw new IllegalArgumentException("时间必须是非负累计 Tick 序号");
+    }
+
+    /** 内部 runtime 可维护会话，但不能伪造说话事实；每条消息必须对应本世界已提交 talk。 */
+    private static void validateConversations(Object raw, Map<String, Object> world) {
+        if (!(raw instanceof List<?> sessions)) throw new IllegalArgumentException("Conversation 必须是列表");
+        var characters = (Map<?, ?>) world.get("characters");
+        var events = (List<?>) world.get("events");
+        var committed = new java.util.HashMap<Object, Map<?, ?>>();
+        var positions = new java.util.HashMap<Object, Integer>();
+        for (int index = 0; index < events.size(); index++) {
+            var event = (Map<?, ?>) events.get(index);
+            committed.put(event.get("id"), event); positions.put(event.get("id"), index);
+        }
+        var ids = new java.util.HashSet<Object>();
+        var participants = new java.util.HashSet<Object>();
+        var messageIds = new java.util.HashSet<Object>();
+        for (var item : sessions) {
+            if (!(item instanceof Map<?, ?> session) || !java.util.Set.of("id", "participants", "location", "status",
+                    "messages", "started_tick", "last_activity_tick", "next_speaker").equals(session.keySet()))
+                throw new IllegalArgumentException("Conversation 字段无效");
+            if (!(session.get("id") instanceof String id) || id.isBlank() || !ids.add(id)
+                    || !"active".equals(session.get("status"))) throw new IllegalArgumentException("Conversation ID / status 无效");
+            if (!(session.get("participants") instanceof List<?> names) || names.size() != 2
+                    || !characters.keySet().containsAll(names) || names.get(0).equals(names.get(1))
+                    || !names.contains(session.get("next_speaker"))) throw new IllegalArgumentException("Conversation participants 无效");
+            for (Object name : names) if (!participants.add(name))
+                throw new IllegalArgumentException("角色不能同时参与多个 active Conversation");
+            if (!((List<?>) world.get("locations")).contains(session.get("location")))
+                throw new IllegalArgumentException("Conversation location 无效");
+            validateTick(session.get("started_tick"), false); validateTick(session.get("last_activity_tick"), false);
+            long started = ((Number) session.get("started_tick")).longValue();
+            long previousTick = started;
+            int previousPosition = -1;
+            if (!(session.get("messages") instanceof List<?> messages) || messages.isEmpty() || messages.size() > 12)
+                throw new IllegalArgumentException("Conversation messages 数量无效");
+            Map<?, ?> lastEvent = null;
+            for (int index = 0; index < messages.size(); index++) {
+                if (!(messages.get(index) instanceof Map<?, ?> message) || !java.util.Set.of("speaker", "content", "tick", "event_id").equals(message.keySet()))
+                    throw new IllegalArgumentException("Conversation message 字段无效");
+                validateTick(message.get("tick"), false);
+                long tick = ((Number) message.get("tick")).longValue();
+                var event = committed.get(message.get("event_id"));
+                if (event == null || !messageIds.add(message.get("event_id")) || !"talk".equals(event.get("type"))
+                        || !names.contains(event.get("actor")) || !names.contains(event.get("target"))
+                        || event.get("actor").equals(event.get("target")) || !event.get("actor").equals(message.get("speaker"))
+                        || !event.get("location").equals(session.get("location"))
+                        || !((Map<?, ?>) event.get("payload")).get("message").equals(message.get("content"))
+                        || !(event.get("perceived_by") instanceof List<?> witnesses) || !witnesses.containsAll(names)
+                        || tick < previousTick || (index == 0 && tick != started)
+                        || positions.get(message.get("event_id")) <= previousPosition)
+                    throw new IllegalArgumentException("Conversation message 必须匹配真实 talk event 和顺序");
+                previousTick = tick; previousPosition = positions.get(message.get("event_id")); lastEvent = event;
+            }
+            if (((Number) session.get("last_activity_tick")).longValue() != previousTick
+                    || !lastEvent.get("target").equals(session.get("next_speaker")))
+                throw new IllegalArgumentException("Conversation 时间或轮次无效");
+        }
     }
 
     @McpTool(name = "introduce_narrative_event", description = "由规则触发的 Director 提议环境线索，Java 校验并结算")

@@ -31,6 +31,7 @@ WORLD_STATE = {
     "concealed_objects": {},
     "lore": [asdict(entry) for entry in load_lore()],
     "events": [],
+    "active_conversations": [],
 }
 
 def advance_world_time(minutes: int) -> str:

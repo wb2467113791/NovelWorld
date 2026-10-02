@@ -4,6 +4,7 @@ from collections.abc import Callable
 from copy import deepcopy
 
 from agent.runtime import DEFAULT_AGENDA_DELAY
+from agent.conversation import accept_talk, end, expire, for_participant, sessions
 from characters.model import Character
 from memory.reflection import reflect_on_new_memories
 from tools.world_tools import execute_tool
@@ -16,7 +17,7 @@ MAX_REACTION_DEPTH = 3
 
 
 class WorldTickScheduler:
-    """事件优先，其次到期 Agenda；保留开局与 Skill 兼容机会。"""
+    """事件、会话轮次、Agenda；保留开局与 Skill 兼容机会。"""
 
     def __init__(self, director=None) -> None:
         self._tick_count = 0
@@ -66,11 +67,14 @@ class WorldTickScheduler:
         for event in events[self._event_cursor:]:
             if event["type"] in {"narration", "rest"}:
                 continue
+            conversational = accept_talk(event, self._tick_count)
             depth = 0 if event["actor"] == "世界" else self._current_depth + 1
             if depth > MAX_REACTION_DEPTH:
                 continue
             for name in recipients_for_event(event, WORLD_STATE["characters"]):
                 if name == event["actor"]:
+                    continue
+                if conversational and name == event["target"]:
                     continue
                 existing = next((item for item in awakened if item["name"] == name), None)
                 if existing is not None:
@@ -86,11 +90,17 @@ class WorldTickScheduler:
         if reaction is not None:
             self._pending.remove(reaction)
             return reaction
+        active = sessions()
+        if active:
+            conversation = min(enumerate(active), key=lambda item: (item[1].last_activity_tick, item[0]))[1]
+            name = conversation.next_speaker
+            self._pending = [item for item in self._pending if item["name"] != name]
+            return {"name": name, "depth": 0, "source": "conversation", "conversation_id": conversation.id}
         candidates = []
         for order, (name, character) in enumerate(WORLD_STATE["characters"].items()):
             runtime = character.runtime_state
             runtime.prune_agenda()
-            if character.status == "unconscious" or (
+            if for_participant(name) is not None or character.status == "unconscious" or (
                 runtime.busy_until is not None and self._tick_count < runtime.busy_until
             ):
                 continue
@@ -132,6 +142,7 @@ class WorldTickScheduler:
         if backend is None:
             raise RuntimeError("世界调度需要已连接的世界服务")
         backend.sync_events()
+        expire(self._tick_count)
         had_new_events = len(WORLD_STATE["events"]) > self._event_cursor
         self._collect_events()
         scheduled = self._select_opportunity()
@@ -140,7 +151,7 @@ class WorldTickScheduler:
         from skills.router import current_step
 
         # 只有旧兼容来源延续原 Skill 续排；Agenda 的节奏不取决于 Workflow 步骤。
-        skill_step = current_step(character) if character and scheduled["source"] != "agenda" else None
+        skill_step = current_step(character) if character and scheduled["source"] not in {"agenda", "conversation"} else None
         self._current_depth = scheduled["depth"] if scheduled else 0
         tick_time = WORLD_STATE["time"]
         event_count_before = len(WORLD_STATE["events"])
@@ -157,12 +168,27 @@ class WorldTickScheduler:
         except Exception as error:
             if len(WORLD_STATE["events"]) == event_count_before:
                 # 尚无已提交的行动，本次 Tick 不应消耗角色的轮次。
-                if scheduled and scheduled["source"] != "agenda":
+                if scheduled and scheduled["source"] not in {"agenda", "conversation"}:
                     self._pending.insert(0, scheduled)
                 raise
             # 工具已改变世界；模型的后续总结失败也不能重放同一行动。
             action_result = f"行动已发生，后续总结失败：{error}"
 
+        # 先登记真实 talk；总结失败仍只追加一次，并从独立会话轮次继续。
+        self._collect_events()
+        if character is not None:
+            conversation = for_participant(character.name)
+            if conversation is not None and (
+                getattr(action_result, "continue_conversation", None) is False or (
+                    scheduled["source"] == "conversation" and not any(
+                        event["type"] == "talk" and event["actor"] == character.name
+                        and event["target"] in conversation.participants
+                        for event in WORLD_STATE["events"][event_count_before:]
+                    )
+                )
+            ):
+                end(conversation)
+        expire(self._tick_count)
         # 先消费已完成的机会；即使后续推进时钟或 Director 出错，也不能重放已提交行动。
         if scheduled is not None:
             self._finish_opportunity(scheduled)
@@ -196,4 +222,5 @@ class WorldTickScheduler:
             "action_result": action_result,
             "source": scheduled["source"] if scheduled else "idle",
             "agenda_id": scheduled.get("agenda_id", "") if scheduled else "",
+            "conversation_id": scheduled.get("conversation_id", "") if scheduled else "",
         }

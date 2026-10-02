@@ -19,7 +19,7 @@ class AgentStateTest(unittest.TestCase):
             {
                 "npc_id", "goal", "runtime_context", "memories", "retrieved_context", "lore_context", "perception", "observations", "step",
                 "pending_tool_calls", "tool_results", "conversation",
-                "final_answer",
+                "final_answer", "continue_conversation",
             },
         )
         self.assertEqual(state["npc_id"], "林默")

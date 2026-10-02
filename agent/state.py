@@ -34,6 +34,8 @@ class AgentState(TypedDict):
     conversation: list[dict[str, Any]]
     # 模型给出的最终文字回答；尚未结束时为 None。
     final_answer: str | None
+    # 模型仅表达是否想继续交流；Session 生命周期由 Scheduler 维护。
+    continue_conversation: bool | None
 
 
 class ToolCall(TypedDict):
@@ -72,4 +74,5 @@ def create_initial_agent_state(
         "tool_results": [],
         "conversation": [],
         "final_answer": None,
+        "continue_conversation": None,
     }

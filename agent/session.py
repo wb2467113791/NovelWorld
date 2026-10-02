@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from agent.graph import build_agent_loop_graph
+from agent.conversation import DecisionResult
 from agent.state import create_initial_agent_state
 from agent.tick import WorldTickScheduler
 from characters.model import Character
@@ -25,7 +26,7 @@ def make_graph_decide_action(
         answer = result["final_answer"]
         if answer is None:
             raise RuntimeError("NPC Graph 未返回最终回答")
-        return answer
+        return DecisionResult(answer, result.get("continue_conversation"))
 
     return decide_npc_action
 
