@@ -49,6 +49,7 @@ def _character_to_dict(character: Character) -> dict:
         "facts": [asdict(fact) for fact in semantic.current_facts()],
         "superseded_event_ids": sorted(semantic.superseded_event_ids),
     }
+    character.runtime_state.select_goal(character.goals)
     result["runtime_state"] = character.runtime_state.to_dict()
     result["items"] = inventory(character)
     return result
@@ -119,12 +120,10 @@ def restore_snapshot(snapshot: dict) -> dict:
         character.items = [item["name"] for item in objects.values() if item["holder"] == name]
     restored = {
         key: snapshot[key]
-        for key in ("world_id", "time", "locations", "inspectables", "inspectable_objects", "events")
+        for key in ("world_id", "time", "locations", "inspectables", "events")
     }
     # V1 存档没有独立 lore；仅旧存档沿用当时的默认设定。
     restored["lore"] = snapshot.get("lore", [asdict(entry) for entry in load_lore()])
-    restored["concealable_objects"] = snapshot.get("concealable_objects", {})
-    restored["concealed_objects"] = snapshot.get("concealed_objects", {})
     restored["characters"] = characters
     restored["active_conversations"] = conversations
     restored["objects"] = objects

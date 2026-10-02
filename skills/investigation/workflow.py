@@ -14,25 +14,6 @@ class InvestigationStep:
     reason: str
 
 
-def completed_step(step: InvestigationStep | None, event: dict, actor: str) -> bool:
-    """只用 Java 已提交事件确认建议步骤确实完成。"""
-    if step is None or event["actor"] != actor:
-        return False
-    if step.tool == "move_character":
-        return event["type"] == "move" and event["location"] == step.arguments["location"]
-    if step.tool == "inspect":
-        return event["type"] == "inspect" and (event["payload"].get("object_id") == step.arguments["object_id"] if "object_id" in step.arguments else event["payload"].get("object_name") == step.arguments["object_name"])
-    if step.tool == "take":
-        return event["type"] == "take" and event["payload"].get("object_id") == step.arguments["object_id"]
-    if step.tool == "talk":
-        return event["type"] == "talk" and event["target"] == step.arguments["listener"]
-    if step.tool == "recover_clue":
-        return event["type"] == "recover" and event["payload"].get("object_name") == step.arguments["object_name"]
-    if step.tool == "conceal_clue":
-        return event["type"] == "conceal" and event["payload"].get("object_name") == step.arguments["object_name"]
-    return False
-
-
 def _is_investigator(character: Character, goal: str) -> bool:
     return "捕快" in character.role or goal.startswith(("调查", "查明", "追查", "寻找线索"))
 

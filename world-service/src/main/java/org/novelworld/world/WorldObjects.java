@@ -7,7 +7,7 @@ import java.util.*;
 /** 小型对象模型与明确的基础动作；不存在脚本、registry 或第二套 inventory。 */
 final class WorldObjects {
     private WorldObjects() {}
-    static final Set<String> TOOLS = Set.of("inspect", "take", "put", "give", "use", "interact", "give_item", "conceal_clue", "recover_clue");
+    static final Set<String> TOOLS = Set.of("inspect", "take", "put", "give", "use", "interact");
     static final Set<String> ACTIONS = Set.of("open", "close", "light", "extinguish", "consume");
     static final Set<String> PROPERTIES = Set.of("container", "heal", "legacy_concealable", "trace_for", "hidden_at_index");
     @SuppressWarnings("unchecked") static Map<String, Object> map(Object value) { return (Map<String, Object>) value; }
@@ -40,6 +40,7 @@ final class WorldObjects {
         return result;
     }
     static void ensure(Map<String, Object> world) {
+        // legacy migration only：objects 缺失时才读取旧字典和 items。
         if (!world.containsKey("objects")) {
             var objects = new LinkedHashMap<String, Object>();
             var allowed = map(world.getOrDefault("concealable_objects", Map.of()));
@@ -134,6 +135,7 @@ final class WorldObjects {
             if (item == null) throw new IllegalArgumentException("Object 不存在");
             return item;
         }
+        // Deprecated name 参数兼容；正式 NPC schema 使用 object_id。
         String label = text(args.containsKey("object_name") ? args.get("object_name") : args.get("item"));
         var found = objects.values().stream().map(WorldObjects::map).filter(item -> label.equals(item.get("name"))
                 && Objects.equals(location(world, item), map(map(world.get("characters")).get(actor)).get("location"))).toList();
@@ -164,10 +166,10 @@ final class WorldObjects {
     }
     static String apply(Map<String, Object> world, String tool, Map<String, Object> args) {
         ensure(world);
-        String actor = text(args.get("give_item".equals(tool) ? "giver" : "character"));
+        String actor = text(args.get("character"));
         var person = map(map(world.get("characters")).get(actor));
         if (person == null) throw new IllegalArgumentException("角色不存在：" + actor);
-        int cost = "inspect".equals(tool) || Set.of("conceal_clue", "recover_clue").contains(tool) ? 3 : 2;
+        int cost = "inspect".equals(tool) ? 3 : 2;
         if ("unconscious".equals(person.get("status")) || ((Number) person.get("energy")).intValue() < cost) throw new IllegalArgumentException("角色失去行动能力或体力不足");
         String place = (String) person.get("location"), type = tool, target = null, result;
         var payload = new LinkedHashMap<String, Object>();
@@ -211,7 +213,7 @@ final class WorldObjects {
                 }
                 item.put("holder", null); result = actor + "放下了" + item.get("name") + "。"; payload.put("container_id", item.get("container")); break;
             }
-            case "give", "give_item": {
+            case "give": {
                 target = text(args.get("receiver")); var receiver = map(map(world.get("characters")).get(target));
                 if (actor.equals(target) || receiver == null || !place.equals(receiver.get("location")) || "unconscious".equals(receiver.get("status")) || !actor.equals(item.get("holder")))
                     throw new IllegalArgumentException("交付要求本人持有且双方可行动、同地点");
@@ -238,28 +240,6 @@ final class WorldObjects {
                 }
                 item.put("state", after); payload.put("action", action); payload.put("state_before", before); payload.put("state_after", after);
                 result = actor + "对" + item.get("name") + "执行了" + action + "。"; break;
-            }
-            case "conceal_clue": {
-                if (!visible(world, item, actor) || item.get("holder") != null || !Boolean.TRUE.equals(map(item.get("properties")).get("legacy_concealable"))) throw new IllegalArgumentException("该对象不能通过旧藏匿工具处理");
-                String traceName = item.get("name") + "被移动的痕迹"; String id = stableId("scene\0" + place + "\0" + traceName);
-                if (map(world.get("objects")).containsKey(id)) throw new IllegalArgumentException("现场已有痕迹");
-                var trace = sceneObject(place, traceName, "此处有物件被移走的痕迹，无法直接查看原内容。");
-                trace.put("portable", false); map(trace.get("properties")).put("trace_for", item.get("id"));
-                int index = list(world.get("events")).size(); map(trace.get("properties")).put("hidden_at_index", index);
-                map(item.get("properties")).put("hidden_at_index", index); item.put("visible", false); map(world.get("objects")).put(id, trace);
-                type = "conceal"; payload.put("trace_name", traceName); result = actor + "藏起了" + item.get("name") + "，留下可调查痕迹。"; break;
-            }
-            case "recover_clue": {
-                String traceId = stableId("scene\0" + place + "\0" + item.get("name") + "被移动的痕迹");
-                var trace = map(map(world.get("objects")).get(traceId)); int since = ((Number) map(item.get("properties")).getOrDefault("hidden_at_index", 0)).intValue();
-                boolean examined = false; var history = list(world.get("events"));
-                for (int index = since + 1; index < history.size(); index++) {
-                    var event = map(history.get(index)); var old = map(event.get("payload"));
-                    if ("inspect".equals(event.get("type")) && actor.equals(event.get("actor")) && (traceId.equals(old.get("object_id")) || (trace != null && trace.get("name").equals(old.get("object_name"))))) examined = true;
-                }
-                if (!place.equals(location(world, item)) || Boolean.TRUE.equals(item.get("visible")) || trace == null || !examined) throw new IllegalArgumentException("需先亲自调查当前异常痕迹");
-                item.put("visible", true); map(world.get("objects")).remove(traceId); type = "recover";
-                result = actor + "找回了" + item.get("name") + "；尚未调查原件。"; break;
             }
             default: throw new IllegalArgumentException("未知对象动作");
         }

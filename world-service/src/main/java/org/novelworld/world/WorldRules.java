@@ -12,9 +12,7 @@ public class WorldRules {
     private static final Pattern REVIEW_CLAIM = Pattern.compile("(?:我|本人)(?:已|已经)?(?:看过|查过|翻过|过目|调查过|核对过|看了|查了|调查了)");
     private static final Map<String, String> OBJECT_ALIASES = Map.of("住客登记簿", "登记簿", "柴房门锁", "柴房");
     private static final Map<String, Integer> ENERGY_COSTS = Map.of(
-            "move_character", 5, "inspect", 3, "talk", 2,
-            "give_item", 2, "update_relationship", 1,
-            "conceal_clue", 3, "recover_clue", 3);
+            "move_character", 5, "talk", 2, "update_relationship", 1);
     @SuppressWarnings("unchecked")
     private static Map<String, Object> map(Object value) { return (Map<String, Object>) value; }
     @SuppressWarnings("unchecked")
@@ -53,6 +51,8 @@ public class WorldRules {
     }
 
     public String apply(Map<String, Object> world, String name, Map<String, Object> args) {
+        var request = LegacyWorldTools.normalize(name, args);
+        name = request.name(); args = request.arguments();
         WorldObjects.ensure(world);
         if (WorldObjects.TOOLS.contains(name)) return WorldObjects.apply(world, name, args);
         if ("world_action".equals(name)) return applyWorldAction(world, args);
@@ -149,12 +149,6 @@ public class WorldRules {
     /** 新动作首版均使用确定性规则；模型只能提出意图。 */
     private String applyWorldAction(Map<String, Object> world, Map<String, Object> args) {
         String action = str(args, "action");
-        if (List.of("use_item", "interact").contains(action)) {
-            var request = new LinkedHashMap<>(args);
-            request.put("character", args.get("actor"));
-            request.put("action", "use_item".equals(action) ? "consume" : args.get("interaction"));
-            return WorldObjects.apply(world, "use_item".equals(action) ? "use" : "interact", request);
-        }
         String actor = str(args, "actor");
         var person = character(world, actor);
         String location = (String) person.get("location");

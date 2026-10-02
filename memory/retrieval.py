@@ -24,6 +24,7 @@ def eligible_archived_entries(character: Character) -> list[tuple[int, MemoryEnt
     inspect_event_ids = semantic.superseded_event_ids | {
         fact.source_event_id for fact in semantic.current_facts()
     }
+    # legacy history only：旧无工具叙述不是调查证据。
     return [
         (index, entry)
         for index, entry in enumerate(character.memory.archived_entries())

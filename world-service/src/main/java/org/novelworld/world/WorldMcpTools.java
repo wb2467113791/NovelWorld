@@ -69,12 +69,10 @@ public class WorldMcpTools {
         var world = store.load(worldId);
         if (!((List<?>) world.get("locations")).contains(location)) throw new IllegalArgumentException("地点不存在：" + location);
         WorldObjects.ensure(world);
-        var objects = (Map<String, Object>) world.get("inspectable_objects");
-        var place = (Map<String, Object>) objects.computeIfAbsent(location, ignored -> new LinkedHashMap<String, Object>());
-        var hidden = (Map<String, Object>) world.getOrDefault("concealed_objects", Map.of());
-        var hiddenPlace = (Map<String, Object>) hidden.getOrDefault(location, Map.of());
-        if (place.containsKey(objectName) || hiddenPlace.containsKey(objectName))
-            throw new IllegalArgumentException("该地点已有同名线索");
+        var objects = WorldObjects.map(world.get("objects"));
+        if (objects.values().stream().map(WorldObjects::map).anyMatch(item -> objectName.equals(item.get("name"))
+                && location.equals(WorldObjects.location(world, item))))
+            throw new IllegalArgumentException("该地点已有同名对象");
         var object = WorldObjects.sceneObject(location, objectName, observation);
         if (((Map<?, ?>) world.get("objects")).containsKey(object.get("id")))
             throw new IllegalArgumentException("该线索已存在，不能覆盖其物理状态");
@@ -105,7 +103,7 @@ public class WorldMcpTools {
             case "give_item" -> "giver";
             case "world_action" -> "actor";
             case "inspect", "take", "put", "give", "use", "interact", "update_relationship", "move_character",
-                    "rest_character", "conceal_clue", "recover_clue" -> "character";
+                    "rest_character" -> "character";
             default -> null;
         };
         if (actorKey != null && !actingCharacter.equals(arguments.get(actorKey)))
@@ -129,6 +127,9 @@ public class WorldMcpTools {
         var state = parse(agentStateJson);
         var characters = (Map<String, Object>) world.get("characters");
         var memories = (Map<String, Object>) state.get("characters");
+        // 旧客户端的空 events 可兼容；任何新事件只能由 Java 世界行动产生。
+        if (state.containsKey("events") && (!(state.get("events") instanceof List<?> events) || !events.isEmpty()))
+            throw new IllegalArgumentException("Agent 状态保存不能创建世界事件");
         if (memories == null || !characters.keySet().equals(memories.keySet())) throw new IllegalArgumentException("角色集合不一致");
         if (state.containsKey("active_conversations"))
             validateConversations(state.get("active_conversations"), world);
@@ -147,15 +148,6 @@ public class WorldMcpTools {
         }
         world.put("scheduler", state.get("scheduler"));
         if (state.containsKey("active_conversations")) world.put("active_conversations", state.get("active_conversations"));
-        var existingEvents = (List<Map<String, Object>>) world.get("events");
-        var suppliedEvents = (List<Map<String, Object>>) state.get("events");
-        if (suppliedEvents != null) {
-            var ids = existingEvents.stream().map(event -> event.get("id")).collect(java.util.stream.Collectors.toSet());
-            for (var event : suppliedEvents) {
-                if (!"narration".equals(event.get("type"))) throw new IllegalArgumentException("只能同步叙述事件");
-                if (ids.add(event.get("id"))) existingEvents.add(event);
-            }
-        }
         store.update(worldId, world);
         return String.valueOf(world.get("revision"));
     }
@@ -273,11 +265,9 @@ public class WorldMcpTools {
         var world = store.load(worldId);
         if (!((List<?>) world.get("locations")).contains(location)) throw new IllegalArgumentException("地点不存在：" + location);
         WorldObjects.ensure(world);
-        var objects = (Map<String, Object>) world.get("inspectable_objects");
-        var place = (Map<String, Object>) objects.computeIfAbsent(location, ignored -> new LinkedHashMap<String, Object>());
+        var objects = WorldObjects.map(world.get("objects"));
         int sequence = ((List<?>) world.get("events")).size() + 1;
-        while (place.containsKey("新线索" + sequence) || ((Map<?, ?>) world.get("objects")).containsKey(
-                WorldObjects.stableId("scene\0" + location + "\0新线索" + sequence))) sequence++;
+        while (objects.containsKey(WorldObjects.stableId("scene\0" + location + "\0新线索" + sequence))) sequence++;
         String objectName = "新线索" + sequence;
         var object = WorldObjects.sceneObject(location, objectName, observation);
         if (((Map<?, ?>) world.get("objects")).containsKey(object.get("id")))

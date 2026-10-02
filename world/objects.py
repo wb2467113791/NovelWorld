@@ -23,6 +23,7 @@ def make_object(name: str, location: str | None, description: str, *, holder=Non
 
 
 def migrate(snapshot: dict) -> dict:
+    """legacy migration only：objects 存在时忽略旧物件字段。"""
     if "objects" in snapshot:
         return deepcopy(snapshot["objects"])
     result = {}

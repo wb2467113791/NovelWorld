@@ -36,14 +36,13 @@ class Director:
             return "stagnation", self.occupied_location()
         if tick_count < 3:
             return None
-        history = [event for event in WORLD_STATE["events"] if event["type"] != "director"]
+        history = [event for event in WORLD_STATE["events"] if event["type"] not in {"director", "narration"}]
         recent = history[-6:]
-        if len(history) >= 3 and (all(event["type"] == "narration" for event in history[-3:])
-                                  or len({event["description"] for event in history[-3:]}) == 1):
+        if len(history) >= 3 and len({event["description"] for event in history[-3:]}) == 1:
             return "stagnation", self.occupied_location("晚风客栈")
 
         if tick_count >= 6:
-            active = {event["actor"] for event in recent if event["type"] not in {"narration"}}
+            active = {event["actor"] for event in recent}
             quiet = [name for name in WORLD_STATE["characters"] if name not in active]
             if quiet:
                 return "participation", WORLD_STATE["characters"][quiet[0]].location

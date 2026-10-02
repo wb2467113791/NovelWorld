@@ -80,37 +80,15 @@ class WorldRulesTest {
         assertEquals(1, ((List<?>) world.get("events")).size());
     }
 
-    @Test void concealmentRequiresOptInAndInvestigatorMustExamineTrace() {
+    @Test void removedPlotToolsCannotMutateObjects() {
         var world = world();
-        assertThrows(IllegalArgumentException.class, () -> rules.apply(world, "conceal_clue",
-                Map.of("character", "苏晚", "object_name", "账簿")));
-        world.put("concealable_objects", Map.of("客栈", List.of("账簿")));
-        world.put("inspectable_objects", new LinkedHashMap<>(Map.of("客栈",
-                new LinkedHashMap<>(Map.of("账簿", "只有调查原件才能知道的内容")))));
-        world.remove("objects"); // 上面重新构造旧格式输入，重新走迁移；运行中不能反向写旧视图。
-        rules.apply(world, "conceal_clue", Map.of("character", "苏晚", "object_name", "账簿"));
-        var place = (Map<?, ?>) ((Map<?, ?>) world.get("inspectable_objects")).get("客栈");
-        assertFalse(place.containsKey("账簿"));
-        assertTrue(place.containsKey("账簿被移动的痕迹"));
-        assertThrows(IllegalArgumentException.class, () -> rules.apply(world, "inspect",
-                Map.of("character", "苏晚", "object_name", "账簿")));
-        assertThrows(IllegalArgumentException.class, () -> rules.apply(world, "conceal_clue",
-                Map.of("character", "苏晚", "object_name", "账簿")));
-        rules.apply(world, "move_character", Map.of("character", "林默", "location", "客栈"));
-        assertThrows(IllegalArgumentException.class, () -> rules.apply(world, "recover_clue",
-                Map.of("character", "林默", "object_name", "账簿")));
-        rules.apply(world, "inspect", Map.of("character", "林默", "object_name", "账簿被移动的痕迹"));
-        rules.apply(world, "recover_clue", Map.of("character", "林默", "object_name", "账簿"));
-        var recovered = (Map<?, ?>) ((Map<?, ?>) world.get("inspectable_objects")).get("客栈");
-        assertEquals("只有调查原件才能知道的内容", recovered.get("账簿"));
-        assertFalse(recovered.containsKey("账簿被移动的痕迹"));
-        assertThrows(IllegalArgumentException.class, () -> rules.apply(world, "recover_clue",
-                Map.of("character", "林默", "object_name", "账簿")));
-        rules.apply(world, "conceal_clue", Map.of("character", "苏晚", "object_name", "账簿"));
-        assertThrows(IllegalArgumentException.class, () -> rules.apply(world, "recover_clue",
-                Map.of("character", "林默", "object_name", "账簿")));
-        assertDoesNotThrow(() -> rules.apply(world, "inspect",
-                Map.of("character", "林默", "object_name", "账簿被移动的痕迹")));
+        WorldObjects.ensure(world);
+        var before = new tools.jackson.databind.ObjectMapper().writeValueAsString(world);
+        for (String tool : List.of("conceal_clue", "recover_clue")) {
+            assertThrows(IllegalArgumentException.class, () -> rules.apply(world, tool,
+                    Map.of("character", "苏晚", "object_name", "账簿")));
+            assertEquals(before, new tools.jackson.databind.ObjectMapper().writeValueAsString(world));
+        }
     }
 
     @Test void speechCannotInventAnInspection() {

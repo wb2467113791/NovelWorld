@@ -73,8 +73,5 @@ def summarize_event(event: Event, observer: str) -> str:
     if kind == "director":
         return f"我在{location}注意到：{event['description']}"
 
-    if kind in {"conceal", "recover"}:
-        return event["description"]
-
-    # narration 是 NPC 本轮未执行工具时的文字，本身没有更多结构化细节。
+    # legacy migration only：旧 narration/conceal/recover 历史仍可显示原描述。
     return event["description"]

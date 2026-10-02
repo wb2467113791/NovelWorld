@@ -15,6 +15,7 @@ def observe(character: Character) -> list[str]:
     ]
     from world.objects import visible_objects
     observations.extend(f"可见对象：{item['name']}（ID={item['id']}，state={item['state']}）" for item in visible_objects(character))
+    # legacy history only：旧 narration 不代表已发生的世界行动。
     witnessed = [
         event for event in WORLD_STATE["events"]
         if character.name in event.get("perceived_by", [event["actor"]])

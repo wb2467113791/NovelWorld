@@ -41,7 +41,7 @@ NPC_ACTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "name": "inspect",
-        "description": "调查角色当前地点；优先用 object_id 查看本轮 Prompt 列出的可见对象，object_name 仅为旧客户端兼容。重复调查未变化的内容不会产生新发现。",
+        "description": "调查角色当前地点；用 object_id 查看本轮 Prompt 列出的可见对象。重复调查未变化的内容不会产生新发现。",
         "parameters": {
             "type": "object",
             "properties": {
@@ -49,10 +49,6 @@ NPC_ACTION_TOOL_SCHEMAS = [
                 "character": {
                     "type": "string",
                     "description": "执行调查的角色名称，例如苏晚或林默。",
-                },
-                "object_name": {
-                    "type": "string",
-                    "description": "可选的当地调查对象名称；省略时调查所在地点。",
                 },
             },
             "required": ["character"],
@@ -125,20 +121,6 @@ NPC_ACTION_TOOL_SCHEMAS = [
     },
     {
         "type": "function",
-        "name": "give_item",
-        "description": "旧客户端兼容入口；新行动优先 give + object_id，把本人持有物件交给同地点角色。",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "giver": {"type": "string", "description": "交付物品的角色名称。"},
-                "receiver": {"type": "string", "description": "接收物品的角色名称。"},
-                "item": {"type": "string", "description": "要交付的物品名称。"},
-            },
-            "required": ["giver", "receiver", "item"],
-        },
-    },
-    {
-        "type": "function",
         "name": "rest_character",
         "description": "休息一轮，恢复20点体力，上限100。移动消耗5点，调查3点，对话和交付2点，修改关系1点。体力不足时应休息。",
         "parameters": {
@@ -159,9 +141,7 @@ NPC_ACTION_TOOL_SCHEMAS = [
             "action": {"type": "string", "enum": ["attack", "flee", "follow"]},
             "actor": {"type": "string"},
             "target": {"type": "string"},
-            "item": {"type": "string"},
             "location": {"type": "string"},
-            "object_name": {"type": "string"},
         }, "required": ["action", "actor"]},
     },
 ]
@@ -179,8 +159,8 @@ for name, description, extra, required in (
         "parameters": {"type": "object", "properties": {"character": {"type": "string"}, "object_id": {"type": "string"}, **extra},
                        "required": ["character", "object_id", *required], "additionalProperties": False}})
 
-# 已有客户端仍可调用 deprecated wrapper；模型工具集不再暴露专用藏匿动作。
-TOOL_NAMES = frozenset(schema["name"] for schema in NPC_ACTION_TOOL_SCHEMAS) | {"conceal_clue", "recover_clue"}
+# 正常 Python 仅接受正式 NPC 工具；旧外部参数兼容只在 Java 边界。
+TOOL_NAMES = frozenset(schema["name"] for schema in NPC_ACTION_TOOL_SCHEMAS)
 TOOL_ACTOR_ARGUMENTS = {
     "take": "character", "put": "character", "give": "character", "use": "character", "interact": "character",
     "world_action": "actor",
@@ -188,10 +168,7 @@ TOOL_ACTOR_ARGUMENTS = {
     "talk": "speaker",
     "update_relationship": "character",
     "move_character": "character",
-    "give_item": "giver",
     "rest_character": "character",
-    "conceal_clue": "character",
-    "recover_clue": "character",
 }
 
 
@@ -203,6 +180,8 @@ def execute_tool(
     """校验当前角色并通过 MCP 请求 Java；等待不生成世界事件。"""
     if name not in TOOL_NAMES:
         raise ValueError(f"未知工具：{name}")
+    if name == "world_action" and arguments.get("action") not in {"attack", "flee", "follow"}:
+        raise ValueError("正式 world_action 仅支持 attack、flee、follow")
     actor_argument = TOOL_ACTOR_ARGUMENTS.get(name)
     if actor_argument and arguments.get(actor_argument) != acting_character:
         raise ValueError(f"{acting_character}不能通过{name}替其他角色行动")

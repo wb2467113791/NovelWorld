@@ -17,7 +17,7 @@ MAX_REACTION_DEPTH = 3
 
 
 class WorldTickScheduler:
-    """事件、会话轮次、Agenda；保留开局与 Skill 兼容机会。"""
+    """事件、会话轮次、Agenda；仅保留一次开局机会。"""
 
     def __init__(self, director=None) -> None:
         self._tick_count = 0
@@ -28,16 +28,13 @@ class WorldTickScheduler:
                                     for name in WORLD_STATE["characters"]]
 
     def snapshot(self) -> dict:
-        from skills.router import skill_view
         return {"tick_count": self._tick_count, "event_cursor": self._event_cursor,
-                "pending": deepcopy(self._pending), "current_depth": self._current_depth,
-                "skill_views": {name: view for name, character in WORLD_STATE["characters"].items()
-                                if (view := skill_view(character)) is not None}}
+                "pending": deepcopy(self._pending), "current_depth": self._current_depth}
 
     def restore(self, state: dict) -> None:
         tick_count = state["tick_count"]
         cursor = state.get("event_cursor", len(WORLD_STATE["events"]))
-        pending = state.get("pending", self._pending)
+        pending = state.get("pending", [])
         depth = state.get("current_depth", 0)
         if not isinstance(tick_count, int) or tick_count < 0:
             raise ValueError("存档中的 Tick 数无效")
@@ -56,8 +53,18 @@ class WorldTickScheduler:
             raise ValueError("存档中的连锁反应层级无效")
         self._tick_count = tick_count
         self._event_cursor = cursor
-        # 旧快照无法区分来源；保留顺序并按事件优先级处理，避免降低已保存反应的优先级。
-        self._pending = [{**item, "source": item.get("source", "legacy")} for item in pending]
+        # legacy migration only：旧 Skill 队列转为 Agenda，不再恢复调度特权。
+        # 无 source 的历史队列仍可能包含真实事件，保留原顺序和反应优先级。
+        self._pending = []
+        for item in pending:
+            if item.get("source") == "skill":
+                character = WORLD_STATE["characters"][item["name"]]
+                entry = character.runtime_state.schedule_next_agenda(
+                    character=character.name, current_tick=tick_count, goals=character.goals)
+                if entry is not None:
+                    entry.due_tick = min(entry.due_tick, tick_count)
+            else:
+                self._pending.append({**item, "source": item.get("source", "legacy")})
         self._current_depth = depth
 
     def _collect_events(self) -> None:
@@ -109,7 +116,7 @@ class WorldTickScheduler:
                     candidates.append((entry.due_tick, order, position, name, entry.id))
         if candidates:
             _, _, _, name, agenda_id = min(candidates)
-            # 本轮已经给出机会，不能又重复使用此人的开局或 Skill 兼容机会。
+            # 本轮已经给出机会，不能又重复使用此人的开局机会。
             self._pending = [item for item in self._pending if item["name"] != name]
             return {"name": name, "depth": 0, "source": "agenda", "agenda_id": agenda_id}
         return self._pending.pop(0) if self._pending else None
@@ -147,11 +154,6 @@ class WorldTickScheduler:
         self._collect_events()
         scheduled = self._select_opportunity()
         character = WORLD_STATE["characters"][scheduled["name"]] if scheduled else None
-        from skills.investigation.workflow import completed_step
-        from skills.router import current_step
-
-        # 只有旧兼容来源延续原 Skill 续排；Agenda 的节奏不取决于 Workflow 步骤。
-        skill_step = current_step(character) if character and scheduled["source"] not in {"agenda", "conversation"} else None
         self._current_depth = scheduled["depth"] if scheduled else 0
         tick_time = WORLD_STATE["time"]
         event_count_before = len(WORLD_STATE["events"])
@@ -204,17 +206,6 @@ class WorldTickScheduler:
                     current_character.memory,
                     superseded_event_ids=current_character.semantic_memory.superseded_event_ids,
                 )
-
-        # 只在角色真实完成一步调查行动后安排下一步；计划本身不产生世界事件。
-        if character is not None and any(
-            completed_step(skill_step, event, character.name)
-            for event in WORLD_STATE["events"][event_count_before:]
-        ):
-            current = WORLD_STATE["characters"][character.name]
-            if current_step(current) and not any(
-                item["name"] == current.name for item in self._pending
-            ):
-                self._pending.append({"name": current.name, "depth": 0, "source": "skill"})
 
         return {
             "time": tick_time,

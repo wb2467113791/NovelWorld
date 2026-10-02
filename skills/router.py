@@ -1,4 +1,4 @@
-"""只加载有可执行进度的调查 Skill。"""
+"""只为 Prompt 加载只读专业知识和行动建议，不参与调度。"""
 
 from functools import lru_cache
 from pathlib import Path
@@ -21,16 +21,6 @@ def choose_skill(character: Character, goal: str | None = None) -> str | None:
 def current_step(character: Character, goal: str | None = None):
     objective = goal if goal is not None else character.runtime_state.select_goal(character.goals)
     return next_step(character, objective) or concealment_step(character, objective)
-
-
-def skill_view(character: Character) -> dict | None:
-    goal = character.runtime_state.select_goal(character.goals)
-    kind = choose_skill(character, goal)
-    step = current_step(character, goal)
-    if kind is None or step is None:
-        return None
-    return {"name": "调查" if kind == "investigation" else "保护与隐瞒",
-            "phase": step.phase, "tool": step.tool, "reason": step.reason}
 
 
 @lru_cache(maxsize=2)

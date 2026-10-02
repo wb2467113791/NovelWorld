@@ -107,11 +107,6 @@ class RemoteWorld:
                 character["memory"] = local["characters"][name]["memory"]
                 character["semantic_memory"] = local["characters"][name]["semantic_memory"]
                 character["runtime_state"] = local["characters"][name]["runtime_state"]
-            remote_ids = {event["id"] for event in remote["events"]}
-            remote["events"].extend(
-                event for event in local["events"]
-                if event["id"] not in remote_ids and event["type"] == "narration"
-            )
         restore_snapshot(remote)
         reconcile_event_memories()
 
@@ -147,7 +142,6 @@ class RemoteWorld:
             },
             "scheduler": scheduler_state,
             "active_conversations": snapshot["active_conversations"],
-            "events": [event for event in snapshot["events"] if event["type"] == "narration"],
         }
         self._call("save_agent_state", {
             "worldId": self.world_id,

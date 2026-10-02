@@ -66,6 +66,9 @@ class WorldController:
         scheduler_state = load_world(DEFAULT_SAVE_PATH) if DEFAULT_SAVE_PATH.exists() else None
         if os.environ.get("NOVELWORLD_BACKEND", "mcp") != "mcp":
             raise RuntimeError("Spring Boot Web 入口要求 NOVELWORLD_BACKEND=mcp")
+        if scheduler_state is None:
+            from agent.tick import WorldTickScheduler
+            scheduler_state = WorldTickScheduler().snapshot()  # 仅首次本地种子初始化。
         backend = RemoteWorld(WORLD_STATE["world_id"])
         scheduler_state = restore_snapshot(backend.open(snapshot_world(scheduler_state=scheduler_state)))
         from world.state import reconcile_event_memories

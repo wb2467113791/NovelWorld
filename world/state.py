@@ -75,20 +75,12 @@ def remember_event(event: Event) -> None:
                 timestamp=event["timestamp"],
                 object_id=event["payload"].get("object_id"),
             )
-        if event_type == "recover" and character_name == actor:
-            trace_name = event["payload"]["object_name"] + "被移动的痕迹"
-            character.semantic_memory.forget_inspection(event["location"], trace_name)
-        if event_type == "conceal":
-            trace_name = event["payload"]["object_name"] + "被移动的痕迹"
-            character.semantic_memory.forget_inspection(event["location"], trace_name)
 
 
 def reconcile_event_memories() -> int:
     """从已提交事件补写缺失记忆；旧事件只补给直接参与者以免泄密。"""
     added = 0
     for event in WORLD_STATE["events"]:
-        if event["type"] == "narration" and event["actor"] not in WORLD_STATE["characters"]:
-            continue
         if "perceived_by" in event:
             recipients = event["perceived_by"]
         else:

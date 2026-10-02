@@ -48,7 +48,7 @@ class WorldTemplateServiceTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void concealedClueStaysInItsOwnWorld() {
+    void takenObjectStaysInItsOwnWorld() {
         var source = new JdbcDataSource();
         source.setURL("jdbc:h2:mem:conceal-isolation;DB_CLOSE_DELAY=-1");
         var jdbc = new JdbcTemplate(source);
@@ -58,7 +58,7 @@ class WorldTemplateServiceTest {
         String firstId = service.createWorld(service.defaultTemplate());
         String secondId = service.createWorld(service.defaultTemplate());
         var first = store.load(firstId);
-        new WorldRules().apply(first, "conceal_clue", Map.of("character", "苏晚", "object_name", "住客登记簿"));
+        new WorldRules().apply(first, "take", Map.of("character", "苏晚", "object_name", "住客登记簿"));
         store.update(firstId, first);
         assertFalse(((Map<?, ?>) ((Map<?, ?>) store.load(firstId).get("inspectable_objects"))
                 .get("晚风客栈")).containsKey("住客登记簿"));

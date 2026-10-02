@@ -58,9 +58,6 @@ public class WorldWebController {
             characters.put(name, summary);
         });
         view.put("characters", characters);
-        Object scheduler = world.get("scheduler");
-        view.put("skills", scheduler instanceof Map<?, ?>
-                ? map(scheduler).getOrDefault("skill_views", Map.of()) : Map.of());
         var events = list(world.get("events"));
         view.put("events", new ArrayList<>(events.subList(Math.max(0, events.size() - 80), events.size())));
         view.put("running", status.get("running"));

@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch
 
 from agent.tick import WorldTickScheduler
 from characters.prompt import build_action_prompt
-from skills.investigation.workflow import completed_step, next_step
+from skills.investigation.workflow import next_step
 from skills.router import choose_skill, current_step
 from tests.support import committed_event
 from world.persistence import restore_snapshot, snapshot_world
@@ -86,108 +86,56 @@ class InvestigationSkillTest(unittest.TestCase):
         self.detective().energy = 19
         self.assertIsNone(next_step(self.detective(), self.detective().goals[0]))
         for item in current_objects().values():
-            item["properties"].pop("legacy_concealable", None)
+            item["visible"] = False
         self.assertIsNone(choose_skill(WORLD_STATE["characters"]["苏晚"]))
 
-    def test_conceal_inspect_recover_chain_uses_only_visible_steps(self):
-        su = WORLD_STATE["characters"]["苏晚"]
-        lin = self.detective()
-        object_name = "住客登记簿"
-        trace = object_name + "被移动的痕迹"
-        self.assertEqual(current_step(su).tool, "take")
-        original_item = next(item for item in current_objects().values() if item["name"] == object_name)
-        original = original_item["description"]
-        original_item["visible"] = False
-        trace_item = make_object(trace, su.location, "异常痕迹")
-        trace_item["portable"] = False
-        trace_item["properties"]["trace_for"] = original_item["id"]
-        current_objects()[trace_item["id"]] = trace_item
-        committed_event("conceal", su.name, "苏晚藏起登记簿", location=su.location,
-                        payload={"object_name": object_name, "trace_name": trace})
-        self.assertIsNone(current_step(su))
-        self.assertNotIn(original, self.prompt())
-
-        lin.location = su.location
-        committed_event("move", lin.name, "林默到达客栈", location=lin.location,
-                        payload={"from": "县衙", "to": lin.location})
-        self.assertIn(trace, [item["name"] for item in visible_objects(lin)])
-        committed_event("inspect", lin.name, "林默调查痕迹", location=lin.location,
-                        payload={"object_name": trace, "observation": "异常痕迹"})
-        self.assertNotEqual(current_step(lin).tool, "recover_clue")
-        current_objects().pop(trace_item["id"])
-        original_item["visible"] = True
-        committed_event("recover", lin.name, "林默找回登记簿", location=lin.location,
-                        payload={"object_name": object_name})
-        self.assertNotEqual(current_step(lin).tool if current_step(lin) else None, "recover_clue")
-        self.assertFalse(any(fact.object_name == trace for fact in lin.semantic_memory.current_facts()))
-
-        saved = deepcopy(snapshot_world())
-        restore_snapshot(saved)
-        self.assertIn(object_name, WORLD_STATE["inspectable_objects"][lin.location])
-
-    def test_unrelated_committed_action_does_not_complete_skill_step(self):
-        person = self.detective()
-        step = next_step(person, person.goals[0])
-        event = {"actor": person.name, "type": "talk", "target": "苏晚",
-                 "location": person.location, "payload": {"message": "你好"}}
-        self.assertFalse(completed_step(step, event, person.name))
-        event = {**event, "type": "move", "location": "晚风客栈"}
-        self.assertTrue(completed_step(step, event, person.name))
-
-    def test_committed_step_queues_continuation_across_scheduler_restore(self):
+    def test_investigation_continues_via_agenda_across_scheduler_restore(self):
         backend = Mock()
         backend.advance_time.return_value = "08:05"
         scheduler = WorldTickScheduler()
         scheduler.restore({"tick_count": 0, "event_cursor": 0,
-                           "pending": [{"name": "林默", "depth": 0}]})
-
+                           "pending": [{"name": "林默", "depth": 0, "source": "bootstrap"}]})
         def move_to_lead(character):
-            character.location = "晚风客栈"
+            character.location = "晚风客栈"  # 模拟 Java 刷新
             committed_event("move", character.name, "抵达客栈", location=character.location,
                             payload={"from": "县衙", "to": "晚风客栈"})
             return "已移动"
-
         with patch("tools.remote_world.active_backend", return_value=backend):
             scheduler.run_tick(move_to_lead)
             saved = scheduler.snapshot()
-            self.assertIn({"name": "林默", "depth": 0, "source": "skill"}, saved["pending"])
+            self.assertFalse(any(item.get("source") == "skill" for item in saved["pending"]))
+            self.assertNotIn("skill_views", saved)
+            entry = self.detective().runtime_state.agenda[0]
+            self.assertEqual(entry.status, "pending")
+            opening = deepcopy(snapshot_world(scheduler_state=saved))
+            restore_snapshot(opening)
             restored = WorldTickScheduler()
             restored.restore(saved)
-            seen = [restored.run_tick(lambda character: "等待")["character"]
-                    for _ in saved["pending"]]
-            self.assertIn("林默", seen)
-            self.assertEqual(restored.snapshot()["pending"], [])
+            opportunities = []
+            def inspect_as_agent(character):
+                # 建议只作上下文；此处 deterministic Agent 自己选择 inspect。
+                step = current_step(character)
+                opportunities.append((character.name, step.tool if step else None))
+                if character.name == "林默" and step and step.tool == "inspect":
+                    item = current_objects()[step.arguments["object_id"]]
+                    committed_event("inspect", character.name, "已核对", payload={
+                        "object_id": item["id"], "object_name": item["name"], "observation": "观察结果"})
+                return "已决定"
+            results = [restored.run_tick(inspect_as_agent) for _ in range(12)]
+        self.assertGreaterEqual(opportunities.count(("林默", "inspect")), 2)
+        self.assertTrue(any(item["source"] == "agenda" and item["character"] == "林默" for item in results))
+        self.assertTrue(all(item["source"] != "skill" for item in results))
 
-    def test_skill_continuation_ablation_keeps_same_action_and_tools(self):
-        opening = deepcopy(snapshot_world())
+    def test_skill_context_never_controls_scheduler(self):
         backend = Mock()
         backend.advance_time.return_value = "08:05"
-
-        def one_run(skill_enabled):
-            restore_snapshot(deepcopy(opening))
-            scheduler = WorldTickScheduler()
-            scheduler.restore({"tick_count": 0, "event_cursor": 0,
-                               "pending": [{"name": "林默", "depth": 0}]})
-
-            def same_action(character):
-                character.location = "晚风客栈"
-                committed_event("move", character.name, "抵达客栈", location=character.location,
-                                payload={"from": "县衙", "to": "晚风客栈"})
-                return "已移动"
-
-            with patch("tools.remote_world.active_backend", return_value=backend):
-                if skill_enabled:
-                    scheduler.run_tick(same_action)
-                else:
-                    with patch("skills.router.current_step", return_value=None):
-                        scheduler.run_tick(same_action)
-            return scheduler.snapshot()["pending"], len(WORLD_STATE["events"])
-
-        with_skill, with_events = one_run(True)
-        without_skill, without_events = one_run(False)
-        self.assertEqual(with_events, without_events)
-        self.assertIn({"name": "林默", "depth": 0, "source": "skill"}, with_skill)
-        self.assertFalse(any(item["name"] == "林默" for item in without_skill))
+        scheduler = WorldTickScheduler()
+        with patch("tools.remote_world.active_backend", return_value=backend), \
+                patch("skills.router.current_step", side_effect=AssertionError("Scheduler 不读取 Skill")):
+            for _ in range(12):
+                scheduler.run_tick(lambda character: "等待")
+            self.assertNotIn("skill_views", scheduler.snapshot())
+        self.assertTrue(all(person.runtime_state.agenda for person in WORLD_STATE["characters"].values()))
 
 
 if __name__ == "__main__":

@@ -65,7 +65,8 @@ public class WorldTemplateService {
         });
         world.put("characters", characters);
         if (template.containsKey("objects")) world.put("objects", copy(template.get("objects")));
-        world.put("scheduler", Map.of("tick_count", 0));
+        world.put("scheduler", Map.of("tick_count", 0, "event_cursor", 0, "pending",
+                characters.keySet().stream().map(name -> Map.of("name", name, "depth", 0, "source", "bootstrap")).toList()));
         store.insert(worldId, world);
         return worldId;
     }

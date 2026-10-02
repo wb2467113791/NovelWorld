@@ -71,8 +71,8 @@ class CurrentRuntimeTest(unittest.TestCase):
     def test_failed_skill_tool_refreshes_plan_without_claiming_progress(self):
         su = WORLD_STATE["characters"]["苏晚"]
         responses = iter([
-            SimpleNamespace(output=[SimpleNamespace(type="function_call", name="conceal_clue",
-                arguments='{"character":"苏晚","object_name":"住客登记簿"}', call_id="hide-1")], output_text=""),
+            SimpleNamespace(output=[SimpleNamespace(type="function_call", name="take",
+                arguments='{"character":"苏晚","object_id":"test-ledger"}', call_id="hide-1")], output_text=""),
             SimpleNamespace(output=[], output_text="线索已变化，我先等待。"),
         ])
         requests = []
@@ -81,7 +81,7 @@ class CurrentRuntimeTest(unittest.TestCase):
         def reject_changed_clue(*_):
             from world.objects import current_objects
             for item in current_objects().values():
-                if item["name"] == "住客登记簿":
+                if item["portable"] and item["holder"] is None:
                     item["visible"] = False
             raise ValueError("线索已不在现场")
 
@@ -117,7 +117,7 @@ class CurrentRuntimeTest(unittest.TestCase):
         index.retrieve_memory.return_value = []
         index.retrieve_lore.return_value = []
         state = create_initial_agent_state(WORLD_STATE["characters"]["苏晚"], index)
-        call = {"name": "conceal_clue", "arguments": '{"character":"苏晚","object_name":"住客登记簿"}',
+        call = {"name": "take", "arguments": '{"character":"苏晚","object_id":"test-ledger"}',
                 "call_id": "retry"}
         state["pending_tool_calls"] = [call]
         state["tool_results"] = [{**call, "call_id": "first", "output": "工具错误：线索已不在现场"}]
@@ -165,7 +165,7 @@ class CurrentRuntimeTest(unittest.TestCase):
         with patch("tools.remote_world.active_backend", return_value=backend):
             self.assertIsNone(director.maybe_inject(1))
             for actor in WORLD_STATE["characters"]:
-                committed_event("narration", actor, "无人行动")
+                committed_event("inspect", actor, "重复观察", payload={"observation": "无变化"})
             before = {name: person.location for name, person in WORLD_STATE["characters"].items()}
             event = director.maybe_inject(3)
         self.assertEqual(event["perceived_by"], ["苏晚"])

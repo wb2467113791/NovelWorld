@@ -101,7 +101,8 @@ class WorldMcpToolsTest {
         tools.executeWorldTool(firstId, "inspect", "{\"character\":\"林默\"}", "林默");
         assertEquals(phase2Runtime, ((Map<?, ?>) ((Map<?, ?>) reconnected.load(firstId).get("characters"))
                 .get("林默")).get("runtime_state"));
-        assertEquals(Map.of("tick_count", 0), reconnected.load(secondId).get("scheduler"));
+        assertEquals(0, ((Map<?, ?>) reconnected.load(secondId).get("scheduler")).get("tick_count"));
+        assertEquals(3, ((List<?>) ((Map<?, ?>) reconnected.load(secondId).get("scheduler")).get("pending")).size());
 
         // Python 清理后的当前 Agenda 替换旧列表，Java 快照不追加历史，也不改变世界业务字段。
         for (int round = 0; round < 40; round++) {

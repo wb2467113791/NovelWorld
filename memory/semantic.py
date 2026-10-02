@@ -66,10 +66,3 @@ class SemanticMemory:
 
     def current_facts(self) -> list[SemanticFact]:
         return list(self.facts.values())
-
-    def forget_inspection(self, location: str, object_name: str) -> None:
-        """线索找回后，本人此前关于临时痕迹的调查不再是当前事实。"""
-        for key, previous in list(self.facts.items()):
-            if previous.location == location and previous.object_name == object_name:
-                self.facts.pop(key)
-                self.superseded_event_ids.add(previous.source_event_id)

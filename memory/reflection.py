@@ -10,6 +10,7 @@ def reflect_on_new_memories(
 ) -> str | None:
     """处理上次反思后的全部经历，包括已离开近期窗口的经历。"""
     entries = memory.all_entries()
+    # legacy history only：不把旧 narration 当作世界经历生成反思。
     new_experiences = [
         entry for entry in entries[memory.reflection_cursor:]
         if "reflection" not in entry.tags and "narration" not in entry.tags
