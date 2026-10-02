@@ -35,7 +35,7 @@ class WorldTemplateServiceTest {
         String firstId = service.createWorld(original);
         String secondId = service.createWorld(changed);
         assertEquals(2, store.listWorldIds().size());
-        assertEquals(java.util.List.of("调查失踪案", "找到失踪者的下落"),
+        assertEquals(java.util.List.of("做好县衙日常差事", "在镇民中建立可靠的声誉", "学会兼顾规矩与人情"),
                 ((Map<?, ?>) ((Map<?, ?>) store.load(firstId).get("characters")).get("林默")).get("goals"));
         assertEquals(java.util.List.of("寻找遗失的信"),
                 ((Map<?, ?>) ((Map<?, ?>) store.load(secondId).get("characters")).get("林默")).get("goals"));
@@ -89,7 +89,7 @@ class WorldTemplateServiceTest {
         assertNotEquals(firstId, secondId);
         assertEquals(firstId, oldWorld.get("world_id"));
         assertEquals(secondId, newWorld.get("world_id"));
-        assertEquals(java.util.List.of("调查失踪案", "找到失踪者的下落"),
+        assertEquals(java.util.List.of("做好县衙日常差事", "在镇民中建立可靠的声誉", "学会兼顾规矩与人情"),
                 ((Map<?, ?>) ((Map<?, ?>) oldWorld.get("characters")).get("林默")).get("goals"));
         assertEquals(java.util.List.of("寻找遗失的信"),
                 ((Map<?, ?>) ((Map<?, ?>) newWorld.get("characters")).get("林默")).get("goals"));

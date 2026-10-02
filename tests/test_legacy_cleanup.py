@@ -130,6 +130,8 @@ class LegacyCleanupTest(unittest.TestCase):
         WORLD_STATE["inspectable_objects"] = {}
         WORLD_STATE["concealable_objects"] = {}
         WORLD_STATE["concealed_objects"] = {person.location: {"住客登记簿": {"observation": "伪造隐藏状态"}}}
+        person.goals = ["保护私人信息"]
+        person.runtime_state.active_goal = "保护私人信息"
         self.assertEqual(choose_skill(person), "concealment")
         prompt = build_action_prompt(person, active_goal=person.goals[0], memories=[], retrieved_context=[], lore_context=[], observations=[])
         self.assertIn("【角色技能知识】", prompt)

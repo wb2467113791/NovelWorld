@@ -6,118 +6,115 @@
     "青石街"
   ],
   "inspectables": {
-    "晚风客栈": "一楼桌椅摆放整齐，柜台后方挂着一串旧钥匙。",
-    "县衙": "案桌上放着尚未整理完的失踪案卷宗。",
-    "青石街": "清晨的街面有些潮湿，行人正渐渐多起来。"
+    "晚风客栈": "早饭刚收桌，柜台旁放着住客登记簿和一把备用钥匙。一楼有适合闲聊的长桌，也有熟客喜欢的安静角落。",
+    "县衙": "值班桌上摆着日常记录，门口公告板列着商户办事须知。今天没有急办的差事，院里偶尔有人来问手续。",
+    "青石街": "街边商铺陆续开门，几名摊主讨论下周集市的摊位。商会公告旁留着一张尚未填满的登记单。"
   },
   "characters": {
     "林默": {
       "name": "林默",
       "role": "县衙捕快",
-      "background": "负责调查最近发生的失踪案，正在追查与案件有关的线索。",
-      "personality": "认真、执着，习惯用证据查案。",
+      "background": "刚到青石镇不久的年轻捕快，日常负责值守、登记和巡街。苏晚曾给当值的人留过热茶，他记得这份好意，却不太会拿捏熟人请求与规矩之间的分寸。",
+      "personality": "认真、讲规矩，有一点理想主义；愿意听人解释，不太擅长处理复杂人情。",
       "goals": [
-        "调查失踪案",
-        "找到失踪者的下落"
+        "做好县衙日常差事",
+        "在镇民中建立可靠的声誉",
+        "学会兼顾规矩与人情"
       ],
       "location": "县衙",
       "energy": 90,
-      "secrets": [],
+      "secrets": [
+        "他很在意上司的认可，担心自己灵活处理人情时会被认为不够可靠。"
+      ],
       "known_facts": [
-        "失踪案卷宗最后提到了晚风客栈"
+        "商会正在为下周的集市征集商户意见。",
+        "苏晚曾给当值的捕快留过热茶，没有提出额外条件。"
       ],
       "relationships": {
-        "苏晚": 0,
-        "赵无极": -5
+        "苏晚": 5,
+        "赵无极": 0
       }
     },
     "苏晚": {
       "name": "苏晚",
       "role": "晚风客栈老板",
-      "background": "独自经营晚风客栈，并暗中保护卷入失踪案的弟弟。",
-      "personality": "冷静、谨慎，不轻易相信陌生人。",
+      "background": "独自经营晚风客栈，靠熟客和往来旅人维持生意。以前配合过商会聚餐，双方对座位安排有过小分歧，最后各退一步；她欢迎合作，但在意日常熟客和自己作主的空间。",
+      "personality": "务实、观察力强、谨慎，很在意客栈口碑；愿意商量，不喜欢旁人替自己安排经营和私人生活。",
       "goals": [
-        "保护弟弟",
-        "隐瞒与失踪案有关的线索"
+        "让客栈经营稳定",
+        "维持与镇上各类人的关系",
+        "保有不被过多干涉的私人生活"
       ],
       "location": "晚风客栈",
       "energy": 80,
       "secrets": [
-        "她的弟弟与最近发生的失踪案有关"
+        "最近客栈资金周转有些紧，她不愿让熟客知道，也还没有决定是否向人开口。"
       ],
       "known_facts": [
-        "失踪案当晚有人在客栈后门出现"
+        "赵无极的人来问过客栈能否为商会留下一楼几张桌子，尚未约定。",
+        "几位常住熟客喜欢安静的角落，不喜欢一楼临时变得太拥挤。"
       ],
       "relationships": {
         "林默": 0,
-        "赵无极": 0
+        "赵无极": -5
       }
     },
     "赵无极": {
       "name": "赵无极",
       "role": "本地商会会长",
-      "background": "掌控本地商会多年，希望维持商会势力和隐秘交易。",
-      "personality": "精明、强势，擅长利用利益影响他人。",
+      "background": "本地商会负责人，靠协调商户和往来客商积累影响。欣赏苏晚办事利落，也记得她对聚餐安排坚持过自己的意见；希望与年轻捕快建立体面的往来，同时保留商户自己协商的余地。",
+      "personality": "精明、重视体面、擅长经营关系，喜欢掌握主动权；更愿意谈成互利的安排，而不是公开争执。",
       "goals": [
-        "阻止调查深入",
-        "保护商会的利益"
+        "扩大商会在镇上的影响",
+        "维持体面而稳固的社会地位",
+        "结交可靠且互利的合作伙伴",
+        "避免公开争执损害商会声誉"
       ],
       "location": "青石街",
       "energy": 85,
       "secrets": [
-        "他知道失踪案背后的交易，并安排人销毁过证据"
+        "商会最近一笔交易收益低于预期，他公开只说合作顺利，担心别人觉得自己判断失准。"
       ],
       "known_facts": [
-        "商会近期有一批货物去向不明"
+        "县衙最近希望商户主动登记外来货物，具体办事可向当值捕快询问。",
+        "苏晚以前配合过商会聚餐，但坚持由自己安排客栈座位。"
       ],
       "relationships": {
-        "林默": -10,
-        "苏晚": 5
+        "林默": 5,
+        "苏晚": 10
       }
     }
   },
   "lore": [
     {
+      "id": "town-geography",
+      "category": "地理",
+      "audience": "public",
+      "text": "青石镇的青石街连接商铺与人来人往的公共区域，晚风客栈和县衙都在镇内；镇民通常步行来往。"
+    },
+    {
       "id": "place-inn",
-      "category": "地理",
+      "category": "日常",
       "audience": "public",
-      "text": "晚风客栈是旅客落脚与打听消息的地方，由苏晚经营。"
-    },
-    {
-      "id": "place-yamen",
-      "category": "地理",
-      "audience": "public",
-      "text": "县衙保存本地案件卷宗，是捕快处理调查事务的地方。"
-    },
-    {
-      "id": "place-street",
-      "category": "地理",
-      "audience": "public",
-      "text": "青石街是县城商贩和行人往来较多的街道。"
+      "text": "晚风客栈由苏晚经营，接待旅客，也供熟客吃饭、歇脚和闲聊；包桌与日常营业安排可以由当事人商量。"
     },
     {
       "id": "faction-guild",
-      "category": "势力",
+      "category": "日常",
       "audience": "public",
-      "text": "本地商会由赵无极主持，参与货物流通和商户之间的协调。"
+      "text": "本地商会由赵无极协调，替商户联系客商、交换消息和讨论活动，参与合作并非每家商户的义务。"
     },
     {
-      "id": "history-inn",
-      "category": "历史",
+      "id": "place-yamen",
+      "category": "日常",
       "audience": "public",
-      "text": "晚风客栈经营多年，曾接待过往来的商旅；过往传闻不能直接当作当前案件证据。"
+      "text": "县衙处理值守、登记、办事咨询和街面秩序等日常事务，林默是当值捕快之一。"
     },
     {
-      "id": "rule-observation",
-      "category": "规则",
+      "id": "market-custom",
+      "category": "习惯",
       "audience": "public",
-      "text": "角色只能调查自己所在地点；交谈须在同一地点，物品交付须由持有者执行。"
-    },
-    {
-      "id": "yamen-records",
-      "category": "县衙内部",
-      "audience": "林默",
-      "text": "县衙办案时应先核对卷宗原文，再把传闻和可验证证据分开记录。"
+      "text": "镇上常在青石街办小集市，摊位与公共空间的安排惯常由商户和县衙沟通；公告和口头消息可能更新，听到说法不等于已经落实。"
     }
   ],
   "objects": {
@@ -125,11 +122,11 @@
       "id": "obj-d6d7ab6070ceefbbaae15ee2",
       "name": "住客登记簿",
       "type": "item",
-      "description": "登记簿记载失踪者案发前夜入住晚风客栈，但离店时辰被涂改；仅凭记录无法确定其去向。",
+      "description": "最近几页记着普通住客的入住日与房间，有人备注偏爱安静房间。",
       "location": "晚风客栈",
       "container": null,
       "holder": null,
-      "owner": null,
+      "owner": "苏晚",
       "portable": true,
       "visible": true,
       "state": "normal",
@@ -140,29 +137,11 @@
       "id": "obj-c241dc9eb65d6110efda3a50",
       "name": "后门",
       "type": "door",
-      "description": "后门通向客栈外；仅凭眼前环境无法确认案发夜经过的人是谁。",
+      "description": "通向客栈后院的门，平日用于搬放杂物，门边放着擦鞋用的旧布。",
       "location": "晚风客栈",
       "container": null,
       "holder": null,
-      "owner": null,
-      "portable": false,
-      "visible": true,
-      "state": "closed",
-      "properties": {},
-      "affordances": [
-        "open",
-        "close"
-      ]
-    },
-    "obj-d6134455ba24d5ea22afc8a0": {
-      "id": "obj-d6134455ba24d5ea22afc8a0",
-      "name": "柴房门锁",
-      "type": "door",
-      "description": "柴房门锁已有锈迹；仅凭外观无法确认近期是否被打开过。",
-      "location": "晚风客栈",
-      "container": null,
-      "holder": null,
-      "owner": null,
+      "owner": "苏晚",
       "portable": false,
       "visible": true,
       "state": "closed",
@@ -176,11 +155,11 @@
       "id": "obj-c0e2c2987d4670c1000a6a18",
       "name": "木箱",
       "type": "container",
-      "description": "一个可打开存放物品的木箱。",
+      "description": "柜台旁的空木箱，用来暂放日常杂物，箱盖合着。",
       "location": "晚风客栈",
       "container": null,
       "holder": null,
-      "owner": null,
+      "owner": "苏晚",
       "portable": false,
       "visible": true,
       "state": "closed",
@@ -196,7 +175,22 @@
       "id": "obj-d1cc3840300bfa0ded2f0310",
       "name": "钥匙",
       "type": "item",
-      "description": "一把普通小钥匙。",
+      "description": "一把留在柜台旁的备用钥匙，系着写有“备用”的布条。",
+      "location": "晚风客栈",
+      "container": null,
+      "holder": null,
+      "owner": "苏晚",
+      "portable": true,
+      "visible": true,
+      "state": "normal",
+      "properties": {},
+      "affordances": []
+    },
+    "obj-fc148fef738693a96b8b4e64": {
+      "id": "obj-fc148fef738693a96b8b4e64",
+      "name": "遗落便笺",
+      "type": "item",
+      "description": "一张未署名的短便笺写着“下回来时若方便，请留靠窗的位置”。没有日期，也看不出是哪位客人留下。",
       "location": "晚风客栈",
       "container": null,
       "holder": null,
@@ -207,11 +201,71 @@
       "properties": {},
       "affordances": []
     },
+    "obj-2360f7aa57d2015647dcab78": {
+      "id": "obj-2360f7aa57d2015647dcab78",
+      "name": "商会公告",
+      "type": "notice",
+      "description": "公告说商会正为下周集市征求意见，愿意参与的商户可自行商量，具体安排尚未定下。",
+      "location": "青石街",
+      "container": null,
+      "holder": null,
+      "owner": null,
+      "portable": false,
+      "visible": true,
+      "state": "normal",
+      "properties": {},
+      "affordances": []
+    },
+    "obj-d6dc03997056959b47b291b3": {
+      "id": "obj-d6dc03997056959b47b291b3",
+      "name": "摊位登记单",
+      "type": "item",
+      "description": "纸上画了几个摊位位置，有的填了商户名字，有的留空；旁注说安排仍可协商。",
+      "location": "青石街",
+      "container": null,
+      "holder": null,
+      "owner": null,
+      "portable": true,
+      "visible": true,
+      "state": "normal",
+      "properties": {},
+      "affordances": []
+    },
+    "obj-8234ccf8bba1719281588d00": {
+      "id": "obj-8234ccf8bba1719281588d00",
+      "name": "值班记录",
+      "type": "item",
+      "description": "记录着昨日的巡街时段和几项普通办事咨询，末尾提醒今日继续受理外来货物登记。",
+      "location": "县衙",
+      "container": null,
+      "holder": null,
+      "owner": null,
+      "portable": true,
+      "visible": true,
+      "state": "normal",
+      "properties": {},
+      "affordances": []
+    },
+    "obj-ad341a8823bc9e1791d43fa8": {
+      "id": "obj-ad341a8823bc9e1791d43fa8",
+      "name": "公告板",
+      "type": "notice",
+      "description": "板上列着商户办事须知：外来货物可向当值人员询问登记手续，集市安排有问题也可当面沟通。",
+      "location": "县衙",
+      "container": null,
+      "holder": null,
+      "owner": null,
+      "portable": false,
+      "visible": true,
+      "state": "normal",
+      "properties": {},
+      "affordances": []
+    },
     "obj-7440624baaec30e05cccd209": {
       "id": "obj-7440624baaec30e05cccd209",
       "name": "捕快腰牌",
       "type": "item",
-      "description": "一件捕快腰牌。",
+      "description": "标有县衙字样的普通腰牌，用于表明当值身份。",
       "location": null,
       "container": null,
       "holder": "林默",
@@ -226,7 +280,7 @@
       "id": "obj-51713e55915284b7f4799afe",
       "name": "私人账本",
       "type": "item",
-      "description": "一件私人账本。",
+      "description": "苏晚自己的日常收支记录，夹着待核对的采购数目和零散备忘；未公开给熟客。",
       "location": null,
       "container": null,
       "holder": "苏晚",
@@ -241,7 +295,7 @@
       "id": "obj-e6eacded1da5a11e0f578c4c",
       "name": "商会令牌",
       "type": "item",
-      "description": "一件商会令牌。",
+      "description": "商会联络时使用的身份牌，边缘因常年携带有些磨损。",
       "location": null,
       "container": null,
       "holder": "赵无极",

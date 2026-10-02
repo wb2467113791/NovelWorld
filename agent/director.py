@@ -8,9 +8,9 @@ from characters.model import is_npc
 
 DIRECTOR_COOLDOWN = 6
 DEFAULT_OBSERVATIONS = {
-    "stagnation": "一张匿名纸条提到失踪案当晚的客栈后门；内容尚待核实。",
-    "participation": "有人提及近期去向不明的货箱；传闻尚待核实。",
-    "conflict": "县衙与商会互相质疑的告示被贴出；双方说法尚待核实。",
+    "stagnation": "公共区域落下一张未署名便笺，提到近期集市安排可能有变化；内容尚待核实。",
+    "participation": "有人议论一批临时寄放的货物迟迟没人领取；具体情况尚不清楚。",
+    "conflict": "商户与县衙对集市公共空间的安排出现不同说法，街头有人议论；尚未形成一致意见。",
 }
 
 

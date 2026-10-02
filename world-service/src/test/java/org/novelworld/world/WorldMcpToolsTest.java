@@ -74,10 +74,10 @@ class WorldMcpToolsTest {
                     "memory", person.get("memory"), "semantic_memory", person.get("semantic_memory"))));
         }
         var linPayload = (Map<String, Object>) payloadCharacters.get("林默");
-        var runtime = Map.of("active_goal", "找到失踪者的下落", "current_intention", "核对线索",
-                "current_plan", "根据新信息调整调查方向", "busy_until", 300,
+        var runtime = Map.of("active_goal", "在镇民中建立可靠的声誉", "current_intention", "了解镇上近况",
+                "current_plan", "根据新信息调整日常安排", "busy_until", 300,
                 "agenda", List.of(Map.of("id", "visit", "character", "林默", "due_tick", 310,
-                        "intention", "继续调查", "status", "pending")));
+                        "intention", "了解近况", "status", "pending")));
         linPayload.put("runtime_state", runtime);
         linPayload.put("location", "晚风客栈");
         linPayload.put("energy", 0);

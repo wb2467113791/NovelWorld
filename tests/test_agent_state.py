@@ -23,7 +23,7 @@ class AgentStateTest(unittest.TestCase):
             },
         )
         self.assertEqual(state["npc_id"], "林默")
-        self.assertEqual(state["goal"], "调查失踪案")
+        self.assertEqual(state["goal"], "做好县衙日常差事")
         self.assertEqual(state["observations"], [])
         self.assertEqual(state["step"], 0)
         self.assertEqual(state["pending_tool_calls"], [])

@@ -22,6 +22,13 @@ class InvestigationSkillTest(unittest.TestCase):
     def test_guidance_is_pure_stable_and_goal_specific(self):
         detective = WORLD_STATE["characters"]["林默"]
         owner = WORLD_STATE["characters"]["苏晚"]
+        self.assertIsNone(choose_skill(detective))
+        self.assertIsNone(choose_skill(owner))
+        # Skill 本身的能力验证使用明确测试目标，不绑默认开局剧情。
+        detective.goals = ["调查线索"]
+        owner.goals = ["保护私人信息"]
+        detective.runtime_state.active_goal = "调查线索"
+        owner.runtime_state.active_goal = "保护私人信息"
         before = deepcopy(snapshot_world())
         self.assertEqual(choose_skill(detective), "investigation")
         self.assertEqual(choose_skill(owner), "concealment")
@@ -44,6 +51,7 @@ class InvestigationSkillTest(unittest.TestCase):
 
     def test_prompt_knowledge_and_scheduler_independence(self):
         person = WORLD_STATE["characters"]["林默"]
+        person.goals = ["调查线索"]
         prompt = build_action_prompt(person, active_goal=person.goals[0], memories=[],
                                      retrieved_context=[], lore_context=[], observations=[])
         self.assertIn("【角色技能知识】", prompt)

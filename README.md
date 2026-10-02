@@ -2,6 +2,8 @@
 
 一个持久 AI 角色世界引擎：NPC 基于目标、记忆与主观说法自主行动、交流；人类玩家进入同一个世界，所有真实行动由 Java 确定性规则校验并结算。
 
+默认世界是“青石镇的普通一天”：年轻捕快林默在意差事与声誉，客栈老板苏晚在意稳定经营与私人边界，商会负责人赵无极在意影响力与合作。三人有不同信息、轻微关系倾向和日常压力，初始内容不指定主线任务或剧情走向。见 [默认世界设计](docs/NovelWorld_Default_World.md)。
+
 [3–5 分钟演示指南](docs/NovelWorld_V4_Demo.md) · [最终架构与实际验收结果](docs/NovelWorld_V4_Final_Evaluation.md) · [简历与面试介绍](docs/Resume_Project_Description.md)
 
 当前格式与旧存档边界见 [Final Cleanup](docs/NovelWorld_V4_Final_Cleanup.md)。新模板直接声明 `objects`，初始 inventory 使用 `holder/owner`；Python seed 与 Java 创建共用同一默认模板 JSON。快照写入 V2，V1 在加载时迁移；不再保存旧三字典。`Character.items` 仅为 holder 派生展示。旧浏览器模板草稿需重新创建，已有世界存档仍可恢复。正式 Java 入口不再接受旧 Tool 别名或按名称定位对象的参数；旧 Event 历史保留读取。

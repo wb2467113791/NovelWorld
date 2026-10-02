@@ -23,9 +23,9 @@ class CharacterTest(unittest.TestCase):
 
         self.assertIs(WORLD_STATE["characters"]["苏晚"], CHARACTERS["苏晚"])
 
-        self.assertIn("他知道失踪案背后的交易，并安排人销毁过证据", CHARACTERS["赵无极"].secrets)
+        self.assertIn("商会最近一笔交易收益低于预期，他公开只说合作顺利，担心别人觉得自己判断失准。", CHARACTERS["赵无极"].secrets)
         self.assertNotIn(
-            "他知道失踪案背后的交易，并安排人销毁过证据",
+            "商会最近一笔交易收益低于预期，他公开只说合作顺利，担心别人觉得自己判断失准。",
             CHARACTERS["林默"].known_facts,
         )
 

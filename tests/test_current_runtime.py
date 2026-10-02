@@ -70,6 +70,8 @@ class CurrentRuntimeTest(unittest.TestCase):
 
     def test_failed_tool_keeps_professional_guidance_without_claiming_progress(self):
         su = WORLD_STATE["characters"]["苏晚"]
+        su.goals = ["保护私人信息"]
+        su.runtime_state.active_goal = "保护私人信息"
         responses = iter([
             SimpleNamespace(output=[SimpleNamespace(type="function_call", name="take",
                 arguments='{"character":"苏晚","object_id":"test-ledger"}', call_id="hide-1")], output_text=""),
