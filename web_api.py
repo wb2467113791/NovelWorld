@@ -64,7 +64,8 @@ class WorldController:
         return WorldSession(
             make_graph_decide_action(self._request_model, index),
             save_path=DEFAULT_SAVE_PATH, index=index, scheduler_state=scheduler_state,
-            director=Director(propose_event=self._propose_director_event),
+            director=(None if os.environ.get("NOVELWORLD_DIRECTOR", "on").lower() == "off"
+                      else Director(propose_event=self._propose_director_event)),
         )
 
     def initialize(self) -> None:

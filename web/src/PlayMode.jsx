@@ -10,6 +10,7 @@ async function request(path, body) {
 export default function PlayMode({ worldId, tick, eventCount, revision }) {
   const [state, setState] = useState(null)
   const [notice, setNotice] = useState('')
+  const [loadError, setLoadError] = useState('')
   const [busy, setBusy] = useState(false)
   const [partner, setPartner] = useState('')
   const [message, setMessage] = useState('')
@@ -18,7 +19,7 @@ export default function PlayMode({ worldId, tick, eventCount, revision }) {
   const [containerId, setContainerId] = useState('')
   useEffect(() => {
     setState(null); setPartner(''); setHeldId(''); setDestination(''); setContainerId('')
-    setNotice('')
+    setNotice(''); setLoadError('')
   }, [worldId])
   useEffect(() => {
     let active = true
@@ -26,10 +27,13 @@ export default function PlayMode({ worldId, tick, eventCount, revision }) {
     async function refresh() {
       try {
         const value = await request('/api/play/state')
-        if (active && value.world_id === worldId) setState(value)
-      } catch {
+        if (active && value.world_id === worldId) { setState(value); setLoadError('') }
+      } catch (error) {
         // 仅重试只读状态；NPC Tick 持锁时不会排队或重放玩家行动。
-        if (active) retry = setTimeout(refresh, 1000)
+        if (active) {
+          setLoadError(`暂时无法读取玩家状态：${error.message}。请检查 Java / Python 服务；读取会自动重试。`)
+          retry = setTimeout(refresh, 1000)
+        }
       }
     }
     if (worldId) refresh()
@@ -62,7 +66,9 @@ export default function PlayMode({ worldId, tick, eventCount, revision }) {
     finally { setBusy(false) }
   }
   return <section className="panel play-panel">
-    <h2>Play · {state?.player?.name || '读取玩家…'}</h2>
+    <h2>Play · 进入世界 · {state?.player?.name || '读取玩家…'}</h2>
+    {loadError && <p className="notice" role="status">{loadError}</p>}
+    {!state && !loadError && <p className="muted">正在读取本世界的玩家状态…</p>}
     {notice && <p className="notice">{notice}</p>}
     {state && <>
       <p>生命 {state.player.hp} · 体力 {state.player.energy} · {state.player.status} · ⌖ {state.player.location} · {state.time}</p>
@@ -74,6 +80,7 @@ export default function PlayMode({ worldId, tick, eventCount, revision }) {
         <button disabled={busy} onClick={() => act('rest')}>休息</button>
       </div>
       <h3>附近角色 / 当前交流</h3>
+      {!actors.length && <p className="muted">当前地点没有可交谈的角色，可先移动或观察。</p>}
       <select aria-label="交谈或交付对象" value={listener} onChange={event => setPartner(event.target.value)}>{actors.map(actor => <option key={actor.name}>{actor.name}</option>)}</select>
       {state.conversation && <>
         <p>{state.conversation.waiting_for_player ? '等待你输入' : '等待对方下一 Tick 回应'} · {state.conversation.partner}</p>
@@ -85,6 +92,7 @@ export default function PlayMode({ worldId, tick, eventCount, revision }) {
         <button disabled={busy || !listener || !message.trim()}>发送</button>
       </form>
       <h3>可见对象</h3>
+      {!state.visible_objects.length && <p className="muted">当前没有可见对象。</p>}
       <div className="play-objects">{state.visible_objects.map(item => <div className="line-item" key={item.id}>
         <strong>{item.name}</strong> [{item.state}] {' '}
         <button disabled={busy} onClick={() => act('inspect', {object_id: item.id})}>查看</button>{' '}
@@ -93,6 +101,7 @@ export default function PlayMode({ worldId, tick, eventCount, revision }) {
         {item.affordances.filter(action => ['light', 'extinguish', 'consume'].includes(action)).map(action => <button key={action} disabled={busy} onClick={() => act('use', {object_id: item.id, action})}>{({light: '点亮', extinguish: '熄灭', consume: '使用'})[action]}</button>)}
       </div>)}</div>
       <h3>持有物品</h3>
+      {!held.length && <p className="muted">尚未持有物品。</p>}
       <div className="control-actions">
         <select aria-label="持有物品" value={selectedHeld?.id || ''} onChange={event => setHeldId(event.target.value)}>{held.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
         <button disabled={busy || !selectedHeld} onClick={() => act('put', {object_id: selectedHeld.id, location: state.player.location})}>放在当前地点</button>

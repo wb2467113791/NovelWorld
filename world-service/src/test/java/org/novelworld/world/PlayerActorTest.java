@@ -213,6 +213,10 @@ class PlayerActorTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.committed").value(true));
         mvc.perform(post("/api/play/conversation/end").contentType("application/json").content("{\"world_id\":\"w\"}"))
                 .andExpect(status().isOk());
+        when(runtime.play(eq("action"), anyMap())).thenThrow(new org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.CONFLICT, "{\"detail\":\"世界正在运行，请稍后再试\"}"));
+        mvc.perform(post("/api/play/action").contentType("application/json").content("{\"world_id\":\"w\",\"action\":\"inspect\"}"))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.detail").value("世界正在运行，请稍后再试"));
         mvc.perform(get("/api/world")).andExpect(status().isOk()).andExpect(jsonPath("$.characters.玩家").doesNotExist());
         mvc.perform(get("/api/characters/苏晚/view")).andExpect(status().isOk()).andExpect(jsonPath("$.goals").isArray());
         mvc.perform(get("/api/characters/玩家/view")).andExpect(status().isNotFound());

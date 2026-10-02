@@ -1,3 +1,5 @@
+> **历史归档：V3 学习资料，非当前 V4 架构说明。** 文内 Skill 续排、藏匿/找回等旧描述仅用于历史学习。当前实现请阅读 [README](../README.md)、[最终验收](NovelWorld_V4_Final_Evaluation.md) 和 [简历文案](Resume_Project_Description.md)。
+
 # NovelWorld 面试备战文档
 
 > 核对日期：2026-09-26。依据当前代码、简历和测试源码整理。适用于 Java 后端 / AI 应用开发实习。本文是复习资料，不是已完成的优化清单。

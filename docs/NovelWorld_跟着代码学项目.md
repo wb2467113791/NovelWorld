@@ -1,3 +1,5 @@
+> **历史归档：V3 学习资料，非当前 V4 架构说明。** 文内 Skill 续排、藏匿/找回等旧描述仅用于历史学习。当前实现请阅读 [README](../README.md)、[最终验收](NovelWorld_V4_Final_Evaluation.md) 和 [简历文案](Resume_Project_Description.md)。
+
 # NovelWorld：跟着代码理解项目
 
 > 适合有编程基础、刚接触这个项目和 Agent 工程的读者。本文以当前仓库的 Web 自主世界版本为准。建议打开编辑器，按章节顺序点开文件，边读边回答每节末尾的问题。代码位置以函数名为准，避免行号随修改失效。

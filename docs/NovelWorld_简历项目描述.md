@@ -1,3 +1,5 @@
+> **历史归档：V3 学习资料，非当前 V4 架构说明。** 文内 Skill 续排、藏匿/找回等旧描述仅用于历史学习。当前实现请阅读 [README](../README.md)、[最终验收](NovelWorld_V4_Final_Evaluation.md) 和 [简历文案](Resume_Project_Description.md)。
+
 # NovelWorld｜自主叙事多 Agent 世界引擎（个人项目）
 
 **技术栈：** Java、Spring Boot、Python、LangGraph、React、MySQL、Chroma、MCP、SSE

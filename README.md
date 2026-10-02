@@ -1,126 +1,119 @@
 # NovelWorld
 
-NovelWorld 是一个自主叙事世界原型：NPC 根据自己的目标、知识与记忆行动；人通过网页观察，并可偶尔向世界投放线索。模型提出行动，Java 世界规则校验并结算，成功后才产生事件和状态变化。
+一个持久 AI 角色世界引擎：NPC 基于目标、记忆与主观说法自主行动、交流；人类玩家进入同一个世界，所有真实行动由 Java 确定性规则校验并结算。
 
-第一次读代码，先看[跟着代码理解项目](docs/NovelWorld_跟着代码学项目.md)。想系统掌握架构与面试讲法，阅读[项目整体说明与面试掌握手册](docs/NovelWorld_项目整体说明.md)。逐步操作见[自主世界完整验收流程](docs/NovelWorld_自主世界完整验收流程.md)。
+[3–5 分钟演示指南](docs/NovelWorld_V4_Demo.md) · [最终架构与实际验收结果](docs/NovelWorld_V4_Final_Evaluation.md) · [简历与面试介绍](docs/Resume_Project_Description.md)
 
-## 当前架构
+## Why this project
+
+单个聊天机器人容易把“说发生了”当成“真的发生了”。NovelWorld 分开模型意图、角色知识、程序调度和真实世界规则，探索小规模小说/RPG 世界的持续运行闭环，不追求海量 NPC 或复杂游戏画面。
+
+## Core Features
+
+- Event Reaction / Conversation / Agenda 驱动自主机会，Director 可关闭；每 Tick 最多一个成功世界行动。
+- 双人 Conversation 独立轮次、消息上限和超时；玩家轮次等待人类输入。
+- 角色视角 Memory/RAG、直接观察 Semantic 与未验证 Belief 分开，按 perceived_by 隔离。
+- 通用对象 inspect/take/put/give/use/interact，位置、持有、容器与所有权分开。
+- give/attack 的确定性社交影响随原行动原子提交；模型不能直接改关系。
+- 单世界单 Player；Observe 调试视角与过滤后的 Play 视角；React + SSE。
+- 多世界 MySQL JSON snapshot、重启恢复、可重建 Chroma 索引。
+
+## Architecture
+
+```mermaid
+flowchart TD
+  UI[React: Observe / Play] -->|HTTP + SSE| J[Spring Boot: browser entry]
+  J -->|local control HTTP| P[Python Agent Runtime: cognition]
+  P --> S[Event / Conversation / Agenda Scheduler]
+  S --> G[LangGraph NPC decision]
+  G --> C[Memory / Semantic / Belief / Skill]
+  G --> R[Chroma: owner-scoped RAG]
+  G --> L[Configured LLM]
+  P -->|MCP: proposed actions and runtime saves| J
+  J --> W[WorldRules / WorldObjects / WorldSocial: authority]
+  W --> DB[(MySQL world snapshots)]
+```
+
+Java 是 World Truth 和规则权威。Python 的业务字段是 Java 镜像；认知、记忆、会话与调度通过内部 save_agent_state 保存到同一世界快照，不能覆盖物品、位置或关系。Chroma 只是检索索引，不是第二套权威数据库。FastAPI 的 8001 是本机内部控制入口，浏览器只访问 Spring Boot 8080。
+
+## How NPC autonomy works
+
+优先级为 Event Reaction → Conversation → Due Agenda → 一次 bootstrap → Idle。Agenda 按固定冷却给角色重新思考的机会，不是 Tool sequence；模型可以修订 active_goal、intention、粗粒度 plan，不能写 Agenda/busy 或声称真实行动完成。Skill 是按角色/目标加载的无状态 Markdown 专业经验，不推荐精确参数、不执行或续排行动。
 
 ```mermaid
 flowchart LR
-  UI[React 世界观测台] -->|HTTP / SSE| J[Spring Boot 世界服务]
-  J -->|本机控制 HTTP| P[Python Agent Runtime]
-  P --> S[事件调度器]
-  S --> N[NPC Agent / LangGraph]
-  S --> D[Director]
-  N -->|模型决策| L[Qwen Responses]
-  D -->|按规则提议线索| L
-  N -->|MCP 行动请求| J
-  D -->|MCP 环境事件| J
-  J --> R[WorldRules]
-  R --> M[(MySQL 权威世界快照)]
+  E[Event / Conversation / Agenda] --> S[Scheduler]
+  S --> A[NPC Agent]
+  A --> T[Tool proposal]
+  H[Human input / Play] --> T
+  T --> V[Java validation + settlement]
+  V --> EV[Single committed Event]
+  EV --> M[Memory / report Belief / future reactions]
 ```
 
-- **NPC** 只能依据自己的设定、记忆、可见世界设定和已感知事件决定行动，也可等待。
-- **Scheduler** 在新世界开局给每名 NPC 一次行动机会，之后唤醒新事件的知情者，或在 Skill 建议步骤成功后续排该角色；每 Tick 最多一名 NPC，事件连锁反应最多三层。空队列或等待不调用 NPC 模型、不产生行动事件；若本 Tick 没有新事件且待行动队列已空，Director 会在冷却结束后立即尝试在有角色的地点投放剧情线索，再唤醒知情者。
-- **Director** 先由规则判断是否需要新线索，触发后才请求模型提出环境内容；不替 NPC 决定行为。
-- **WorldRules** 校验行动者、位置、体力、物品和状态，按确定性规则结算移动、调查、交谈、交付、休息、攻击、用药、逃跑、跟随、互动，以及显式标记线索的藏匿与找回。藏匿留下可调查痕迹，找回要求本人先调查痕迹。
-- **Spring Boot** 是网页唯一入口；MySQL 保存权威世界快照、事件和调度进度。Python 通过 MCP 提交行动，不直接写权威业务状态。
-- **Chroma** 使用独立的 `qwen3.7-text-embedding` 模型索引角色旧记忆与可见设定；NPC 和 Director 仍使用 `llm_client.py` 中的生成模型。首次为世界建立索引、新增记忆或设定，以及新查询词检索时会调用付费向量接口；未变化的文档和重复查询会复用已有向量。
+## World Truth vs Agent Knowledge
 
-## 本机启动
+inspect 建立本人直接观察，仍可能随时间过时。talk 只证明某人说过这句话；接收者得到带来源的 reported belief，不自动写 verified fact，也不改变世界真相。不同说法可以并存。私有对话、隐藏物件、关闭容器内容和他人记忆不因全局世界存档而进入 NPC Prompt。关系值是简化社交倾向，不是客观心理或可信度。
 
-需要 Docker Desktop、JDK 17、Maven、Python 3.11+ 和 Node.js。模型密钥放在未提交的 `.env` 中，使用 `DASHSCOPE_API_KEY`；模型配置见 `llm_client.py`。在项目根目录运行：
+## Player Mode
+
+Play 接受 inspect/take/put/give/use/interact/move/talk/rest，以及受限 attack API。身份由服务器注入，不能替 NPC 行动；成功 Player action 占用一个 Tick，NPC 在后续 Tick 自主回应。UI 提供对话、移动及对象操作，尚未提供战斗控件。Observe 可以查看关系与 NPC 调试信息，Play 只展示玩家可见信息。
+
+## Tech Stack
+
+Java 17 / Spring Boot / Spring AI MCP / MySQL；Python 3.11+ / LangGraph / 内部 FastAPI / Chroma；React / Vite / SSE。当前生成模型配置为 `qwen3.8-max`，向量模型为 `qwen3.7-text-embedding`、1024 维，见 llm_client.py 与 retrieval/embedding.py。没有 Redis。
+
+## Quick Start
+
+需要 JDK 17、Maven、Python、Node.js 和 Docker Desktop。在仓库根目录用 PowerShell 执行：
 
 ```powershell
 docker compose up -d
 docker compose ps
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-cd web
-npm install
-npm run build
-cd ..
+npm.cmd --prefix web install
+npm.cmd --prefix web run build
 ```
 
-在第一个终端确保 Maven 使用 Java 17，并启动世界服务。按本机安装位置调整 `JAVA_HOME`：
+Compose 只启动 MySQL 8.4，映射本机 3307；不会启动 Java/Python。Java 默认连接配置见 world-service/src/main/resources/application.properties，可通过 NOVELWORLD_JDBC_URL、NOVELWORLD_DB_USER、NOVELWORLD_DB_PASSWORD 覆盖。确保 `mvn -version` 使用 Java 17。
 
-**PowerShell**（提示符通常以 `PS` 开头）：
+第一终端启动 Java并保持运行：
 
 ```powershell
-$env:JAVA_HOME = 'C:\Program Files\Java\jdk-17.0.2'
-$env:Path = "$env:JAVA_HOME\bin;$env:Path"
-mvn -version
-mvn -f .\world-service\pom.xml '-Dmaven.test.skip=true' 'org.springframework.boot:spring-boot-maven-plugin:4.1.1:run'
+mvn -f world-service/pom.xml spring-boot:run
 ```
 
-**cmd 命令提示符**（提示符如 `C:\Users\...\novelworld>`；不要复制上面的单引号）：
-
-```bat
-set "JAVA_HOME=C:\Program Files\Java\jdk-17.0.2"
-set "PATH=%JAVA_HOME%\bin;%PATH%"
-mvn -version
-mvn -f .\world-service\pom.xml -Dmaven.test.skip=true org.springframework.boot:spring-boot-maven-plugin:4.1.1:run
-```
-
-**保持这个终端开着**，等日志出现 `Started WorldServiceApplication`。另开一个 PowerShell 终端，在项目根目录确认 Java 的 8080 已可访问：
+第二终端在根目录设置 `DASHSCOPE_API_KEY`（或放在未提交的 .env），然后启动 Python：
 
 ```powershell
-(Invoke-WebRequest 'http://127.0.0.1:8080/' -UseBasicParsing).StatusCode
-```
-
-若检查终端也是 cmd，可运行 `curl.exe -I http://127.0.0.1:8080/`，预期看到 `HTTP/1.1 200`。
-
-预期为 `200`。若此时访问 `/api/world` 返回 `503`，是因为 Python 尚未启动，先继续下一步。若首页也连不上，请回到 Java 终端查看启动失败信息；不要先启动 Python。
-
-保持 Java 终端运行，在第二个终端启动唯一的内部 Agent Runtime：
-
-```powershell
+$env:NOVELWORLD_DIRECTOR = 'off'  # 演示自主调度；省略则默认开启
 .\.venv\Scripts\python.exe -m uvicorn web_api:app --host 127.0.0.1 --port 8001
 ```
 
-**也保持第二个终端开着**，等日志出现 `Application startup complete`。可在第三个终端验证两端已连通：
+打开 http://127.0.0.1:8080。首次初始化 Chroma 及新文档/查询可能调用付费向量接口；NPC 决策可能多次调用生成模型，Director 开启时可产生额外模型请求。没有密钥时正常在线 Runtime 不能完成索引初始化；离线测试和下方 Eval 不需要密钥。
 
-```powershell
-Invoke-RestMethod 'http://127.0.0.1:8001/internal/status'
-Invoke-RestMethod 'http://127.0.0.1:8080/api/world'
-```
+首页无法打开：检查 Java、8080 和 web/dist。世界/玩家状态不可用：检查 Python、8001、模型配置与数据库。行动被拒绝：阅读规则提示；运行或切换冲突时先暂停再确认当前世界。已提交后出现 warning 时不要盲目重发行动。Chroma 空索引可由当前快照重建，但重新嵌入可能收费。
 
-若第三个终端也是 cmd，可分别运行 `curl.exe http://127.0.0.1:8001/internal/status` 和 `curl.exe http://127.0.0.1:8080/api/world`；两条命令都应返回 JSON，而不是连接错误。
+MySQL 数据卷是持久世界；data/world.json 是本地恢复副本，data/chroma 是可重建索引。不要删除存档或数据卷来处理普通启动错误。演示应创建新世界，避免改动已有世界。
 
-然后在浏览器打开 `http://127.0.0.1:8080`。页面只访问 Spring Boot 的 8080 端口；8001 只供 Java 本机控制。Docker 默认将项目 MySQL 映射到本机 `3307`。
+## Evaluation
 
-启动故障可按端口定位：**首页也打不开**，先检查 Java 终端和 8080；**首页能打开但世界数据报 `Service Unavailable`**，检查 Python 终端和 8001；**Python 启动时出现 `httpx.ConnectError: All connection attempts failed`**，先确认 Java 仍在运行且 8080 返回 `200`。两个服务都需要各自终端持续运行。
-
-## 使用方式
-
-1. 在“开局工坊”编辑默认 JSON 模板并预览。可设置时间、地点、场景线索、NPC 人设、目标、秘密、已知事实、关系、体力和物品。模板草稿保存在当前浏览器；正式创建会由 Java 校验并生成新的世界 ID，不覆盖旧世界。创建和切换前需暂停。
-2. 切换到新世界后，点“下一 Tick”或“运行 10/20 Tick”。开局角色先获得行动机会；其后由已提交事件唤醒知情者。每 Tick 世界时间前进 5 分钟。
-3. 从时间线和角色视角观察结果。作者可在指定地点投放可调查线索；Java 记录事件发生时的知情者，下个 Tick 由相关角色自行决定反应。
-4. 需要保留现有世界时，先暂停再关闭服务。MySQL 数据卷保存世界；`data/world.json` 是 Python 本地恢复副本，`data/chroma/` 是可重建检索索引。不要删除 `data/` 或 Docker 数据卷来“清理项目”。
-5. 要删除旧世界，先暂停运行，在“已保存的世界”中点该世界旁的“删除世界”并确认。当前世界不能直接删除；先切换到另一个世界。删除会移除该世界的 MySQL 存档，Git 无法恢复数据库内容。`data/chroma/<世界 ID>/` 是可重建的本地检索缓存，目前不会随世界一起清理；它不能使已删除的世界重新出现。
-
-创建、预览、切换、查询、投放线索和自动测试不请求模型。NPC 获得行动机会时可能多次请求模型；Director 规则触发时可能有额外请求，费用由服务商按实际用量计算。
-
-## 代码入口与验证
-
-| 路径 | 作用 |
-| --- | --- |
-| `web/src/main.jsx`、`web/src/WorldSetup.jsx` | 页面、时间线、开局工坊 |
-| `world-service/src/main/java/org/novelworld/world/` | 网页 API、MCP、模板、规则与 MySQL 存档 |
-| `web_api.py` | Java 背后的本机 Agent Runtime 控制入口 |
-| `agent/session.py`、`agent/tick.py`、`agent/graph.py` | 会话、事件调度与 NPC 决策循环 |
-| `agent/director.py`、`agent/perception.py` | 剧情触发与角色观察 |
-| `tools/remote_world.py`、`tools/world_tools.py` | MCP 客户端与模型工具路由 |
-| `world/`、`memory/`、`retrieval/`、`lore/` | Python 世界投影、事件、记忆与设定检索 |
-
-不调用模型的验证命令：
+不请求模型的命令：
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -q
-mvn -f .\world-service\pom.xml test
-cd web
-npm run build
+mvn -f world-service/pom.xml test
+npm.cmd --prefix web run build
+.\.venv\Scripts\python.exe -m eval.long_run --ticks 1000 --boundaries
 ```
 
-Java 测试需使用 JDK 17。当前项目以小规模世界的完整闭环为目标；Director 长期规划、复杂感知传播、海量 NPC 与高并发存储仍是后续演进方向。
+先运行 Java tests：Eval 复用其 classpath，并用临时 H2、真实 WorldRules/WorldObjects/WorldSocial/WorldStore 与生产 Python Scheduler/RemoteWorld 验证。只有决策是 scripted，不影响正式 Runtime。输出 eval/results/latest.json（Git 忽略），含 60/200/1000 Tick 检查点、调度/公平性/有界状态/重复统计及真正 Java 进程重启。全部现有回归进一步覆盖 Conversation、单行动、Chroma owner 隔离、失败与旧快照。详情和实际数字见最终验收文档；不把结构验证称为 AI 剧情质量评分。
+
+## Known Limitations
+
+小规模单机原型、每世界单 Player、双人会话上限 12 条/超时 8 Tick、简化同地点可见性和固定 Agenda 冷却。严格高优先级持续事件可能推迟低优先级角色；scripted 公平性结果不是任意模型输入下的无饥饿证明。Event/episodic 历史允许增长，快照和索引扫描成本随之增加。action、时钟、Agent save 是分开的调用，没有跨语言 exactly-once 或网络幂等保证。H2 验收不代表生产 MySQL 压测，模型叙事质量需人工观察。
+
+## V4 Scope Frozen
+
+V4 功能范围冻结。未实现也不自动开展 economy、factions、crafting、complex emotion、multiplayer、general physics、weather、Quest、knowledge graph、Planner 或 Redis。未来方向仅作为讨论项，不自动建立 Phase 9。

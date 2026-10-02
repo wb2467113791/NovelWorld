@@ -9,6 +9,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -31,6 +32,19 @@ public class WorldWebController {
         this.store = store;
         this.runtime = runtime;
         this.mapper = mapper;
+    }
+
+    /** 展示规则/服务错误的可读原因，不把内部异常堆栈发送给浏览器。 */
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<Map<String, String>> requestError(ResponseStatusException error) {
+        String message = error.getReason() == null ? "请求无法完成" : error.getReason();
+        try {
+            var body = mapper.readValue(message, Map.class);
+            message = body.get("detail") instanceof String detail ? detail : "请求参数无效";
+        } catch (RuntimeException ignored) {
+            // Java 的服务/规则提示本身已经是可读文字。
+        }
+        return ResponseEntity.status(error.getStatusCode()).body(Map.of("detail", message));
     }
 
     @SuppressWarnings("unchecked")

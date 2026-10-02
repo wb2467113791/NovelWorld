@@ -1,3 +1,5 @@
+> **历史归档：V3 学习资料，非当前 V4 架构说明。** 文内 Skill 续排、藏匿/找回等旧描述仅用于历史学习。当前实现请阅读 [README](../README.md)、[最终验收](NovelWorld_V4_Final_Evaluation.md) 和 [简历文案](Resume_Project_Description.md)。
+
 # NovelWorld 自主世界完整验收流程
 
 适用范围：可编辑开局、独立世界、事件调度、NPC 知识边界、Java 行动结算、Director 和人为干预。人只观察与投放世界事件，不作为常驻玩家角色。

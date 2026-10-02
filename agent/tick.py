@@ -97,6 +97,14 @@ class WorldTickScheduler:
         self._event_cursor = len(events)
 
     def _select_opportunity(self) -> dict | None:
+        # 开局等待超过一次 Agenda 冷却的角色不能只有低优先级 bootstrap。
+        # 正常开局顺序不变；只补仍在等待的 bootstrap，空队列旧存档不重新启动。
+        for item in self._pending:
+            if item["source"] == "bootstrap" and self._tick_count >= DEFAULT_AGENDA_DELAY:
+                character = WORLD_STATE["characters"][item["name"]]
+                if character.status != "unconscious":
+                    character.runtime_state.schedule_next_agenda(
+                        character=character.name, current_tick=self._tick_count, goals=character.goals)
         reaction = next((item for item in self._pending if item["source"] in {"event", "legacy"}), None)
         if reaction is not None:
             self._pending.remove(reaction)
