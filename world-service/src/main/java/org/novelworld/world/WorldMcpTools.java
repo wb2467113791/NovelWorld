@@ -31,7 +31,7 @@ public class WorldMcpTools {
         catch (JacksonException e) { throw new IllegalArgumentException("状态无法序列化", e); }
     }
 
-    @McpTool(name = "create_world", description = "从 V1.5 存档创建世界；相同 world_id 不可覆盖")
+    @McpTool(name = "create_world", description = "从 V1/V2 兼容存档创建世界；相同 world_id 不可覆盖")
     public String createWorld(@McpToolParam(description = "完整世界 JSON 存档") String snapshotJson) {
         var snapshot = parse(snapshotJson);
         if (!Integer.valueOf(1).equals(snapshot.get("version")) && !Integer.valueOf(2).equals(snapshot.get("version"))) throw new IllegalArgumentException("存档版本不支持");
