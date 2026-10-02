@@ -187,7 +187,7 @@ class PlayerActorTest {
         assertEquals(List.of(session), restored.get("active_conversations"));
         assertFalse(WorldActors.player(restored).containsKey("runtime_state"));
         assertEquals(List.of("玩家", "苏晚"), first.get("perceived_by"));
-        assertFalse(fixture.store.load(fixture.otherId).containsKey("active_conversations"));
+        assertEquals(List.of(), fixture.store.load(fixture.otherId).get("active_conversations"));
     }
     @Test void agentSaveCannotCreatePlayerMemoryOrOverwritePlayerBusiness() {
         var world = world(); var before = player();

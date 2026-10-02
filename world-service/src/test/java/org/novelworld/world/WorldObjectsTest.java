@@ -147,11 +147,14 @@ class WorldObjectsTest {
         act("take", "甲", book); person("甲").put("items", List.of("凭空物件"));
         world.put("inspectable_objects", Map.of("外院", Map.of("登记簿", "伪造"))); WorldObjects.ensure(world);
         assertEquals("甲", book.get("holder")); assertEquals(List.of("登记簿"), person("甲").get("items"));
-        assertFalse(WorldObjects.map(world.get("inspectable_objects")).containsKey("外院"));
+        assertFalse(world.containsKey("inspectable_objects"));
     }
-    @Test void oldGiveAndWorldActionWrappersUseObjectTruth() {
-        act("take", "甲", key); rules.apply(world, "give_item", Map.of("giver", "甲", "receiver", "乙", "item", "钥匙")); assertEquals("乙", key.get("holder"));
-        rules.apply(world, "world_action", Map.of("actor", "甲", "action", "interact", "object_id", door.get("id"), "interaction", "open")); assertEquals("open", door.get("state"));
+    @Test void retiredWrappersCannotExecute() {
+        act("take", "甲", key);
+        String before = mapper.writeValueAsString(world);
+        assertThrows(IllegalArgumentException.class, () -> rules.apply(world, "give_item", Map.of("giver", "甲", "receiver", "乙", "item", "钥匙")));
+        assertThrows(IllegalArgumentException.class, () -> rules.apply(world, "world_action", Map.of("actor", "甲", "action", "interact", "object_id", door.get("id"), "interaction", "open")));
+        assertEquals(before, mapper.writeValueAsString(world));
     }
     @Test void invalidPhysicalPositionsAndPropertiesAreRejected() {
         book.put("holder", "甲"); assertThrows(IllegalArgumentException.class, () -> WorldObjects.validate(world)); book.put("holder", null);

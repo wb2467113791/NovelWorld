@@ -107,11 +107,10 @@ class CurrentRuntimeTest(unittest.TestCase):
     def test_old_snapshot_without_concealment_fields_restores(self):
         snapshot = deepcopy(snapshot_world())
         snapshot.pop("objects")  # 模拟真正的旧存档；新存档只信任 objects。
-        snapshot.pop("concealable_objects")
-        snapshot.pop("concealed_objects")
+        snapshot["version"] = 1
         restore_snapshot(snapshot)
-        self.assertEqual(WORLD_STATE["concealable_objects"], {})
-        self.assertEqual(WORLD_STATE["concealed_objects"], {})
+        self.assertFalse({"inspectable_objects", "concealable_objects", "concealed_objects"} & WORLD_STATE.keys())
+        self.assertEqual(2, snapshot_world()["version"])
 
     def test_same_failed_tool_is_not_sent_to_java_twice_in_one_tick(self):
         index = Mock()

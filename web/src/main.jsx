@@ -5,10 +5,11 @@ import PlayMode from './PlayMode.jsx'
 import './style.css'
 
 const typeLabels = {
-  move: '移动', talk: '交谈', inspect: '调查', relationship: '关系',
-  give_item: '物品', director: '世界事件', narration: '叙述',
-  intervention: '人为干预', rest: '休息',
-  attack: '攻击', use_item: '使用物品', flee: '逃跑', follow: '跟随', interact: '互动',
+  move: '移动', talk: '交谈', inspect: '调查', director: '世界事件',
+  intervention: '人为干预', rest: '休息', attack: '攻击', flee: '逃跑', follow: '跟随',
+  take: '拿取', put: '放置', give: '交付', use: '使用物品', interact: '互动',
+  // legacy history only：保留旧存档时间线标签，不是当前 Tool。
+  relationship: '关系', give_item: '物品', narration: '叙述', use_item: '使用物品',
   conceal: '藏匿线索', recover: '找回线索',
 }
 const initial = name => name.slice(0, 1)
@@ -119,7 +120,7 @@ function App() {
 
   return <div className="app-shell">
     <aside className="sidebar">
-      <div className="brand"><span className="brand-mark">✦</span><div><strong>NOVELWORLD</strong><small>动态叙事引擎 · V3</small></div></div>
+      <div className="brand"><span className="brand-mark">✦</span><div><strong>NOVELWORLD</strong><small>持续 AI 角色世界 · V4</small></div></div>
       <div className="side-label">世界导航</div>
       <a className="nav-link active" href="#overview"><span>◫</span> 世界总览</a>
       <a className="nav-link" href="#timeline"><span>◷</span> 事件时间线</a>
@@ -131,7 +132,7 @@ function App() {
     </aside>
 
     <main className="main-content" id="overview">
-      <header className="topbar"><div><div className="eyebrow">WORLD OBSERVATORY / 世界观测台</div><h1>每个选择，都让世界继续生长。</h1></div><div className="version-pill">● LIVE WORLD <span>V3.0</span></div></header>
+      <header className="topbar"><div><div className="eyebrow">WORLD OBSERVATORY / 世界观测台</div><h1>每个选择，都让世界继续生长。</h1></div><div className="version-pill">● LIVE WORLD <span>V4.0</span></div></header>
 
       {notice && <div className="notice">{notice}<button onClick={() => setNotice('')}>×</button></div>}
       {world?.error && <div className="notice">运行中断：{world.error}</div>}
@@ -144,7 +145,7 @@ function App() {
       </section>
 
       <section className="control-panel">
-        <div><div className="panel-kicker">WORLD CONTROL</div><h2>让故事继续</h2><p>事件唤醒相关角色；没有待处理事件时，世界时间继续前进而不会调用 NPC 模型。</p></div>
+        <div><div className="panel-kicker">WORLD CONTROL</div><h2>让故事继续</h2><p>事件、会话和 Agenda 为 NPC 提供行动机会；没有任何可调度机会时才进入 Idle。</p></div>
         <div className="control-actions">
           <button className="primary-button" disabled={busy || world?.running} onClick={() => command('/api/control/next')}>▶ 下一 Tick</button>
           <button className="secondary-button" disabled={busy || world?.running} onClick={() => command('/api/control/run', {count: 10, delay_seconds: Number(speed)})}>运行 10 Tick</button>

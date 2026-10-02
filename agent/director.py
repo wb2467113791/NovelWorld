@@ -37,6 +37,7 @@ class Director:
             return "stagnation", self.occupied_location()
         if tick_count < 3:
             return None
+        # legacy history only：narration 不计行动，relationship 仍可用于旧历史过滤。
         history = [event for event in WORLD_STATE["events"] if event["type"] not in {"director", "narration"}]
         recent = history[-6:]
         if len(history) >= 3 and len({event["description"] for event in history[-3:]}) == 1:

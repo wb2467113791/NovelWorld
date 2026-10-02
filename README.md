@@ -4,6 +4,8 @@
 
 [3–5 分钟演示指南](docs/NovelWorld_V4_Demo.md) · [最终架构与实际验收结果](docs/NovelWorld_V4_Final_Evaluation.md) · [简历与面试介绍](docs/Resume_Project_Description.md)
 
+当前格式与旧存档边界见 [Final Cleanup](docs/NovelWorld_V4_Final_Cleanup.md)。新模板直接声明 `objects`，初始 inventory 使用 `holder/owner`；Python seed 与 Java 创建共用同一默认模板 JSON。快照写入 V2，V1 在加载时迁移；不再保存旧三字典。`Character.items` 仅为 holder 派生展示。旧浏览器模板草稿需重新创建，已有世界存档仍可恢复。正式 Java 入口不再接受旧 Tool 别名或按名称定位对象的参数；旧 Event 历史保留读取。
+
 ## Why this project
 
 单个聊天机器人容易把“说发生了”当成“真的发生了”。NovelWorld 分开模型意图、角色知识、程序调度和真实世界规则，探索小规模小说/RPG 世界的持续运行闭环，不追求海量 NPC 或复杂游戏画面。

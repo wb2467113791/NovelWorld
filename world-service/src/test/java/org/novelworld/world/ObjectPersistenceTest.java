@@ -71,17 +71,37 @@ class ObjectPersistenceTest {
         assertEquals(before, store.load(id));
     }
     @Test void trueLegacyDatabaseSnapshotMigratesWithStableIdsAndHiddenTrace() {
-        var old = store.load(id); old.remove("objects");
-        var inspectable = WorldObjects.map(old.get("inspectable_objects")); var place = WorldObjects.map(inspectable.get("晚风客栈"));
-        Object observation = place.remove("住客登记簿"); place.put("住客登记簿被移动的痕迹", "移动痕迹");
-        old.put("concealed_objects", Map.of("晚风客栈", Map.of("住客登记簿", Map.of("observation", observation,
-                "trace_name", "住客登记簿被移动的痕迹", "concealed_at_event_count", 0))));
+        var old = store.load(id); old.remove("objects"); old.put("version", 1);
+        old.put("inspectable_objects", Map.of("晚风客栈", Map.of("住客登记簿被移动的痕迹", "移动痕迹")));
+        old.put("concealable_objects", Map.of("晚风客栈", List.of("住客登记簿")));
+        old.put("concealed_objects", Map.of("晚风客栈", Map.of("住客登记簿", Map.of("observation", "旧内容",
+                "trace_name", "住客登记簿被移动的痕迹", "concealed_at_event_count", 1))));
+        // legacy history only：旧痕迹曾被调查，之后藏匿改变其观察世代。
+        WorldObjects.list(old.get("events")).add(Map.of("type", "inspect", "actor", "苏晚", "location", "晚风客栈",
+                "payload", Map.of("object_name", "住客登记簿被移动的痕迹", "observation", "移动痕迹 状态：normal")));
+        WorldObjects.list(old.get("events")).add(Map.of("type", "conceal", "actor", "苏晚", "location", "晚风客栈", "payload", Map.of()));
         jdbc.update("UPDATE world_saves SET snapshot = ? WHERE world_id = ?", mapper.writeValueAsString(old), id);
-        var migrated = store.load(id); assertEquals(migrated, store.load(id));
+        var migrated = store.load(id); assertEquals(migrated, store.load(id)); assertEquals(2, migrated.get("version"));
         assertEquals(false, named(migrated, "住客登记簿").get("visible"));
-        assertEquals(named(migrated, "住客登记簿").get("id"), WorldObjects.map(named(migrated, "住客登记簿被移动的痕迹").get("properties")).get("trace_for"));
-        store.update(id, migrated); assertTrue(jdbc.queryForObject("SELECT snapshot FROM world_saves WHERE world_id = ?", String.class, id).contains("\"objects\""));
+        assertEquals(WorldObjects.stableId("scene\0晚风客栈\0住客登记簿"), named(migrated, "住客登记簿").get("id"));
+        assertEquals("林默", named(migrated, "捕快腰牌").get("holder"));
+        var trace = named(migrated, "住客登记簿被移动的痕迹");
+        assertEquals(Map.of("hidden_at_index", 1), trace.get("properties")); assertEquals(false, trace.get("portable"));
+        var inspectArgs = Map.of("character", "苏晚", "object_id", trace.get("id"));
+        new WorldRules().apply(migrated, "inspect", inspectArgs); // 不被隐藏前的旧调查误拒绝。
+        assertThrows(IllegalArgumentException.class, () -> new WorldRules().apply(migrated, "inspect", inspectArgs));
+        store.update(id, migrated);
+        var saved = mapper.readValue(jdbc.queryForObject("SELECT snapshot FROM world_saves WHERE world_id = ?", String.class, id), Map.class);
+        assertTrue(saved.containsKey("objects")); assertEquals(2, saved.get("version"));
+        for (String field : List.of("inspectable_objects", "concealable_objects", "concealed_objects")) assertFalse(saved.containsKey(field));
+        // 旧 canonical V1 标记也在加载边界清除，不重新生成旧投影。
+        saved.put("version", 1);
+        WorldObjects.map(named(saved, "住客登记簿").get("properties")).put("legacy_concealable", true);
+        WorldObjects.map(named(saved, "住客登记簿被移动的痕迹").get("properties")).put("trace_for", named(saved, "住客登记簿").get("id"));
+        jdbc.update("UPDATE world_saves SET snapshot = ? WHERE world_id = ?", mapper.writeValueAsString(saved), id);
+        assertEquals(mapper.readValue(mapper.writeValueAsString(migrated), Map.class), store.load(id));
     }
+
     @Test void interventionAddsCanonicalObjectAndCannotOverwriteMovedObject() {
         tools.injectWorldEvent(id, "晚风客栈", "纸条", "真实内容");
         move(); var note = named(store.load(id), "纸条"); act("take", Map.of("character", "林默", "object_id", note.get("id")), "林默");
@@ -96,6 +116,9 @@ class ObjectPersistenceTest {
         var created = store.load(templates.createWorld(template));
         assertEquals(Set.of("template-key"), WorldObjects.map(created.get("objects")).keySet());
         assertEquals(List.of(), WorldObjects.map(WorldObjects.map(created.get("characters")).get("林默")).get("items"));
+        WorldObjects.map(item.get("properties")).put("legacy_concealable", true);
+        assertThrows(IllegalArgumentException.class, () -> templates.createWorld(template));
+        WorldObjects.map(item.get("properties")).clear();
         item.put("affordances", List.of("执行任意脚本"));
         assertThrows(IllegalArgumentException.class, () -> templates.createWorld(template));
     }

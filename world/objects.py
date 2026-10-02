@@ -25,27 +25,32 @@ def make_object(name: str, location: str | None, description: str, *, holder=Non
 def migrate(snapshot: dict) -> dict:
     """legacy migration only：objects 存在时忽略旧物件字段。"""
     if "objects" in snapshot:
-        return deepcopy(snapshot["objects"])
+        objects = deepcopy(snapshot["objects"])
+        if snapshot.get("version", 1) == 1:
+            # V1 canonical 快照也可能带有已经退役的能力标记。
+            for item in objects.values():
+                item["properties"].pop("legacy_concealable", None)
+                item["properties"].pop("trace_for", None)
+        return objects
+    if snapshot.get("version", 1) == 2:
+        raise ValueError("V2 存档必须包含 objects")
     result = {}
-    allowed = snapshot.get("concealable_objects", {})
     for place, names in snapshot.get("inspectable_objects", {}).items():
         for name, description in names.items():
             item = make_object(name, place, description)
-            if name in allowed.get(place, []):
-                item["properties"]["legacy_concealable"] = True
             result[item["id"]] = item
     for place, names in snapshot.get("concealed_objects", {}).items():
         for name, old in names.items():
             item = make_object(name, place, old["observation"])
             item["visible"] = False
-            item["properties"].update(legacy_concealable=True, hidden_at_index=old.get("concealed_at_event_count", 0))
+            item["properties"]["hidden_at_index"] = old.get("concealed_at_event_count", 0)
             result[item["id"]] = item
             trace = result.get(stable_id(f"scene\0{place}\0{old['trace_name']}"))
             if trace:
                 trace["portable"] = False
-                trace["properties"].update(trace_for=item["id"], hidden_at_index=old.get("concealed_at_event_count", 0))
+                trace["properties"]["hidden_at_index"] = old.get("concealed_at_event_count", 0)
     for name, person in snapshot["characters"].items():
-        for label in person["items"]:
+        for label in person.get("items", []):
             item = make_object(label, None, f"一件{label}。", holder=name)
             if item["id"] in result:
                 raise ValueError("旧物品重复")
@@ -73,9 +78,6 @@ def is_visible(objects: dict, item: dict, actor: str, characters: dict) -> bool:
 
 def current_objects() -> dict:
     from world.state import WORLD_STATE
-    if "objects" not in WORLD_STATE:
-        WORLD_STATE["objects"] = migrate({**WORLD_STATE, "characters": {
-            name: {"items": person.items} for name, person in WORLD_STATE["characters"].items()}})
     return WORLD_STATE["objects"]
 
 
@@ -105,16 +107,13 @@ def validate(objects: dict, characters: dict, locations: list) -> None:
         if type(item["visible"]) is not bool or type(item["portable"]) is not bool or item["state"] not in states:
             raise ValueError("Object 状态无效")
         props = item["properties"]
-        if not isinstance(props, dict) or set(props) - {"container", "heal", "legacy_concealable", "trace_for", "hidden_at_index"}:
+        if not isinstance(props, dict) or set(props) - {"container", "heal", "hidden_at_index"}:
             raise ValueError("Object properties 无效")
-        for field in ("container", "legacy_concealable"):
-            if field in props and type(props[field]) is not bool:
-                raise ValueError("Object property 必须是布尔值")
+        if "container" in props and type(props["container"]) is not bool:
+            raise ValueError("Object property 必须是布尔值")
         for field in ("heal", "hidden_at_index"):
             if field in props and (type(props[field]) is not int or props[field] < 0 or (field == "heal" and props[field] > 100)):
                 raise ValueError("Object 数值属性无效")
-        if "trace_for" in props and props["trace_for"] not in objects:
-            raise ValueError("痕迹引用无效")
         if not isinstance(item["affordances"], list) or any(action not in {"open", "close", "light", "extinguish", "consume"} for action in item["affordances"]):
             raise ValueError("Object affordances 无效")
         positions = sum(item[field] is not None for field in ("location", "holder", "container"))
@@ -132,19 +131,3 @@ def validate(objects: dict, characters: dict, locations: list) -> None:
             parent = objects.get(item["container"])
             if not parent or parent is item or parent["location"] is None or parent["holder"] is not None or not parent["properties"].get("container") or props.get("container"):
                 raise ValueError("仅支持一层固定容器")
-
-
-def legacy_views(objects: dict, characters: dict) -> dict:
-    views = dict(inspectable_objects={}, concealable_objects={}, concealed_objects={})
-    for item in objects.values():
-        place = effective_location(objects, item, characters)
-        if not place or item["holder"]:
-            continue
-        accessible = item["visible"] and (not item["container"] or (objects[item["container"]]["state"] == "open" and objects[item["container"]]["visible"]))
-        if accessible:
-            views["inspectable_objects"].setdefault(place, {})[item["name"]] = item["description"]
-        if item["properties"].get("legacy_concealable"):
-            views["concealable_objects"].setdefault(place, []).append(item["name"])
-            if not item["visible"]:
-                views["concealed_objects"].setdefault(place, {})[item["name"]] = dict(observation=item["description"], trace_name=item["name"] + "被移动的痕迹", concealed_at_event_count=item["properties"].get("hidden_at_index", 0))
-    return views

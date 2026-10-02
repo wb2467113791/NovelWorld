@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 
-const STORAGE_KEY = 'novelworld-opening-templates-v1'
+const STORAGE_KEY = 'novelworld-opening-templates-v2'
 
 function readSavedTemplates() {
   try {
@@ -65,6 +65,15 @@ export default function WorldSetup({ running, activeWorldId, onActivated }) {
           || !Array.isArray(template.locations) || !template.locations.every(item => typeof item === 'string')
           || !template.characters || typeof template.characters !== 'object' || Array.isArray(template.characters)) {
         return { error: '模板需要 locations 和 characters；完整规则由服务器在创建时校验' }
+      }
+      if (!template.objects || typeof template.objects !== 'object' || Array.isArray(template.objects)
+          || ['inspectable_objects', 'concealable_objects', 'concealed_objects'].some(field => field in template)
+          || Object.values(template.characters).some(character => character && 'items' in character)) {
+        return { error: '旧模板请重新创建；物品统一使用 objects，持有关系用 holder 声明' }
+      }
+      if (Object.values(template.objects).some(object => !object || typeof object !== 'object'
+          || ['id', 'name', 'description'].some(field => typeof object[field] !== 'string'))) {
+        return { error: 'objects 需要对象 ID、名称和描述；完整规则由服务器校验' }
       }
       if (Object.values(template.characters).some(character => !character || typeof character !== 'object'
           || ['role', 'background', 'personality', 'location'].some(field => typeof character[field] !== 'string')
@@ -174,12 +183,12 @@ export default function WorldSetup({ running, activeWorldId, onActivated }) {
   const characters = Object.entries(template?.characters || {})
   return <section className="panel opening-panel" id="setup">
     <div className="section-heading"><div><div className="panel-kicker">WORLD SETUP</div><h2>开局工坊</h2></div><span className="view-tag">创建新世界前编辑</span></div>
-    <p className="opening-note">这里设置世界的起点。NPC 的秘密、已知事实与世界设定分开保存；运行后由角色自己决定如何行动。编辑和预览不会调用模型。</p>
+    <p className="opening-note">这里设置世界的起点。NPC 的秘密、已知事实与世界设定分开保存；运行后由角色自己决定如何行动。编辑和预览不会调用模型。旧浏览器模板草稿需按当前 objects 格式重新创建。</p>
     <div className="opening-grid">
       <div className="opening-editor">
         <label htmlFor="opening-json">开局模板 JSON</label>
         <textarea id="opening-json" spellCheck="false" value={draft} onChange={event => { setDraft(event.target.value); setCreatedId('') }} aria-invalid={Boolean(preview.error)} />
-        <p className="opening-hint">可修改角色人设、目标、秘密、已知事实、关系、地点、体力、物品，以及世界时间、场景、线索和 lore 世界设定。创建时服务器会校验引用。</p>
+        <p className="opening-hint">可修改角色人设、目标、秘密、已知事实、关系、地点、体力、物品，以及世界时间、场景、线索和 lore 世界设定。物品统一声明在 objects，通过 holder 设置初始持有者。创建时服务器会校验引用。</p>
         <div className="opening-actions">
           <button type="button" onClick={loadDefault} disabled={busy}>恢复默认模板</button>
           <input aria-label="模板名称" placeholder="模板名称" value={draftName} onChange={event => setDraftName(event.target.value)} />
@@ -200,13 +209,13 @@ export default function WorldSetup({ running, activeWorldId, onActivated }) {
               <PreviewList title="已知事实" values={character.known_facts} />
               <PreviewList title="自己的秘密（仅作者预览）" values={character.secrets} />
               <PreviewList title="关系" values={Object.entries(character.relationships || {}).map(([target, score]) => `${target} ${score}`)} />
-              <PreviewList title="物品" values={character.items} />
+              <PreviewList title="物品" values={Object.values(template.objects).filter(object => object.holder === name).map(object => object.name)} />
             </article>
           })}
           <h3>场景与初始线索</h3>
           {template.locations.map(location => <article className="opening-location" key={location}>
             <strong>{location}</strong><p>{template.inspectables?.[location] || '缺少场景描述'}</p>
-            <PreviewList title="可调查对象" values={Object.entries(template.inspectable_objects?.[location] || {}).map(([name, clue]) => `${name}：${clue}`)} />
+            <PreviewList title="可调查对象" values={Object.values(template.objects).filter(object => object.location === location).map(object => `${object.name}：${object.description}`)} />
           </article>)}
           <h3>世界设定与可见范围</h3>
           {(Array.isArray(template.lore) ? template.lore : []).map((raw, index) => <article className="opening-location" key={raw?.id || index}>

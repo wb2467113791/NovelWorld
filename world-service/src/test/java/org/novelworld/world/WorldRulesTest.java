@@ -69,21 +69,21 @@ class WorldRulesTest {
 
     @Test void inventoryRequiresOwnershipAndColocation() {
         var world = world();
-        assertThrows(IllegalArgumentException.class, () -> rules.apply(world, "give_item", Map.of("giver", "苏晚", "receiver", "林默", "item", "账本")));
+        assertThrows(IllegalArgumentException.class, () -> rules.apply(world, "give", Map.of("character", "苏晚", "receiver", "林默", "object_id", WorldObjects.stableId("inventory\0苏晚\0账本"))));
         assertEquals(0, ((Map<?, ?>) ((Map<?, ?>) ((Map<?, ?>) world.get("characters")).get("林默")).get("relationships")).get("苏晚"));
         rules.apply(world, "move_character", Map.of("character", "林默", "location", "客栈"));
-        rules.apply(world, "give_item", Map.of("giver", "苏晚", "receiver", "林默", "item", "账本"));
+        rules.apply(world, "give", Map.of("character", "苏晚", "receiver", "林默", "object_id", WorldObjects.stableId("inventory\0苏晚\0账本")));
         assertTrue(((List<?>) ((Map<?, ?>) ((Map<?, ?>) world.get("characters")).get("林默")).get("items")).contains("账本"));
         assertEquals(2, ((Map<?, ?>) ((Map<?, ?>) ((Map<?, ?>) world.get("characters")).get("林默")).get("relationships")).get("苏晚"));
         assertEquals(2, ((List<?>) world.get("events")).size());
-        assertThrows(IllegalArgumentException.class, () -> rules.apply(world, "give_item", Map.of("giver", "苏晚", "receiver", "林默", "item", "账本")));
+        assertThrows(IllegalArgumentException.class, () -> rules.apply(world, "give", Map.of("character", "苏晚", "receiver", "林默", "object_id", WorldObjects.stableId("inventory\0苏晚\0账本"))));
         assertEquals(2, ((Map<?, ?>) ((Map<?, ?>) ((Map<?, ?>) world.get("characters")).get("林默")).get("relationships")).get("苏晚"));
     }
 
     @Test void repeatedInspectionDoesNotCreateEvent() {
         var world = world();
-        rules.apply(world, "inspect", Map.of("character", "苏晚", "object_name", "账簿"));
-        assertThrows(IllegalArgumentException.class, () -> rules.apply(world, "inspect", Map.of("character", "苏晚", "object_name", "账簿")));
+        rules.apply(world, "inspect", Map.of("character", "苏晚", "object_id", WorldObjects.stableId("scene\0客栈\0账簿")));
+        assertThrows(IllegalArgumentException.class, () -> rules.apply(world, "inspect", Map.of("character", "苏晚", "object_id", WorldObjects.stableId("scene\0客栈\0账簿"))));
         assertEquals(1, ((List<?>) world.get("events")).size());
     }
 
@@ -93,7 +93,7 @@ class WorldRulesTest {
         var before = new tools.jackson.databind.ObjectMapper().writeValueAsString(world);
         for (String tool : List.of("conceal_clue", "recover_clue")) {
             assertThrows(IllegalArgumentException.class, () -> rules.apply(world, tool,
-                    Map.of("character", "苏晚", "object_name", "账簿")));
+                    Map.of("character", "苏晚", "object_id", WorldObjects.stableId("scene\0客栈\0账簿"))));
             assertEquals(before, new tools.jackson.databind.ObjectMapper().writeValueAsString(world));
         }
     }
@@ -103,7 +103,7 @@ class WorldRulesTest {
         rules.apply(world, "move_character", Map.of("character", "林默", "location", "客栈"));
         assertThrows(IllegalArgumentException.class, () -> rules.apply(world, "talk", Map.of(
                 "speaker", "林默", "listener", "苏晚", "message", "我看过账簿。")));
-        rules.apply(world, "inspect", Map.of("character", "林默", "object_name", "账簿"));
+        rules.apply(world, "inspect", Map.of("character", "林默", "object_id", WorldObjects.stableId("scene\0客栈\0账簿")));
         assertDoesNotThrow(() -> rules.apply(world, "talk", Map.of(
                 "speaker", "林默", "listener", "苏晚", "message", "我看过账簿。")));
     }

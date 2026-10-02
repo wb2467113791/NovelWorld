@@ -14,10 +14,10 @@ from memory.semantic import SemanticFact, SemanticMemory
 from memory.short_term import ShortTermMemory
 from memory.belief import BeliefMemory
 from world.state import WORLD_STATE
-from world.objects import current_objects, inventory, legacy_views, migrate, validate
+from world.objects import current_objects, inventory, migrate, validate
 
 
-SAVE_VERSION = 1
+SAVE_VERSION = 2
 DEFAULT_SAVE_PATH = Path(__file__).resolve().parents[1] / "data" / "world.json"
 
 
@@ -99,14 +99,13 @@ def _character_from_dict(data: dict, events: list) -> Character:
 
 
 def snapshot_world(*, scheduler_state: dict | None = None) -> dict:
-    """生成可供本地存档和 V2 服务共用的完整快照。"""
+    """生成 canonical V2 快照；items 仅为 holder 的展示投影。"""
     return {
         "version": SAVE_VERSION,
         "world_id": WORLD_STATE["world_id"],
         "time": WORLD_STATE["time"],
         "locations": WORLD_STATE["locations"],
         "inspectables": WORLD_STATE["inspectables"],
-        **legacy_views(current_objects(), WORLD_STATE["characters"]),
         "objects": deepcopy(current_objects()),
         "lore": WORLD_STATE["lore"],
         "events": WORLD_STATE["events"],
@@ -121,7 +120,7 @@ def snapshot_world(*, scheduler_state: dict | None = None) -> dict:
 
 def restore_snapshot(snapshot: dict) -> dict:
     """先完整解析存档，再一次性替换当前世界。"""
-    if snapshot.get("version") != SAVE_VERSION:
+    if snapshot.get("version") not in (1, SAVE_VERSION):
         raise ValueError("不支持的世界存档版本")
     characters = {
         name: _character_from_dict(data, snapshot["events"])
@@ -143,7 +142,6 @@ def restore_snapshot(snapshot: dict) -> dict:
     restored["characters"] = characters
     restored["active_conversations"] = conversations
     restored["objects"] = objects
-    restored.update(legacy_views(objects, characters))
     WORLD_STATE.clear()
     WORLD_STATE.update(restored)
     return snapshot["scheduler"]

@@ -2,6 +2,8 @@
 
 基于已审查 Phase 7 `934f4951693915e5c83e9dc5b9c4d08989ecaaa8`，在 `v4-phase8-final` 完成结构评估、稳定性修正和演示文档。以下数字来自 2026-10-02 的实际执行，没有调用商业模型或生产 MySQL。
 
+后续 canonical 格式收敛和再次验收记录见 [Final Cleanup](NovelWorld_V4_Final_Cleanup.md)。本文保留 Phase 8 的执行记录；当前模板、快照版本与 Legacy 边界以 Cleanup 文档为准。
+
 ## 验证环境与方法
 
 命令：`python -m eval.long_run --ticks 1000 --boundaries`。同一次 Director=None、玩家零干预的 1000 Tick 运行记录 60/200/1000 检查点，避免重复跑相同场景。三名默认 NPC 为林默、苏晚、赵无极，在独立临时世界中同处客栈；scripted decision 选择真实 talk，体力不足则真实 rest。

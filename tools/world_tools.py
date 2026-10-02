@@ -136,7 +136,7 @@ for name, description, extra, required in (
         "parameters": {"type": "object", "properties": {"character": {"type": "string"}, "object_id": {"type": "string"}, **extra},
                        "required": ["character", "object_id", *required], "additionalProperties": False}})
 
-# 正常 Python 仅接受正式 NPC 工具；旧外部参数兼容只在 Java 边界。
+# Python / Java 正式行动入口均只接受当前 Tool；旧 Event 仅用于历史读取。
 TOOL_NAMES = frozenset(schema["name"] for schema in NPC_ACTION_TOOL_SCHEMAS)
 TOOL_ACTOR_ARGUMENTS = {
     "take": "character", "put": "character", "give": "character", "use": "character", "interact": "character",

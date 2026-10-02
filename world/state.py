@@ -1,38 +1,18 @@
 """保存 NovelWorld 当前的世界状态。"""
 
-from dataclasses import asdict
+from copy import deepcopy
 from uuid import uuid4
 
-from characters.presets import CHARACTERS
+from characters.presets import CHARACTERS, DEFAULT_TEMPLATE
 from characters.model import is_npc
-from lore.catalog import load_lore
 from memory.event_summary import event_memory_metadata, summarize_event
 from world.events import Event, recipients_for_event
 
 
 WORLD_STATE = {
     "world_id": uuid4().hex,
-    "time": "08:00",
-    "locations": ["晚风客栈", "县衙", "青石街"],
-    # 世界状态直接保存 Character 对象，不再复制位置、体力和关系。
+    **{key: deepcopy(DEFAULT_TEMPLATE[key]) for key in ("time", "locations", "inspectables", "objects", "lore")},
     "characters": CHARACTERS,
-    "inspectables": {
-        "晚风客栈": "一楼桌椅摆放整齐，柜台后方挂着一串旧钥匙。",
-        "县衙": "案桌上放着尚未整理完的失踪案卷宗。",
-        "青石街": "清晨的街面有些潮湿，行人正渐渐多起来。",
-    },
-    "inspectable_objects": {
-        "晚风客栈": {
-            "住客登记簿": "登记簿记载失踪者案发前夜入住晚风客栈，但离店时辰被涂改；仅凭记录无法确定其去向。",
-            "后门": "后门通向客栈外；仅凭眼前环境无法确认案发夜经过的人是谁。",
-            "柴房门锁": "柴房门锁已有锈迹；仅凭外观无法确认近期是否被打开过。",
-            "木箱": "一个可打开存放物品的木箱。",
-            "钥匙": "一把普通小钥匙。",
-        },
-    },
-    "concealable_objects": {"晚风客栈": ["住客登记簿"]},
-    "concealed_objects": {},
-    "lore": [asdict(entry) for entry in load_lore()],
     "events": [],
     "active_conversations": [],
 }

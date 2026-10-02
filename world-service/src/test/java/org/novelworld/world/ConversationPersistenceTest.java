@@ -67,7 +67,7 @@ class ConversationPersistenceTest {
         assertEquals(before.get("events"), saved.get("events"));
         assertEquals(before.get("time"), saved.get("time"));
         assertEquals(List.of("林默", "苏晚"), first.get("perceived_by"));
-        assertFalse(store.load(otherId).containsKey("active_conversations"));
+        assertEquals(List.of(), store.load(otherId).get("active_conversations"));
     }
 
     @Test void runtimeCannotFabricateMessageOrImportAnotherWorldTalk() {

@@ -3,6 +3,7 @@
 from world.events import Event
 
 
+# legacy history only：narration/relationship/give_item/conceal/recover/use_item 仅供旧 Event 读取。
 EVENT_IMPORTANCE = {
     "narration": 1,
     "move": 2,
@@ -73,5 +74,5 @@ def summarize_event(event: Event, observer: str) -> str:
     if kind == "director":
         return f"我在{location}注意到：{event['description']}"
 
-    # legacy migration only：旧 narration/conceal/recover 历史仍可显示原描述。
+    # legacy history only：旧 narration/conceal/recover/use_item 历史仍可显示原描述。
     return event["description"]

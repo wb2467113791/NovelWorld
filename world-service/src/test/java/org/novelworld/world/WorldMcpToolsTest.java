@@ -180,7 +180,7 @@ class WorldMcpToolsTest {
         world.put("locations", List.of("客栈", "县衙"));
         world.put("inspectable_objects", new HashMap<String, Object>());
         world.put("events", new ArrayList<>());
-        world.put("characters", Map.of("甲", Map.of("location", "客栈"), "乙", Map.of("location", "县衙")));
+        world.put("characters", Map.of("甲", new HashMap<>(Map.of("location", "客栈")), "乙", new HashMap<>(Map.of("location", "县衙"))));
         when(store.load("test-world")).thenReturn(world);
         var tools = new WorldMcpTools(store, new WorldRules(), new ObjectMapper());
 
@@ -203,7 +203,7 @@ class WorldMcpToolsTest {
         world.put("locations", List.of("晚风客栈"));
         world.put("inspectable_objects", new HashMap<String, Object>());
         world.put("events", new ArrayList<>());
-        world.put("characters", Map.of("苏晚", Map.of("location", "晚风客栈")));
+        world.put("characters", Map.of("苏晚", new HashMap<>(Map.of("location", "晚风客栈"))));
         when(store.load("test-world")).thenReturn(world);
         var tools = new WorldMcpTools(store, new WorldRules(), new ObjectMapper());
 
@@ -211,7 +211,8 @@ class WorldMcpToolsTest {
 
         assertTrue(json.contains("director"));
         assertEquals(1, ((List<?>) world.get("events")).size());
-        assertFalse(((Map<?, ?>) ((Map<?, ?>) world.get("inspectable_objects")).get("晚风客栈")).isEmpty());
+        assertFalse(WorldObjects.map(world.get("objects")).isEmpty());
+        assertFalse(world.containsKey("inspectable_objects"));
         assertEquals("晚风客栈", ((Map<?, ?>) ((Map<?, ?>) world.get("characters")).get("苏晚")).get("location"));
         verify(store).update(eq("test-world"), same(world));
     }

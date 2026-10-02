@@ -34,7 +34,7 @@ public class WorldMcpTools {
     @McpTool(name = "create_world", description = "从 V1.5 存档创建世界；相同 world_id 不可覆盖")
     public String createWorld(@McpToolParam(description = "完整世界 JSON 存档") String snapshotJson) {
         var snapshot = parse(snapshotJson);
-        if (!Integer.valueOf(1).equals(snapshot.get("version"))) throw new IllegalArgumentException("存档版本不支持");
+        if (!Integer.valueOf(1).equals(snapshot.get("version")) && !Integer.valueOf(2).equals(snapshot.get("version"))) throw new IllegalArgumentException("存档版本不支持");
         String worldId = String.valueOf(snapshot.get("world_id"));
         if (worldId.isBlank() || "null".equals(worldId) || !(snapshot.get("characters") instanceof Map))
             throw new IllegalArgumentException("世界 ID 或角色缺失");
@@ -81,7 +81,7 @@ public class WorldMcpTools {
         if (((Map<?, ?>) world.get("objects")).containsKey(object.get("id")))
             throw new IllegalArgumentException("该线索已存在，不能覆盖其物理状态");
         ((Map<String, Object>) world.get("objects")).put((String) object.get("id"), object);
-        WorldObjects.project(world);
+        WorldObjects.projectInventory(world);
         var event = new LinkedHashMap<String, Object>();
         event.put("id", UUID.randomUUID().toString().replace("-", ""));
         event.put("timestamp", world.get("time")); event.put("type", "intervention");
@@ -104,7 +104,6 @@ public class WorldMcpTools {
         var arguments = parse(argumentsJson);
         String actorKey = switch (name) {
             case "talk" -> "speaker";
-            case "give_item" -> "giver";
             case "world_action" -> "actor";
             case "inspect", "take", "put", "give", "use", "interact", "move_character",
                     "rest_character" -> "character";
@@ -288,7 +287,7 @@ public class WorldMcpTools {
         if (((Map<?, ?>) world.get("objects")).containsKey(object.get("id")))
             throw new IllegalArgumentException("该线索已存在，不能覆盖其物理状态");
         ((Map<String, Object>) world.get("objects")).put((String) object.get("id"), object);
-        WorldObjects.project(world);
+        WorldObjects.projectInventory(world);
         var event = new LinkedHashMap<String, Object>();
         event.put("id", UUID.randomUUID().toString().replace("-", ""));
         event.put("timestamp", world.get("time")); event.put("type", "director");

@@ -33,28 +33,20 @@ class LegacyCleanupTest {
         assertTrue(pending.stream().map(WorldObjects::map).allMatch(item -> "bootstrap".equals(item.get("source"))));
         assertFalse(scheduler.containsKey("skill_views"));
     }
-    @Test void retainedExternalAliasesNormalizeIntoAuthoritativePrimitives() {
-        fixture.move(); var world = fixture.store.load(fixture.id); var book = fixture.named(world, "住客登记簿");
-        fixture.act("take", Map.of("character", "林默", "object_id", book.get("id")), "林默");
-        fixture.act("give_item", Map.of("giver", "林默", "receiver", "苏晚", "item", "住客登记簿"), "林默");
-        var after = fixture.store.load(fixture.id);
-        assertEquals("苏晚", fixture.named(after, "住客登记簿").get("holder"));
-        assertEquals("give", WorldObjects.map(WorldObjects.list(after.get("events")).get(2)).get("type"));
-        var door = fixture.named(after, "后门");
-        fixture.act("world_action", Map.of("actor", "林默", "action", "interact", "object_id", door.get("id"), "interaction", "open"), "林默");
-        assertEquals("open", fixture.named(fixture.store.load(fixture.id), "后门").get("state"));
-        assertThrows(IllegalArgumentException.class, () -> fixture.act("world_action", Map.of("actor", "林默", "action", "interact", "object_id", door.get("id")), "林默"));
-        var saved = fixture.store.load(fixture.id);
-        assertThrows(IllegalArgumentException.class, () -> fixture.act("give_item", Map.of("giver", "苏晚", "receiver", "林默", "item", "住客登记簿"), "林默"));
-        assertEquals(saved, fixture.store.load(fixture.id));
+    @Test void retiredExternalAliasesRejectWithoutChangingWorld() {
+        var before = fixture.store.load(fixture.id);
+        assertThrows(IllegalArgumentException.class, () -> fixture.act("give_item", Map.of("giver", "林默", "receiver", "苏晚", "item", "捕快腰牌"), "林默"));
+        for (String action : List.of("use_item", "interact"))
+            assertThrows(IllegalArgumentException.class, () -> fixture.act("world_action", Map.of("actor", "林默", "action", action, "item", "捕快腰牌", "interaction", "open"), "林默"));
+        assertEquals(before, fixture.store.load(fixture.id));
     }
     @Test void removedPlotToolsFailAtMcpWithoutChangingSnapshot() {
         var before = fixture.store.load(fixture.id);
-        for (String tool : List.of("conceal_clue", "recover_clue"))
+        for (String tool : List.of("conceal_clue", "recover_clue", "update_relationship"))
             assertThrows(IllegalArgumentException.class, () -> fixture.act(tool, Map.of("character", "苏晚", "object_name", "住客登记簿"), "苏晚"));
         assertEquals(before, fixture.store.load(fixture.id));
     }
-    @Test void externalUseItemAliasRequiresARealHeldObjectAndConsumesIt() {
+    @Test void canonicalUseRequiresARealHeldObjectAndConsumesIt() {
         var world = fixture.store.load(fixture.id);
         var medicine = WorldObjects.object("legacy-medicine", "普通药物", null, "药物");
         medicine.put("holder", "林默"); medicine.put("owner", "林默");
@@ -62,7 +54,7 @@ class LegacyCleanupTest {
         WorldObjects.map(world.get("objects")).put("legacy-medicine", medicine);
         WorldObjects.map(WorldObjects.map(world.get("characters")).get("林默")).put("hp", 60);
         fixture.store.update(fixture.id, world);
-        fixture.act("world_action", Map.of("actor", "林默", "action", "use_item", "item", "普通药物"), "林默");
+        fixture.act("use", Map.of("character", "林默", "action", "consume", "object_id", "legacy-medicine"), "林默");
         var saved = fixture.store.load(fixture.id);
         assertEquals("consumed", fixture.named(saved, "普通药物").get("state"));
         assertNull(fixture.named(saved, "普通药物").get("holder"));
@@ -73,7 +65,8 @@ class LegacyCleanupTest {
         var note = WorldObjects.object("custom-hidden-note", "隐蔽纸条", null, "内容不能泄漏");
         note.put("container", chest.get("id")); WorldObjects.map(world.get("objects")).put("custom-hidden-note", note);
         fixture.store.update(fixture.id, world); var before = fixture.store.load(fixture.id);
-        assertFalse(WorldObjects.map(before.get("inspectable_objects")).toString().contains("隐蔽纸条"));
+        assertFalse(WorldObjects.visible(before, fixture.named(before, "隐蔽纸条"), "苏晚"));
+        assertFalse(before.containsKey("inspectable_objects"));
         assertThrows(IllegalArgumentException.class, () -> fixture.tools.injectWorldEvent(fixture.id, "晚风客栈", "隐蔽纸条", "新内容"));
         assertEquals(before, fixture.store.load(fixture.id));
     }

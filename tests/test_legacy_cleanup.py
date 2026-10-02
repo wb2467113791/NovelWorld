@@ -139,7 +139,7 @@ class LegacyCleanupTest(unittest.TestCase):
         self.assertNotIn("conceal_clue", prompt)
         self.assertEqual(canonical, objects)
         saved = snapshot_world()
-        self.assertEqual({}, saved["concealed_objects"])
+        self.assertFalse({"inspectable_objects", "concealable_objects", "concealed_objects"} & saved.keys())
         self.assertEqual(before.keys(), objects.keys())
 
     def test_old_narration_is_readable_but_does_not_wake_or_drive_director(self):
@@ -156,6 +156,17 @@ class LegacyCleanupTest(unittest.TestCase):
         director = Director(Mock())
         self.assertIsNone(director.choose_event(3))
         self.assertEqual(WORLD_STATE["events"], old["events"])
+        # legacy history only：废弃 Tool 的已提交 Event 仍可恢复并生成摘要。
+        from memory.event_summary import summarize_event
+        for kind in ("give_item", "conceal", "recover", "relationship", "use_item"):
+            event = dict(id=f"legacy-{kind}", type=kind, actor="林默", target="苏晚",
+                         location="县衙", timestamp="08:00", perceived_by=["林默"],
+                         payload={"item": "旧物品", "old_value": 0, "new_value": 1}, description="旧历史")
+            old["events"].append(event)
+            self.assertTrue(summarize_event(event, "林默"))
+        restore_snapshot(old)
+        self.assertEqual(old["events"], snapshot_world()["events"])
+
 
     def test_save_and_refresh_never_forward_python_narration_as_world_events(self):
         remote = deepcopy(snapshot_world())

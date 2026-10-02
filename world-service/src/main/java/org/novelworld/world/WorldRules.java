@@ -38,10 +38,10 @@ public class WorldRules {
         var recipients = new java.util.ArrayList<String>();
         var characters = map(world.get("characters"));
         if (characters.containsKey(actor)) recipients.add(actor);
-        if (("talk".equals(type) || "give_item".equals(type) || "give".equals(type)) && target != null && characters.containsKey(target))
+        if (("talk".equals(type) || "give".equals(type)) && target != null && characters.containsKey(target))
             recipients.add(target);
         if (List.of("move", "flee", "follow", "attack", "interact", "director",
-                "conceal", "recover", "take", "put", "use").contains(type)) {
+                "take", "put", "use").contains(type)) {
             for (var entry : characters.entrySet()) {
                 if (!recipients.contains(entry.getKey()) && location.equals(map(entry.getValue()).get("location")))
                     recipients.add(entry.getKey());
@@ -51,8 +51,6 @@ public class WorldRules {
     }
 
     public String apply(Map<String, Object> world, String name, Map<String, Object> args) {
-        var request = LegacyWorldTools.normalize(name, args);
-        name = request.name(); args = request.arguments();
         WorldObjects.ensure(world);
         if (WorldObjects.TOOLS.contains(name)) return WorldObjects.apply(world, name, args);
         if ("world_action".equals(name)) return applyWorldAction(world, args);

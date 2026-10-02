@@ -36,19 +36,37 @@ class WorldObjectsTest(unittest.TestCase):
         return build_action_prompt(self.person, active_goal=self.person.goals[0], memories=[],
                                    retrieved_context=[], lore_context=[], observations=observe(self.person))
 
-    def test_old_snapshot_migrates_stably_and_inventory_is_not_ground_location(self):
+    def legacy_snapshot(self):
+        # 显式旧存档夹具；生产 snapshot 不再导出旧字典。
         old = deepcopy(snapshot_world())
-        old.pop("objects")
+        old["version"] = 1
+        old["inspectable_objects"] = {}
+        for item in old.pop("objects").values():
+            if item["location"] is not None:
+                old["inspectable_objects"].setdefault(item["location"], {})[item["name"]] = item["description"]
+        old["concealable_objects"] = {"晚风客栈": ["住客登记簿"]}
+        return old
+
+    def test_old_snapshot_migrates_stably_and_inventory_is_not_ground_location(self):
+        old = self.legacy_snapshot()
         restore_snapshot(deepcopy(old))
         first = deepcopy(current_objects())
         restore_snapshot(deepcopy(old))
+        self.assertEqual(first, current_objects())
+        saved = deepcopy(snapshot_world())
+        self.assertEqual(2, saved["version"])
+        self.assertFalse({"inspectable_objects", "concealable_objects", "concealed_objects"} & saved.keys())
+        # 已有 objects 的 V1 也只在恢复时清除退役属性。
+        saved["version"] = 1
+        for item in saved["objects"].values():
+            item["properties"].update(legacy_concealable=True, trace_for=item["id"])
+        restore_snapshot(saved)
         self.assertEqual(first, current_objects())
         self.assertEqual(len(first), len({obj["id"] for obj in first.values()}))
         self.assertTrue(any(obj["holder"] == "林默" and obj["location"] is None for obj in first.values()))
 
     def test_legacy_hidden_trace_migrates_without_leaking_original(self):
-        old = deepcopy(snapshot_world())
-        old.pop("objects")
+        old = self.legacy_snapshot()
         original = old["inspectable_objects"]["晚风客栈"].pop("住客登记簿")
         trace = "住客登记簿被移动的痕迹"
         old["inspectable_objects"]["晚风客栈"][trace] = "移走痕迹"
@@ -61,6 +79,11 @@ class WorldObjectsTest(unittest.TestCase):
         hidden = next(obj for obj in current_objects().values() if obj["name"] == "住客登记簿")
         self.assertFalse(hidden["visible"])
         self.assertIsNone(hidden["holder"])
+        migrated_trace = next(obj for obj in current_objects().values() if obj["name"] == trace)
+        self.assertFalse(migrated_trace["portable"])
+        self.assertEqual({"hidden_at_index": 0}, migrated_trace["properties"])
+        self.assertEqual({"hidden_at_index": 0}, hidden["properties"])
+        self.assertEqual(2, snapshot_world()["version"])
 
     def test_prompt_omits_hidden_closed_contents_owner_and_private_description(self):
         self.book.update(location=None, container=self.chest["id"], owner="苏晚", description="不可外泄的账目")
@@ -88,7 +111,7 @@ class WorldObjectsTest(unittest.TestCase):
         saved = deepcopy(snapshot_world())
         self.assertIn("住客登记簿", inventory(self.person))
         self.assertNotIn("伪造钥匙", saved["characters"]["林默"]["items"])
-        self.assertNotIn("住客登记簿", saved["inspectable_objects"].get("县衙", {}))
+        self.assertFalse({"inspectable_objects", "concealable_objects", "concealed_objects"} & saved.keys())
         restore_snapshot(saved)
         self.assertEqual("林默", current_objects()[self.book["id"]]["holder"])
 
