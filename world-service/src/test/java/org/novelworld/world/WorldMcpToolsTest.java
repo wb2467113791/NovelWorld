@@ -81,6 +81,28 @@ class WorldMcpToolsTest {
                     .get("林默")).containsKey("runtime_state"));
         }
 
+        // Phase 2 在一个快照中保存已消费提醒、新提醒和带来源的事件队列。
+        var phase2Runtime = new HashMap<String, Object>(runtime);
+        phase2Runtime.put("agenda", List.of(
+                Map.of("id", "visit", "character", "林默", "due_tick", 310,
+                        "intention", "继续调查", "status", "completed"),
+                Map.of("id", "next-visit", "character", "林默", "due_tick", 314,
+                        "intention", "重新考虑新线索", "status", "pending")));
+        phase2Runtime.put("busy_until", 310);
+        var phase2Scheduler = Map.of("tick_count", 311, "event_cursor", 0, "current_depth", 1,
+                "pending", List.of(Map.of("name", "苏晚", "depth", 1, "source", "event")));
+        linPayload.put("runtime_state", phase2Runtime);
+        payload.put("scheduler", phase2Scheduler);
+        tools.saveAgentState(firstId, mapper.writeValueAsString(payload));
+        assertEquals(phase2Scheduler, reconnected.load(firstId).get("scheduler"));
+        assertEquals(phase2Runtime, ((Map<?, ?>) ((Map<?, ?>) reconnected.load(firstId).get("characters"))
+                .get("林默")).get("runtime_state"));
+        // 世界规则只结算世界行动，不把成功行动自动当成 Agenda / Plan 完成。
+        tools.executeWorldTool(firstId, "inspect", "{\"character\":\"林默\"}", "林默");
+        assertEquals(phase2Runtime, ((Map<?, ?>) ((Map<?, ?>) reconnected.load(firstId).get("characters"))
+                .get("林默")).get("runtime_state"));
+        assertEquals(Map.of("tick_count", 0), reconnected.load(secondId).get("scheduler"));
+
         for (var invalid : List.of(Map.of("location", "晚风客栈"),
                 Map.of("current_plan", List.of("move", "inspect")),
                 Map.of("active_goal", "别人的目标"), Map.of("busy_until", true),

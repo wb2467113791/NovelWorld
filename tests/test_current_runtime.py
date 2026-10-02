@@ -144,7 +144,9 @@ class CurrentRuntimeTest(unittest.TestCase):
         saved = scheduler.snapshot()
         restored = WorldTickScheduler()
         restored.restore(saved)
-        self.assertEqual(restored.run_tick(decide)["character"], "世界")
+        # 新事件仍只唤醒知情者，等待不会自造事件循环；到期 Agenda 是独立的长期来源。
+        next_result = restored.run_tick(decide)
+        self.assertEqual((next_result["character"], next_result["source"]), ("林默", "agenda"))
         self.assertEqual(calls.count("苏晚"), 2)
 
     def test_director_only_proposes_after_rule_and_never_moves_npc(self):

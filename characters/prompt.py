@@ -97,8 +97,10 @@ def build_action_prompt(
 cognition 仅允许 active_goal、current_intention、current_plan；省略字段保持原值，意图和计划可用 null 清空。
 不得在 cognition 中写入或清空 agenda、busy_until，也不得自行生成 Agenda ID、修改时间或声明 completed/cancelled。
 Agenda 的 ID、状态、调度时间和 busy_until 由程序维护，完成与忙碌必须依据真实执行结果，不能因模型文字成立。
-想安排什么活动、希望何时做，可在 current_intention/current_plan 中表达愿望；这不会自动建立 Agenda 或修改调度状态。
-Agenda 和 busy_until 目前只保存，不会自动执行或阻塞行动。
+想安排什么活动、希望何时做，可在 current_intention/current_plan 中表达愿望；文字不直接建立 Agenda 或指定调度时间。
+程序在行动机会结束后按固定冷却规则维护未来提醒，不从你的时间愿望解析精确 Tick。
+Agenda 到期只提供一次重新思考的机会，提醒意图可结合最新观察重新考虑；不指定必须调用的工具。
+Agenda 的 completed 只表示行动机会已消费，不表示目标或 Plan 已完成。busy_until 仅限制 Agenda 唤醒，事件反应保持原语义。
 不能在 cognition 中写位置、体力、已知事实或替他人更新状态。工具调用仍使用现有工具；普通文字回复也可保持原认知。
 【本次任务】
 {active_goal_text}根据你的目标、当前状态、已知事实和记忆，决定此刻最合理的一步行动。旧记忆可能已过时，以当前状态和最新调查结果为准。

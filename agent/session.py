@@ -31,7 +31,7 @@ def make_graph_decide_action(
 
 
 class WorldSession:
-    """按事件调度 NPC，并在每个 Tick 后保存记忆与调度进度。"""
+    """按事件和 Agenda 调度 NPC，并在每个 Tick 后保存记忆与调度进度。"""
 
     def __init__(self, decide_action: Callable[[Character], str], *,
                  save_path: Path, index: ChromaIndex,
@@ -50,9 +50,10 @@ class WorldSession:
             raise RuntimeError("世界会话需要已连接的世界服务")
         try:
             result = self.scheduler.run_tick(self.decide_action)
-            self.completed_ticks += 1
             return result
         finally:
+            # 时钟已推进但后续 Director 失败时，状态展示仍应与保存的累计 Tick 一致。
+            self.completed_ticks = self.scheduler.snapshot()["tick_count"]
             backend.save_agent_state(self.scheduler.snapshot())
             save_world(self.save_path, scheduler_state=self.scheduler.snapshot())
             self.index.sync_world(WORLD_STATE["characters"])

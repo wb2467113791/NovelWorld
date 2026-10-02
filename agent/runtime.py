@@ -1,8 +1,10 @@
 """角色认知状态；不代表世界事实，也不执行计划或调度 Agenda。"""
 
 from dataclasses import asdict, dataclass, field
+from uuid import uuid4
 
 MODEL_COGNITION_FIELDS = frozenset({"active_goal", "current_intention", "current_plan"})
+DEFAULT_AGENDA_DELAY = 3
 
 
 def _text(value, name, *, nullable=True):
@@ -42,7 +44,7 @@ class AgentRuntimeState:
     current_plan: str | None = None
     # 系统维护的调度状态；不能由模型 cognition 更新。
     agenda: list[AgendaEntry] = field(default_factory=list)
-    # 世界累计 Tick 序号；由程序根据真实执行结果维护，尚不影响调度。
+    # 世界累计 Tick 序号；仅限制 Agenda 唤醒，不改变事件反应。
     busy_until: int | None = None
 
     def select_goal(self, goals: list[str]) -> str:
@@ -56,6 +58,22 @@ class AgentRuntimeState:
 
     def to_dict(self) -> dict:
         return asdict(self)
+
+    def schedule_next_agenda(self, *, character: str, current_tick: int, goals: list[str]) -> AgendaEntry | None:
+        """程序创建一次未来思考机会；不解析时间愿望，也不生成工具步骤。"""
+        _tick(current_tick, "current_tick", nullable=False)
+        pending = next((entry for entry in self.agenda if entry.status == "pending"), None)
+        if pending is not None:
+            return pending
+        goal = self.select_goal(goals)
+        if not goal:
+            return None
+        entry = AgendaEntry(
+            id=uuid4().hex, character=character, due_tick=current_tick + DEFAULT_AGENDA_DELAY,
+            intention=self.current_intention or self.current_plan or goal,
+        )
+        self.agenda.append(entry)
+        return entry
 
     @classmethod
     def from_dict(cls, data: dict, *, character: str):

@@ -138,7 +138,7 @@ class InvestigationSkillTest(unittest.TestCase):
         with patch("tools.remote_world.active_backend", return_value=backend):
             scheduler.run_tick(move_to_lead)
             saved = scheduler.snapshot()
-            self.assertIn({"name": "林默", "depth": 0}, saved["pending"])
+            self.assertIn({"name": "林默", "depth": 0, "source": "skill"}, saved["pending"])
             restored = WorldTickScheduler()
             restored.restore(saved)
             seen = [restored.run_tick(lambda character: "等待")["character"]
@@ -174,7 +174,7 @@ class InvestigationSkillTest(unittest.TestCase):
         with_skill, with_events = one_run(True)
         without_skill, without_events = one_run(False)
         self.assertEqual(with_events, without_events)
-        self.assertIn({"name": "林默", "depth": 0}, with_skill)
+        self.assertIn({"name": "林默", "depth": 0, "source": "skill"}, with_skill)
         self.assertFalse(any(item["name"] == "林默" for item in without_skill))
 
 
