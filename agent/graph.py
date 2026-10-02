@@ -15,6 +15,22 @@ from world.state import WORLD_STATE
 DEFAULT_MAX_TOOL_ROUNDS = 5
 
 
+def _response_envelope(text: str) -> dict | None:
+    """兼容旧 Prompt 要求的 JSON 后原因段；仍只接受完整的前置 JSON 对象。"""
+    try:
+        value, end = json.JSONDecoder().raw_decode(text.lstrip())
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(value, dict):
+        return None
+    suffix = text.lstrip()[end:].strip()
+    if suffix and not suffix.startswith("原因："):
+        return None
+    if suffix and isinstance(value.get("answer"), str):
+        value["answer"] += "\n" + suffix
+    return value
+
+
 def build_model_prompt(state: AgentState) -> str:
     """按本轮 State 构造 NPC 可见的行动 Prompt。"""
     character = WORLD_STATE["characters"].get(state["npc_id"])
@@ -128,10 +144,7 @@ def build_agent_loop_graph(
         character = WORLD_STATE["characters"][state["npc_id"]]
         answer = response.output_text or "已达到工具轮数上限，本轮结束。"
         cognition_error = None
-        try:
-            envelope = json.loads(answer)
-        except (ValueError, TypeError):
-            envelope = None
+        envelope = _response_envelope(answer)
         if isinstance(envelope, dict) and "cognition" in envelope:
             try:
                 if not isinstance(envelope.get("answer"), str):

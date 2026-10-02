@@ -125,7 +125,7 @@ class RemoteWorld:
         reconcile_event_memories()
 
     def introduce_event(self, category: str, location: str, tick_count: int,
-                        observation: str) -> dict:
+                        observation: str, form: str = "ambient") -> dict:
         from world.state import WORLD_STATE, remember_event
         arguments = {
             "worldId": self.world_id,
@@ -134,6 +134,7 @@ class RemoteWorld:
             "tickCount": tick_count,
         }
         arguments["observation"] = observation
+        arguments["form"] = form
         event = json.loads(self._call("introduce_narrative_event", arguments))
         self._refresh_business_state()
         remember_event(event)

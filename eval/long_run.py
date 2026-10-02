@@ -166,9 +166,21 @@ def boundaries(bridge, seed):
     assert not any(entry.content == "钥匙在县衙" for entry in npc("林默").belief_memory.entries)
     assert not npc("苏晚").semantic_memory.current_facts()
     session = for_participant("苏晚")
-    assert session.next_speaker == "苏晚" and not scheduler.snapshot()["pending"][0]["source"] == "event"
+    assert session.next_speaker == "苏晚"
+    assert not any(item["name"] == "苏晚" and item["source"] == "event"
+                   for item in scheduler.snapshot()["pending"])
+    before = deepcopy(backend.load())
+    execute_tool("perform_activity", {"character": "林默", "activity": "duty"}, "林默")
+    after = backend.load()
+    assert before["characters"] == after["characters"] and before["objects"] == after["objects"]
+    activity = WORLD_STATE["events"][-1]
+    assert activity["type"] == "activity" and activity["payload"]["scope"] == "process_only"
+    assert any(entry.source_event_id == activity["id"] for entry in npc("林默").memory.all_entries())
+    assert not npc("林默").semantic_memory.current_facts()
     key_id, chest_id = obj("钥匙")["id"], obj("木箱")["id"]
     execute_tool("inspect", {"character": "苏晚", "object_id": key_id}, "苏晚")
+    execute_tool("inspect", {"character": "苏晚", "object_id": obj("住客登记簿")["id"]}, "苏晚")
+    assert all(event["type"] == "inspect" for event in WORLD_STATE["events"][-2:])
     assert npc("苏晚").semantic_memory.current_facts()
     prompt = build_action_prompt(npc("苏晚"), active_goal=npc("苏晚").goals[0], memories=[],
                                  retrieved_context=[], lore_context=[], observations=[])
@@ -201,7 +213,8 @@ def boundaries(bridge, seed):
     use_backend(backend)
     restore_snapshot(backend.load())
     assert obj("钥匙")["holder"] == "苏晚"
-    return {"misinformation": "passed", "private_report": "passed", "verified_prompt_partition": "passed",
+    return {"activity_java_sync_memory": "passed", "consecutive_inspections": "passed",
+            "misinformation": "passed", "private_report": "passed", "verified_prompt_partition": "passed",
             "closed_container": "passed", "object_invariants": "passed", "player_social": "passed",
             "restart_with_active_player_conversation": "passed", "world_switch": "passed"}
 

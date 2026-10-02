@@ -44,17 +44,23 @@ class WorldController:
         return request_npc_graph_response(conversation, allow_tools)
 
     @staticmethod
-    def _propose_director_event(category: str, location: str) -> str:
+    def _propose_director_event(category: str, location: str) -> dict:
+        import json
         from llm_client import chat
         recent = "\n".join(event["description"] for event in WORLD_STATE["events"][-6:]) or "暂无"
-        goals = "；".join(f"{name}：{character.runtime_state.select_goal(character.goals)}"
+        goals = "；".join(f"{name}：{'；'.join(character.goals)}"
                          for name, character in WORLD_STATE["characters"].items() if is_npc(character))
-        return chat(
-            "你是 NovelWorld 的 Director，只提出一条可在场景中调查的环境线索。"
-            "不要替 NPC 决定行动、说话或结论；线索可以不可靠。"
+        setting = "\n".join(item["text"] for item in WORLD_STATE.get("lore", []) if item["audience"] == "public")
+        proposal = chat(
+            "你是 NovelWorld 的 Director，根据世界主题、角色长期目标与近期事件提出一条适合的环境变化。"
+            "可以是社会机会、日常麻烦、利益分歧或协商机会；不要默认制造神秘物证。"
+            "调查主题确实需要可查物证时才选择 clue；其他情况选 ambient。"
+            "不要替 NPC 决定行动、说话或结论，不宣告交易、关系或角色状态改变；议论不等于事实。"
+            f"\n世界设定：{setting}"
             f"\n触发原因：{category}\n地点：{location}\n角色目标：{goals}"
-            f"\n最近事件：\n{recent}\n只输出线索内容，不超过一百字。"
+            f'\n最近事件：\n{recent}\n只输出 JSON：{{"form":"ambient 或 clue","observation":"不超过一百字的环境观察"}}。'
         )
+        return json.loads(proposal)
 
     def _new_session(self, scheduler_state: dict) -> WorldSession:
         from retrieval.chroma_index import ChromaIndex

@@ -23,6 +23,23 @@ from tests.support import committed_event
 
 
 class AgentRuntimeTest(unittest.TestCase):
+    def test_cognition_with_legacy_trailing_reason_is_saved_without_world_mutation(self):
+        lin = self.lin()
+        before = deepcopy(snapshot_world())
+        response = self.response({"current_intention": "继续当值", "current_plan": "根据来访情况调整职责"}, "已考虑当前职责")
+        response.output_text += "\n\n原因：结合当前环境继续当值。"
+        result = build_agent_loop_graph(lambda *_: response).invoke(create_initial_agent_state(lin, self.index))
+        self.assertEqual(lin.runtime_state.current_intention, "继续当值")
+        self.assertIn("原因：", result["final_answer"])
+        after = snapshot_world()
+        after["characters"][lin.name]["runtime_state"] = before["characters"][lin.name]["runtime_state"]
+        self.assertEqual(before, after)
+        # 兼容格式并不放宽 cognition 的字段白名单。
+        response.output_text = '{"cognition":{"location":"晚风客栈"},"answer":"改变位置"}\n原因：伪造状态'
+        result = build_agent_loop_graph(lambda *_: response).invoke(create_initial_agent_state(lin, self.index))
+        self.assertIn("认知更新未保存", result["final_answer"])
+        self.assertEqual(lin.location, before["characters"][lin.name]["location"])
+
     def setUp(self):
         self.original = WORLD_STATE.copy()
         WORLD_STATE.clear()

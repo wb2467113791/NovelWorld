@@ -13,8 +13,7 @@ def observe(character: Character) -> list[str]:
     observations = [
         f"同地点角色：{'、'.join(nearby) if nearby else '暂无'}"
     ]
-    from world.objects import visible_objects
-    observations.extend(f"可见对象：{item['name']}（ID={item['id']}，state={item['state']}）" for item in visible_objects(character))
+    # 对象与 affordance 在行动 Prompt 的当前状态中统一列出，避免重复成为任务列表。
     # legacy history only：旧 narration 不代表已发生的世界行动。
     witnessed = [
         event for event in WORLD_STATE["events"]

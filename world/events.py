@@ -40,7 +40,7 @@ def recipients_for_event(
 
     if event["type"] in {"talk", "give_item", "give"} and event["target"] is not None:
         recipients.append(event["target"])
-    elif event["type"] in {"move", "flee", "follow", "attack", "interact", "take", "put", "use"}:
+    elif event["type"] in {"move", "flee", "follow", "attack", "interact", "take", "put", "use", "activity"}:
         recipients.extend(
             name for name, character in characters.items()
             if name != event["actor"] and character.location == event["location"]

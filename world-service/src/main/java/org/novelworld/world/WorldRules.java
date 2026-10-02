@@ -9,6 +9,11 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class WorldRules {
+    // 通用过程目录，不接收自然语言结果；扩展活动需在规则层定义语义。
+    private static final Map<String, String> ACTIVITIES = Map.of(
+            "duty", "进行了原地日常值守", "upkeep", "进行了日常整理活动",
+            "administration", "进行了日常事务准备", "practice", "进行了练习",
+            "planning", "进行了筹划", "social_presence", "进行了在场招呼活动");
     private static final Pattern REVIEW_CLAIM = Pattern.compile("(?:我|本人)(?:已|已经)?(?:看过|查过|翻过|过目|调查过|核对过|看了|查了|调查了)");
     private static final Map<String, String> OBJECT_ALIASES = Map.of("住客登记簿", "登记簿", "柴房门锁", "柴房");
     private static final Map<String, Integer> ENERGY_COSTS = Map.of(
@@ -41,7 +46,7 @@ public class WorldRules {
         if (("talk".equals(type) || "give".equals(type)) && target != null && characters.containsKey(target))
             recipients.add(target);
         if (List.of("move", "flee", "follow", "attack", "interact", "director",
-                "take", "put", "use").contains(type)) {
+                "take", "put", "use", "activity").contains(type)) {
             for (var entry : characters.entrySet()) {
                 if (!recipients.contains(entry.getKey()) && location.equals(map(entry.getValue()).get("location")))
                     recipients.add(entry.getKey());
@@ -58,6 +63,21 @@ public class WorldRules {
         Map<String, Object> payload;
         String type;
         switch (name) {
+            case "perform_activity": {
+                if (!java.util.Set.of("character", "activity").equals(args.keySet()))
+                    throw new IllegalArgumentException("活动仅接受 character 与 activity，不接受描述或状态字段");
+                actor = str(args, "character");
+                var person = character(world, actor);
+                if (!WorldActors.isNpc(person)) throw new IllegalArgumentException("Player 不支持该工具");
+                if ("unconscious".equals(person.get("status"))) throw new IllegalArgumentException(actor + "失去行动能力");
+                String activity = str(args, "activity");
+                if (!ACTIVITIES.containsKey(activity)) throw new IllegalArgumentException("未知日常活动：" + activity);
+                location = (String) person.get("location"); target = null;
+                if (!list(world.get("locations")).contains(location)) throw new IllegalArgumentException("当前地点无效");
+                result = actor + "在" + location + ACTIVITIES.get(activity) + "（仅记录活动过程，不代表取得成果或其他状态变化）。";
+                type = "activity"; payload = Map.of("activity", activity, "scope", "process_only");
+                break;
+            }
             case "move_character": {
                 actor = str(args, "character"); location = str(args, "location");
                 if (!list(world.get("locations")).contains(location)) throw new IllegalArgumentException("地点不存在：" + location);

@@ -39,9 +39,17 @@ def unverified_inspection_claim(character: str, text: str) -> str | None:
 # Tool Schema 是给模型看的工具说明书，不负责执行 Python 函数。
 NPC_ACTION_TOOL_SCHEMAS = [
     {
+        "type": "function", "name": "perform_activity",
+        "description": "本人在当前位置进行一轮日常活动过程：duty 原地值守；upkeep 日常整理；administration 事务准备；practice 练习；planning 筹划；social_presence 在场招呼。仅记录过程，不完成交易/登记、不发现事实、不操作对象、不代表他人参与或同意。具体意图写入 cognition；需要状态变化或传达消息须调用专用工具。",
+        "parameters": {"type": "object", "properties": {
+            "character": {"type": "string"},
+            "activity": {"type": "string", "enum": ["duty", "upkeep", "administration", "practice", "planning", "social_presence"]},
+        }, "required": ["character", "activity"], "additionalProperties": False},
+    },
+    {
         "type": "function",
         "name": "inspect",
-        "description": "调查角色当前地点；用 object_id 查看本轮 Prompt 列出的可见对象。重复调查未变化的内容不会产生新发现。",
+        "description": "为当前明确的信息需求调查地点或可见对象；object_id 来自当前环境。可连续核实相关对象，不必逐个扫描环境资源。重复调查未变化的内容不会产生新发现。",
         "parameters": {
             "type": "object",
             "properties": {
@@ -139,6 +147,7 @@ for name, description, extra, required in (
 # Python / Java 正式行动入口均只接受当前 Tool；旧 Event 仅用于历史读取。
 TOOL_NAMES = frozenset(schema["name"] for schema in NPC_ACTION_TOOL_SCHEMAS)
 TOOL_ACTOR_ARGUMENTS = {
+    "perform_activity": "character",
     "take": "character", "put": "character", "give": "character", "use": "character", "interact": "character",
     "world_action": "actor",
     "inspect": "character",

@@ -15,6 +15,21 @@ import json
 
 
 class PerceptionTest(unittest.TestCase):
+    def test_objects_are_resources_and_inspection_has_an_information_purpose(self):
+        lin = WORLD_STATE["characters"]["林默"]
+        index = Mock(); index.retrieve_memory.return_value = []; index.retrieve_lore.return_value = []
+        prompt = build_model_prompt(create_initial_agent_state(lin, index))
+        self.assertIn("当前可见对象（环境资源）", prompt)
+        self.assertNotIn("所在地点可调查对象", prompt)
+        self.assertIn("inspect 应服务于明确的信息需求", prompt)
+        self.assertIn("信息需求可以支持连续 inspect", prompt)
+        self.assertIn("current_intention", prompt)
+        self.assertIn("可前往地点", prompt)
+        self.assertFalse(any(item.startswith("可见对象：") for item in observe(lin)))
+        from world.objects import visible_objects
+        for item in visible_objects(lin):
+            self.assertEqual(prompt.count(f"object_id={item['id']}"), 1)
+
     def setUp(self):
         self.original = WORLD_STATE.copy()
         WORLD_STATE.clear()

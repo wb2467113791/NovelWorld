@@ -19,6 +19,35 @@ from world.state import WORLD_STATE, reconcile_event_memories
 
 
 class CurrentRuntimeTest(unittest.TestCase):
+    def test_director_explicit_clue_form_and_legacy_text_default_ambient(self):
+        backend = Mock()
+        with patch("tools.remote_world.active_backend", return_value=backend):
+            director = Director(lambda category, location: {"form": "clue", "observation": "出现待核实的物证"})
+            director.maybe_inject(1, idle=True)
+            self.assertEqual(backend.introduce_event.call_args.kwargs, {"form": "clue"})
+            backend.reset_mock()
+            director = Director(lambda category, location: "公共空间使用出现分歧")
+            director.maybe_inject(1, idle=True)
+            self.assertEqual(backend.introduce_event.call_args.kwargs, {})
+
+    def test_activity_routes_only_self_and_memory_records_process_without_new_facts(self):
+        backend = Mock(); backend.execute.return_value = "已进行活动"
+        with patch("tools.remote_world.active_backend", return_value=backend):
+            self.assertEqual(execute_tool("perform_activity", {"character": "林默", "activity": "duty"}, "林默"), "已进行活动")
+            with self.assertRaisesRegex(ValueError, "替其他角色行动"):
+                execute_tool("perform_activity", {"character": "苏晚", "activity": "upkeep"}, "林默")
+        backend.execute.assert_called_once()
+        event = committed_event("activity", "林默", "林默进行了原地值守（仅记录过程）",
+                                payload={"activity": "duty", "scope": "process_only"})
+        saved = snapshot_world(); saved["characters"]["林默"]["memory"]["entries"] = []
+        restore_snapshot(saved)
+        reconcile_event_memories()
+        lin = WORLD_STATE["characters"]["林默"]
+        self.assertTrue(any(entry.source_event_id == event["id"] for entry in lin.memory.all_entries()))
+        self.assertFalse(lin.semantic_memory.current_facts())
+        self.assertFalse(any(entry.source_type == "report" for entry in lin.belief_memory.entries))
+        self.assertEqual(reconcile_event_memories(), 0)
+
     def setUp(self):
         self.original = WORLD_STATE.copy()
         WORLD_STATE.clear()
@@ -170,8 +199,9 @@ class CurrentRuntimeTest(unittest.TestCase):
                 committed_event("inspect", actor, "重复观察", payload={"observation": "无变化"})
             before = {name: person.location for name, person in WORLD_STATE["characters"].items()}
             event = director.maybe_inject(3)
-        self.assertEqual(event["perceived_by"], ["苏晚"])
-        self.assertEqual(calls, [("stagnation", "晚风客栈", "门边出现一封信")])
+        self.assertEqual(event["perceived_by"], [name for name, person in WORLD_STATE["characters"].items()
+                                                if person.location == event["location"]])
+        self.assertEqual(calls, [("stagnation", event["location"], "门边出现一封信")])
         self.assertEqual(before, {name: person.location for name, person in WORLD_STATE["characters"].items()})
 
     def test_first_empty_tick_revives_world_after_scheduler_restore(self):

@@ -106,7 +106,7 @@ public class WorldMcpTools {
             case "talk" -> "speaker";
             case "world_action" -> "actor";
             case "inspect", "take", "put", "give", "use", "interact", "move_character",
-                    "rest_character" -> "character";
+                    "rest_character", "perform_activity" -> "character";
             default -> null;
         };
         if (actorKey != null && !actingCharacter.equals(arguments.get(actorKey)))
@@ -263,14 +263,22 @@ public class WorldMcpTools {
         }
     }
 
-    @McpTool(name = "introduce_narrative_event", description = "由规则触发的 Director 提议环境线索，Java 校验并结算")
+    public String introduceNarrativeEvent(String worldId, String category, String location,
+                                          String observation, int tickCount) {
+        return introduceNarrativeEvent(worldId, category, location, observation, tickCount, "ambient");
+    }
+
+    @McpTool(name = "introduce_narrative_event", description = "Director 提议环境事件；默认 ambient，明确需要物证时用 clue")
     @SuppressWarnings("unchecked")
     public synchronized String introduceNarrativeEvent(
             @McpToolParam(description = "世界 ID") String worldId,
             @McpToolParam(description = "stagnation、participation 或 conflict") String category,
             @McpToolParam(description = "事件发生的合法地点") String location,
-            @McpToolParam(description = "新的可调查线索内容") String observation,
-            @McpToolParam(description = "触发事件的 Tick 数") int tickCount) {
+            @McpToolParam(description = "环境观察内容，不指定 NPC 行动或权威状态变化") String observation,
+            @McpToolParam(description = "触发事件的 Tick 数") int tickCount,
+            @McpToolParam(description = "ambient 环境事件或 clue 可调查对象", required = false) String form) {
+        if (form == null) form = "ambient";
+        if (!List.of("ambient", "clue").contains(form)) throw new IllegalArgumentException("未知 Director 事件形式");
         if (!List.of("stagnation", "participation", "conflict").contains(category))
             throw new IllegalArgumentException("未知 Director 事件类别");
         if (observation == null || observation.isBlank() || observation.length() > 1000)
@@ -279,22 +287,28 @@ public class WorldMcpTools {
         var world = store.load(worldId);
         if (!((List<?>) world.get("locations")).contains(location)) throw new IllegalArgumentException("地点不存在：" + location);
         WorldObjects.ensure(world);
-        var objects = WorldObjects.map(world.get("objects"));
-        int sequence = ((List<?>) world.get("events")).size() + 1;
-        while (objects.containsKey(WorldObjects.stableId("scene\0" + location + "\0新线索" + sequence))) sequence++;
-        String objectName = "新线索" + sequence;
-        var object = WorldObjects.sceneObject(location, objectName, observation);
-        if (((Map<?, ?>) world.get("objects")).containsKey(object.get("id")))
-            throw new IllegalArgumentException("该线索已存在，不能覆盖其物理状态");
-        ((Map<String, Object>) world.get("objects")).put((String) object.get("id"), object);
-        WorldObjects.projectInventory(world);
+        var payload = new LinkedHashMap<String, Object>();
+        payload.put("category", category); payload.put("observation", observation);
+        payload.put("tick_count", tickCount); payload.put("form", form);
+        if ("clue".equals(form)) {
+            var objects = WorldObjects.map(world.get("objects"));
+            int sequence = ((List<?>) world.get("events")).size() + 1;
+            while (objects.containsKey(WorldObjects.stableId("scene\0" + location + "\0新线索" + sequence))) sequence++;
+            String objectName = "新线索" + sequence;
+            var object = WorldObjects.sceneObject(location, objectName, observation);
+            objects.put((String) object.get("id"), object);
+            WorldObjects.projectInventory(world);
+            payload.put("object_name", objectName);
+        }
         var event = new LinkedHashMap<String, Object>();
         event.put("id", UUID.randomUUID().toString().replace("-", ""));
         event.put("timestamp", world.get("time")); event.put("type", "director");
         event.put("actor", "世界"); event.put("target", null); event.put("location", location);
         event.put("perceived_by", WorldRules.perceivedBy(world, "director", "世界", null, location));
-        event.put("payload", Map.of("category", category, "object_name", objectName, "observation", observation, "tick_count", tickCount));
-        event.put("description", location + "出现了可调查的" + objectName + "。" + observation);
+        event.put("payload", payload);
+        event.put("description", "clue".equals(form)
+                ? location + "出现了可调查的" + payload.get("object_name") + "。" + observation
+                : location + "发生了环境事件：" + observation);
         ((List<Object>) world.get("events")).add(event);
         store.update(worldId, world);
         return json(event);

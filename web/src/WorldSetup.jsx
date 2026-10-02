@@ -215,7 +215,7 @@ export default function WorldSetup({ running, activeWorldId, onActivated }) {
           <h3>场景与初始线索</h3>
           {template.locations.map(location => <article className="opening-location" key={location}>
             <strong>{location}</strong><p>{template.inspectables?.[location] || '缺少场景描述'}</p>
-            <PreviewList title="可调查对象" values={Object.values(template.objects).filter(object => object.location === location).map(object => `${object.name}：${object.description}`)} />
+            <PreviewList title="环境对象" values={Object.values(template.objects).filter(object => object.location === location).map(object => `${object.name}：${object.description}`)} />
           </article>)}
           <h3>世界设定与可见范围</h3>
           {(Array.isArray(template.lore) ? template.lore : []).map((raw, index) => <article className="opening-location" key={raw?.id || index}>

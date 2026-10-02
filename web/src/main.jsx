@@ -5,7 +5,7 @@ import PlayMode from './PlayMode.jsx'
 import './style.css'
 
 const typeLabels = {
-  move: '移动', talk: '交谈', inspect: '调查', director: '世界事件',
+  move: '移动', talk: '交谈', inspect: '调查', activity: '日常活动', director: '世界事件',
   intervention: '人为干预', rest: '休息', attack: '攻击', flee: '逃跑', follow: '跟随',
   take: '拿取', put: '放置', give: '交付', use: '使用物品', interact: '互动',
   // legacy history only：保留旧存档时间线标签，不是当前 Tool。

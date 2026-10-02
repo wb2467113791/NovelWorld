@@ -5,6 +5,7 @@ from world.events import Event
 
 # legacy history only：narration/relationship/give_item/conceal/recover/use_item 仅供旧 Event 读取。
 EVENT_IMPORTANCE = {
+    "activity": 2,
     "narration": 1,
     "move": 2,
     "inspect": 3,

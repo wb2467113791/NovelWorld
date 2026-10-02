@@ -32,6 +32,9 @@ public final class StructuralEvalBridge {
                                 (String) a.get("argumentsJson"), (String) a.get("actingCharacter"));
                         case "save_agent_state" -> tools.saveAgentState(id, (String) a.get("agentStateJson"));
                         case "advance_world_time" -> tools.advanceWorldTime(id, ((Number) a.get("minutes")).intValue());
+                        case "introduce_narrative_event" -> tools.introduceNarrativeEvent(id, (String) a.get("category"),
+                                (String) a.get("location"), (String) a.get("observation"),
+                                ((Number) a.get("tickCount")).intValue(), (String) a.get("form"));
                         default -> throw new IllegalArgumentException("Unsupported eval command");
                     };
                     System.out.println(mapper.writeValueAsString(Map.of("output", output)));

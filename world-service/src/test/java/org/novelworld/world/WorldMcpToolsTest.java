@@ -207,7 +207,7 @@ class WorldMcpToolsTest {
         when(store.load("test-world")).thenReturn(world);
         var tools = new WorldMcpTools(store, new WorldRules(), new ObjectMapper());
 
-        String json = tools.introduceNarrativeEvent("test-world", "stagnation", "晚风客栈", "匿名纸条", 3);
+        String json = tools.introduceNarrativeEvent("test-world", "stagnation", "晚风客栈", "匿名纸条", 3, "clue");
 
         assertTrue(json.contains("director"));
         assertEquals(1, ((List<?>) world.get("events")).size());
@@ -215,5 +215,50 @@ class WorldMcpToolsTest {
         assertFalse(world.containsKey("inspectable_objects"));
         assertEquals("晚风客栈", ((Map<?, ?>) ((Map<?, ?>) world.get("characters")).get("苏晚")).get("location"));
         verify(store).update(eq("test-world"), same(world));
+    }
+
+    @Test void activityCommitsOnlyAProcessEventAndRejectsForgedResults() {
+        var f = new ObjectPersistenceTest(); f.move();
+        var before = f.store.load(f.id);
+        f.act("perform_activity", Map.of("character", "林默", "activity", "administration"), "林默");
+        var after = new WorldStore(f.jdbc, f.mapper).load(f.id);
+        assertEquals(before.get("characters"), after.get("characters"));
+        assertEquals(before.get("objects"), after.get("objects"));
+        assertEquals(before.get("time"), after.get("time"));
+        var events = WorldObjects.list(after.get("events"));
+        assertEquals(WorldObjects.list(before.get("events")).size() + 1, events.size());
+        var event = WorldObjects.map(events.get(events.size() - 1));
+        assertEquals("activity", event.get("type"));
+        assertEquals("晚风客栈", event.get("location"));
+        assertEquals(Map.of("activity", "administration", "scope", "process_only"), event.get("payload"));
+        assertTrue(WorldObjects.list(event.get("perceived_by")).containsAll(List.of("林默", "苏晚")));
+        assertTrue(f.tools.getWorldEvents(f.id, events.size() - 1).contains("process_only"));
+        for (String key : List.of("description", "location", "inventory", "energy", "hp", "relationship", "object_state")) {
+            var args = new HashMap<String, Object>(Map.of("character", "林默", "activity", "upkeep"));
+            args.put(key, "任意成果");
+            assertThrows(IllegalArgumentException.class, () -> f.act("perform_activity", args, "林默"));
+        }
+        assertThrows(IllegalArgumentException.class, () -> f.act("perform_activity",
+                Map.of("character", "苏晚", "activity", "upkeep"), "林默"));
+        assertThrows(IllegalArgumentException.class, () -> f.act("perform_activity",
+                Map.of("character", "林默", "activity", "完成交易并获得钥匙"), "林默"));
+        var withPlayer = f.store.load(f.id);
+        assertThrows(IllegalArgumentException.class, () -> f.act("perform_activity",
+                Map.of("character", "玩家", "activity", "practice"), "玩家"));
+        assertEquals(withPlayer, f.store.load(f.id));
+        assertTrue(WorldObjects.list(f.store.load(f.otherId).get("events")).isEmpty());
+    }
+
+    @Test void ambientDirectorEventDoesNotCreateAnInvestigationObject() {
+        var f = new ObjectPersistenceTest();
+        var before = f.store.load(f.id);
+        var event = f.mapper.readValue(f.tools.introduceNarrativeEvent(f.id, "conflict", "青石街",
+                "附近有人议论公共空间安排。", 6), Map.class);
+        var after = f.store.load(f.id);
+        assertEquals(before.get("characters"), after.get("characters"));
+        assertEquals(before.get("objects"), after.get("objects"));
+        assertEquals("ambient", WorldObjects.map(event.get("payload")).get("form"));
+        assertFalse(WorldObjects.map(event.get("payload")).containsKey("object_name"));
+        assertEquals(List.of("赵无极"), event.get("perceived_by"));
     }
 }

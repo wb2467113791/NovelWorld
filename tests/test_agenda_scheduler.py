@@ -16,6 +16,27 @@ from world.state import WORLD_STATE
 
 
 class AgendaSchedulerTest(unittest.TestCase):
+    def test_activity_is_a_bounded_event_reaction_and_agenda_never_executes_plan(self):
+        lin = self.character()
+        lin.runtime_state.current_plan = "不是工具工作流"
+        self.character("苏晚").location = lin.location
+        scheduler = self.scheduler(pending=[{"name": "林默", "depth": MAX_REACTION_DEPTH, "source": "event"}])
+        def decide(actor):
+            committed_event("activity", actor.name, "进行了值守", payload={"activity": "duty", "scope": "process_only"})
+            return "值守"
+        scheduler.run_tick(decide)
+        self.assertEqual(scheduler.snapshot()["pending"], [])
+        self.assertEqual(len(lin.runtime_state.agenda), 1)
+        self.assertGreater(lin.runtime_state.agenda[0].due_tick, scheduler.snapshot()["tick_count"])
+        self.backend.execute.assert_not_called()
+        # 低深度活动只唤醒同地点观察者，不唤醒自己，队列不重复。
+        scheduler._current_depth = 0
+        committed_event("activity", "林默", "进行了值守", payload={"activity": "duty", "scope": "process_only"})
+        scheduler._collect_events()
+        pending = scheduler.snapshot()["pending"]
+        self.assertEqual([item["name"] for item in pending], ["苏晚"])
+        self.assertEqual(pending[0]["depth"], 1)
+
     def setUp(self):
         self.original = WORLD_STATE.copy()
         WORLD_STATE.clear()

@@ -20,10 +20,11 @@ class JavaBridge:
         properties = ET.parse(reports[0]).getroot().find("properties")
         classpath = next(p.attrib["value"] for p in properties if p.attrib["name"] == "java.class.path")
         self.directory = directory
-        self.argfile = directory / "java.args"
-        self.argfile.write_text('-Dfile.encoding=UTF-8\n-cp\n"' + classpath.replace("\\", "/")
-                                + '"\norg.novelworld.world.StructuralEvalBridge\n"jdbc:h2:file:'
-                                + (directory / "world").as_posix() + ';DB_CLOSE_DELAY=-1"\n', encoding="utf-8")
+        # Windows Java 17 按本机代码页读 @argfile，UTF-8 会损坏含 Unicode 的 Maven 路径。
+        # 使用原生 argv 传递路径；不依赖 JVM 对参数文件的编码解释。
+        self.arguments = ["-Dfile.encoding=UTF-8", "-cp", classpath,
+                          "org.novelworld.world.StructuralEvalBridge",
+                          "jdbc:h2:file:" + (directory / "world").as_posix() + ";DB_CLOSE_DELAY=-1"]
         self.process = None
         try:
             self.start()
@@ -34,7 +35,7 @@ class JavaBridge:
     def start(self):
         java = str(Path(os.environ["JAVA_HOME"]) / "bin/java") if os.environ.get("JAVA_HOME") else "java"
         self.log = (self.directory / "java.stderr.log").open("a", encoding="utf-8")
-        self.process = subprocess.Popen([java, "@" + str(self.argfile)], stdin=subprocess.PIPE,
+        self.process = subprocess.Popen([java, *self.arguments], stdin=subprocess.PIPE,
                                         stdout=subprocess.PIPE, stderr=self.log, text=True, encoding="utf-8")
         self.lines = queue.Queue()
         process, lines = self.process, self.lines
