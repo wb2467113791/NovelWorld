@@ -23,7 +23,7 @@ public class WorldWebController {
     static Map<String, Object> view(Map<String, Object> w, Map<String, Object> status, boolean play) {
         var v = new LinkedHashMap<String, Object>();
         for (String key : List.of("world_id", "revision", "title", "premise", "minute", "time", "tick_count", "locations", "activities")) v.put(key, w.get(key));
-        for (String key : List.of("running", "pausing", "error", "acting", "phase")) v.put(key, status.get(key));
+        for (String key : List.of("running", "pausing", "error", "acting", "phase", "player_pending", "player_error")) v.put(key, status.get(key));
         v.put("event_count", WorldRules.list(w.get("events")).size());
         var people = WorldRules.map(w.get("characters"));
         String player = people.entrySet().stream().filter(e -> "player".equals(WorldRules.map(e.getValue()).get("actor_type")))
@@ -72,6 +72,24 @@ public class WorldWebController {
     @PostMapping("/control/pause") public Map<String, Object> pause() { return runtime.control("pause", Map.of()); }
     @PostMapping("/play/join") public Map<String, Object> join(@RequestBody Map<String, Object> body) { return runtime.play("join", body); }
     @PostMapping("/play/action") public Map<String, Object> action(@RequestBody Map<String, Object> body) { return runtime.play("action", body); }
+
+    @GetMapping("/history")
+    public Map<String, Object> history(@RequestParam(defaultValue = "observe") String mode,
+                                       @RequestParam(required = false) String before) {
+        if (!List.of("observe", "play").contains(mode)) throw new IllegalArgumentException("视角无效");
+        var status = runtime.status(); var w = store.load((String) status.get("world_id"));
+        String player = (String) view(w, status, true).get("player_name");
+        var events = WorldRules.list(w.get("events")).stream().map(WorldRules::map)
+                .filter(e -> !"play".equals(mode) || (player != null && WorldRules.list(e.get("perceived_by")).contains(player))).toList();
+        int end = events.size();
+        if (before != null) {
+            end = -1;
+            for (int i = 0; i < events.size(); i++) if (before.equals(events.get(i).get("id"))) { end = i; break; }
+            if (end < 0) throw new IllegalArgumentException("历史游标不存在，请刷新世界");
+        }
+        int start = Math.max(0, end - 120);
+        return Map.of("world_id", w.get("world_id"), "events", events.subList(start, end), "has_more", start > 0);
+    }
 
     @GetMapping(value = "/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter events(@RequestParam(defaultValue = "observe") String mode) {

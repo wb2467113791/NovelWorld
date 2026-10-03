@@ -2,6 +2,7 @@
 
 import json
 import os
+from math import isfinite
 from functools import lru_cache
 
 MODEL = "qwen3.8-flash"
@@ -15,7 +16,13 @@ def get_client():
     key = os.getenv("DASHSCOPE_API_KEY")
     if not key:
         raise RuntimeError("缺少 DASHSCOPE_API_KEY；请配置后再运行角色决策")
-    return OpenAI(api_key=key, base_url="https://dashscope.aliyuncs.com/compatible-mode/v1", timeout=60, max_retries=0)
+    try:
+        timeout = float(os.getenv("NOVELWORLD_MODEL_TIMEOUT_SECONDS", "180"))
+    except ValueError as error:
+        raise RuntimeError("NOVELWORLD_MODEL_TIMEOUT_SECONDS 必须是正数秒数") from error
+    if not isfinite(timeout) or timeout <= 0:
+        raise RuntimeError("NOVELWORLD_MODEL_TIMEOUT_SECONDS 必须是有限的正数秒数")
+    return OpenAI(api_key=key, base_url="https://dashscope.aliyuncs.com/compatible-mode/v1", timeout=timeout, max_retries=0)
 
 
 def request_decision(prompt):

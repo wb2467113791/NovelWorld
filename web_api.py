@@ -40,6 +40,9 @@ class WorldController:
         self.error = None
         self.acting = None
         self.phase = "等待运行"
+        self.player_pending = False
+        self.player_error = None
+        self.player_lock = threading.Lock()
         self._status = {"world_id": None, "tick_count": 0}
         self.request_model = request_model
         self.index_factory = index_factory
@@ -73,7 +76,7 @@ class WorldController:
         if not self.lock.acquire(blocking=False):
             raise RuntimeError("当前轮次正在执行，请先暂停并等待结束")
         try:
-            if self.running:
+            if self.running or self.player_pending:
                 raise RuntimeError("请先暂停当前世界")
             backend = RemoteWorld(world_id); backend.load()
             session = self._session(backend)
@@ -92,7 +95,8 @@ class WorldController:
     def status(self):
         # 慢模型持锁时查询依然立即返回，SSE不会被模型请求拖住。
         return {**self._status, "running": self.running, "pausing": self.running and self.pause_requested.is_set(),
-                "error": self.error, "acting": self.acting, "phase": self.phase}
+                "error": self.error, "acting": self.acting, "phase": self.phase,
+                "player_pending": self.player_pending, "player_error": self.player_error}
 
     def start(self, count, delay):
         if not self.lock.acquire(blocking=False):
@@ -108,6 +112,8 @@ class WorldController:
                     for turn in range(count):
                         if self.pause_requested.is_set():
                             break
+                        with self.player_lock:
+                            pass  # 已接收的玩家输入先结算，再开启下一轮NPC决策。
                         with self.lock:
                             try:
                                 self.session.next_tick()
@@ -127,27 +133,40 @@ class WorldController:
         return {"accepted": True}
 
     def play(self, request, join=False):
-        if not self.lock.acquire(blocking=False):
-            raise RuntimeError("当前角色正在思考，请稍后重试")
-        try:
-            if self.running:
-                raise RuntimeError("先暂停自动运行，再提交玩家行动")
-            backend = self.session.backend
-            if request.world_id != backend.world_id:
-                raise RuntimeError("世界已切换，请刷新页面")
-            world = backend.load()
-            if join:
-                backend.join(request.name, request.location)
-            else:
-                player = next((name for name, p in world["characters"].items() if p["actor_type"] == "player"), None)
-                if player is None:
-                    raise ValueError("请先加入世界")
-                backend.commit(player, uuid4().hex, {"action": request.action, "arguments": request.arguments,
-                                                     "reason": "玩家主动选择", "mind": {}, "memories": []})
-            self.refresh_status()
-            return {"committed": True}
-        finally:
-            self.lock.release()
+        if self.session is None:
+            raise RuntimeError("世界尚未初始化")
+        if not self.player_lock.acquire(blocking=False):
+            raise RuntimeError("上一条玩家行动正在等待或执行")
+        self.player_pending = True
+        self.player_error = None
+        # 玩家输入与NPC回合共享结算锁；不暂停世界，也不在慢模型调用中改写现场。
+        # 当前轮次结束后优先处理等待的玩家输入。
+        def apply():
+            try:
+                with self.lock:
+                    self._apply_player(request, join)
+            except Exception as error:
+                self.player_error = str(error)
+            finally:
+                self.player_pending = False
+                self.player_lock.release()
+        threading.Thread(target=apply, name="world-player", daemon=True).start()
+        return {"accepted": True, "queued": True}
+
+    def _apply_player(self, request, join):
+        backend = self.session.backend
+        if request.world_id != backend.world_id:
+            raise RuntimeError("世界已切换，请刷新页面")
+        backend.load()
+        if join:
+            backend.join(request.name, request.location)
+        else:
+            player = next((name for name, p in backend.snapshot["characters"].items() if p["actor_type"] == "player"), None)
+            if player is None:
+                raise ValueError("请先加入世界")
+            backend.commit(player, uuid4().hex, {"action": request.action, "arguments": request.arguments,
+                                                 "reason": "玩家主动选择", "mind": {}, "memories": []})
+        self.refresh_status()
 
 
 controller = WorldController()

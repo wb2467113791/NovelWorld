@@ -87,7 +87,12 @@ function CharacterDetail({world, selected, select}) {
 
 function App() {
   const [world, setWorld] = useState(null)
-  const [mode, setMode] = useState('observe')
+  const [participating, setParticipating] = useState(false)
+  const [playerWorld, setPlayerWorld] = useState(null)
+  const [history, setHistory] = useState([])
+  const [historyBusy, setHistoryBusy] = useState(false)
+  const currentWorld = useRef(null)
+  currentWorld.current = world?.world_id
   const [selected, setSelected] = useState('苏晚')
   const [filter, setFilter] = useState('all')
   const [follow, setFollow] = useState(true)
@@ -96,28 +101,69 @@ function App() {
   const [notice, setNotice] = useState('')
   const [setup, setSetup] = useState(false)
   const [speed, setSpeed] = useState(1)
+  const [tickCount, setTickCount] = useState('12')
+  const ticks = Number(tickCount)
+  const validTicks = Number.isInteger(ticks) && ticks >= 1 && ticks <= 100
 
   useEffect(() => {
     let active = true
-    setWorld(null); setConnected(false); setFilter('all')
-    request(`/api/world?mode=${mode}`).then(w => {if (active) setWorld(w)}).catch(e => {if (active) setNotice(e.message)})
-    const stream = new EventSource(`/api/events?mode=${mode}`)
+    request('/api/world?mode=observe').then(w => {if (active) setWorld(w)}).catch(e => {if (active) setNotice(e.message)})
+    const stream = new EventSource('/api/events?mode=observe')
     stream.addEventListener('state', e => {if (active) {setWorld(JSON.parse(e.data)); setConnected(true)}})
     stream.onerror = () => {if (active) setConnected(false)}
     return () => {active = false; stream.close()}
-  }, [mode])
+  }, [])
 
   useEffect(() => {
-    if (mode === 'observe' && world && !world.characters?.[selected]) setSelected(Object.keys(world.characters || {})[0] || '')
-  }, [world?.world_id, mode, selected])
+    if (!participating || !world?.world_id) return
+    let active = true
+    setPlayerWorld(null)
+    request('/api/world?mode=play').then(w => {if (active) setPlayerWorld(w)}).catch(e => {if (active) setNotice(e.message)})
+    const stream = new EventSource('/api/events?mode=play')
+    stream.addEventListener('state', e => {if (active) setPlayerWorld(JSON.parse(e.data))})
+    return () => {active = false; stream.close()}
+  }, [participating, world?.world_id])
 
-  useEffect(() => {setFilter('all')}, [world?.world_id])
+  useEffect(() => {
+    if (world && !world.characters?.[selected]) setSelected(Object.keys(world.characters || {})[0] || '')
+  }, [world?.world_id, selected])
+
+  useEffect(() => {setFilter('all'); setHistory([])}, [world?.world_id])
+  useEffect(() => {
+    if (!world) return
+    setHistory(old => {
+      const events = new Map(old.map(e => [e.id, e]))
+      for (const e of world.events || []) events.set(e.id, e)
+      return [...events.values()]
+    })
+  }, [world])
+
+  const storyWorld = useMemo(() => {
+    const events = new Map(history.map(e => [e.id, e]))
+    for (const e of world?.events || []) events.set(e.id, e)
+    return {...world, events: [...events.values()]}
+  }, [world, history])
+
+  async function earlier() {
+    const id = world.world_id
+    setHistoryBusy(true)
+    try {
+      const before = storyWorld.events[0]?.id
+      const page = await request(`/api/history?mode=observe${before ? `&before=${encodeURIComponent(before)}` : ''}`)
+      if (page.world_id === id && currentWorld.current === id) {
+        setHistory(old => [...page.events, ...old]); setFollow(false)
+      }
+    } catch (error) {setNotice(error.message)}
+    finally {setHistoryBusy(false)}
+  }
 
   async function command(path, body={}) {
     setBusy(true); setNotice('')
     try {
       const result = await request(path, body)
-      setWorld(await request(`/api/world?mode=${mode}`))
+      setWorld(await request('/api/world?mode=observe'))
+      if (participating) setPlayerWorld(await request('/api/world?mode=play'))
+      if (result.queued) setNotice('行动已接收；当前轮次结束后执行，无需暂停世界。')
       return result
     } catch (error) {setNotice(error.message); throw error}
     finally {setBusy(false)}
@@ -126,8 +172,8 @@ function App() {
 
   return <div className="app-shell">
     <nav className="sidebar"><a className="brand" href="#"><span>◈</span><b>NovelWorld</b><small>一座小镇，几种人生</small></a>
-      <div className="mode-switch"><button disabled={busy} className={mode === 'observe' ? 'active' : ''} onClick={() => setMode('observe')}>上帝视角</button><button disabled={busy} className={mode === 'play' ? 'active' : ''} onClick={() => setMode('play')}>走进小镇</button></div>
-      <p className="sidebar-note">{mode === 'observe' ? '看他们相遇、交谈，也各自生活。' : '作为旅人参与，认识你遇见的人。'}</p>
+      <div className="mode-switch"><button className="active" onClick={() => setParticipating(false)}>旁观小镇</button><button disabled={busy} className={participating ? 'active' : ''} onClick={() => setParticipating(v => !v)}>{participating ? '收起参与' : world?.player_name ? '继续参与' : '走进小镇'}</button></div>
+      <p className="sidebar-note">旁观，也能随时作为旅人加入。小镇纪事始终保留。</p>
       <button className="world-settings" onClick={() => setSetup(v => !v)}>⌂ 世界与开局</button>
       <div className="sidebar-bottom"><span className={`connection ${connected ? 'online' : ''}`}>{connected ? '世界已连接' : '连接中'}</span><small>角色自主选择<br/>每段经历，都有来处。</small></div>
     </nav>
@@ -135,23 +181,31 @@ function App() {
       <header className="page-header"><div><span className="eyebrow">小型 AI 社会沙盒</span><h1>{world?.title || '青石镇 · 一天尚未写完'}</h1><p>{world?.premise || '正在打开小镇……'}</p></div><div className="world-clock"><span>{world?.time || '—'}</span><small>{world?.running ? world.pausing ? '正在暂停' : '时间向前走' : '此刻暂停'} · {world?.tick_count ?? 0}轮</small></div></header>
       {notice && <div role="alert" className="notice">{notice}<button aria-label="关闭提示" onClick={() => setNotice('')}>×</button></div>}
       {world?.error && <div role="alert" className="notice error">运行已暂停：{world.error}</div>}
+      {world?.player_error && <div role="alert" className="notice error">玩家行动未执行：{world.player_error}</div>}
       <section className="controls"><div className="run-state"><i className={world?.running ? 'pulse' : ''}/><span>{world?.acting ? `${world.acting} · ${world.phase}` : '给他们一点时间，生活会继续。'}</span></div><div className="control-buttons">
         <button disabled={busy || !world || world.running} onClick={() => control('/api/control/next')}>走过 5 分钟</button>
         <button className="primary" disabled={busy || !world || world.running} onClick={() => control('/api/control/run', {count: 12, delay_seconds: speed})}>让他们生活一小时</button>
+        <form className="tick-run" onSubmit={e => {e.preventDefault(); if (validTicks && world && !world.running && !busy) control('/api/control/run', {count: ticks, delay_seconds: speed})}}>
+          <label>运行 Tick <input aria-label="自定义运行 Tick 数" type="number" min="1" max="100" step="1" required value={tickCount} disabled={busy || world?.running} onChange={e => setTickCount(e.target.value)}/></label>
+          <button type="submit" disabled={busy || !world || world.running || !validTicks}>运行指定轮数</button>
+          <small aria-live="polite">{validTicks ? `推进 ${ticks * 5} 分钟` : '请输入 1–100 的整数'}</small>
+        </form>
         <button disabled={busy || !world?.running} onClick={() => control('/api/control/pause')}>暂停</button>
         <label>阅读间隔 <select value={speed} onChange={e => setSpeed(Number(e.target.value))}><option value="0">立即</option><option value="1">1 秒</option><option value="3">3 秒</option></select></label>
       </div></section>
       <p className="cost-note">运行会调用当前配置的模型。每轮最多两名角色思考，活动过程随时间推进。</p>
       {setup && <WorldSetup running={world?.running} activeWorldId={world?.world_id} command={command} busy={busy}/>}
-      {mode === 'observe' ? <>
+      {participating && <section className="participation-section"><p className="reading-note">你与镇民处在同一个世界。参与面板只使用现场可见信息；收起面板不会删除旅人或经历，离开交谈请使用“结束交谈”。</p><PlayMode key={world?.world_id} world={playerWorld?.world_id === world?.world_id ? playerWorld : null} command={command} busy={busy}/></section>}
+      <>
         <section className="scene-section"><div className="section-title horizontal"><div><span className="eyebrow">此时此地</span><h2>小镇正在发生什么</h2></div><span className="muted">{Object.values(world?.characters || {}).filter(p => p.actor_type === 'npc').length} 位镇民 · {world?.event_count || 0} 段经历</span></div>
           <div className="scene-grid">{Object.entries(world?.locations || {}).map(([location, description]) => <Scene key={location} location={location} description={description} world={world} selected={selected} select={setSelected}/>)}</div>
         </section>
         <div className="reading-layout"><section className="story-panel"><div className="section-title horizontal"><div><span className="eyebrow">没有预定结局</span><h2>小镇纪事</h2></div><div className="story-tools"><select aria-label="跟随人物" value={filter} onChange={e => setFilter(e.target.value)}><option value="all">所有人物</option>{Object.keys(world?.characters || {}).map(name => <option key={name}>{name}</option>)}</select><label><input type="checkbox" checked={follow} onChange={e => setFollow(e.target.checked)}/>跟随最新</label></div></div>
           <p className="reading-note">行动与对话来自实际发生的经历；“动机”是角色对自己选择的简短说明。</p>
-          <Story world={world || {}} filter={filter} follow={follow} selected={selected}/>
+          {(world?.event_count || 0) > storyWorld.events.length && <button disabled={historyBusy} onClick={earlier}>{historyBusy ? '正在读取……' : '读更早的纪事'}</button>}
+          <Story world={storyWorld} filter={filter} follow={follow} selected={selected}/>
         </section><CharacterDetail world={world || {}} selected={selected} select={setSelected}/></div>
-      </> : <PlayMode key={world?.world_id} world={world} command={command} busy={busy}/>}
+      </>
       <footer>NovelWorld · 一段持续发生的生活。<span>上帝视角中的私人资料不会进入其他角色的视角。</span></footer>
     </main>
   </div>
