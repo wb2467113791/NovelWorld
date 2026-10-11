@@ -75,7 +75,8 @@ public class WorldTemplateService {
             if (!"public".equals(l.get("audience")) && !characters.containsKey(l.get("audience"))) throw new IllegalArgumentException("设定可见范围无效");
         }
         w.put("characters", people);
-        for (String f : List.of("events", "invitations", "conversations", "decisions")) w.put(f, new ArrayList<>());
+        w.remove("decisions");
+        for (String f : List.of("events", "invitations", "conversations")) w.put(f, new ArrayList<>());
         store.insert((String) w.get("world_id"), w); return (String) w.get("world_id");
     }
 }

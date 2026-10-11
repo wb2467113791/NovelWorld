@@ -34,12 +34,12 @@ class WorldSession:
         self.backend.load()
         self.backend.advance()
         handled = []
-        decisions = []
+        executions = []
         for _ in range(2):
             available = opportunities(self.backend.snapshot, handled)
             if not available:
                 break
             name = available[0]
-            decisions.append(self.graph.invoke({"name": name})["result"])
+            executions.append(self.graph.invoke({"name": name}, {"recursion_limit": 10})["result"])
             handled.append(name)
-        return decisions
+        return executions

@@ -123,7 +123,7 @@ Vite 开发页面使用 5173 端口，`/api` 代理到 Java 的 8080，仍然不
 | [`skills/`](../skills/) | Skill 选择和 Markdown 内容 |
 | [`tools/remote_world.py`](../tools/remote_world.py) | Python 的 Java MCP 客户端 |
 | [`world/persistence.py`](../world/persistence.py) | 当前世界指针的读写 |
-| [`llm_client.py`](../llm_client.py) | 生成客户端、模型配置、JSON 响应解析 |
+| [`llm_client.py`](../llm_client.py) | 生成客户端、模型配置、原生 tool_calls 解析 |
 | [`world-service/`](../world-service/) | Spring Boot、世界规则、存档和浏览器 API |
 | [`web/src/`](../web/src/) | React 页面、玩家面板、开局编辑和样式 |
 | [`compose.yaml`](../compose.yaml) | MySQL、Redis 的本机开发环境 |
@@ -200,7 +200,7 @@ sequenceDiagram
         G->>G: 观察、记忆检索、Skill、Prompt
         G->>L: 请求结构化行动提议
         L-->>G: action + reason + plan 等
-        G->>J: MCP commit_turn
+        G->>J: MCP 独立业务工具
         J->>J: 校验认知与执行世界规则
         J->>D: 行动与认知一起保存
         J-->>G: 已提交的世界快照
@@ -234,11 +234,11 @@ sequenceDiagram
 
 **回忆（recall）**用当前目标或初始目标、意图和地点构造检索问题，从 Chroma 找旧记忆与可见设定。近期记忆直接放入 Prompt，长期记忆先检索再排序。
 
-**决策（decide）**构建角色 Prompt 并请求模型。模型返回 JSON，包含 `action`、`arguments`、`reason`、`goal`、`intention`、`plan`、`reflection`、`relationship_notes`、`next_review_minutes`。Python 校验字段、长度、地点和认知来源等约束。计划最多 6 条，下一次复查间隔为 5–30 分钟。Prompt 建议给出粗粒度计划，程序并不强制一定有两条计划。
+**决策（decide）**构建角色 Prompt 并请求模型。模型通过原生 `tool_calls` 选择九个业务工具之一，参数包含业务字段、`reason` 与结构化 `cognition`（目标、意图、计划、反思、关系印象及复查间隔）。普通文本 JSON 不会被当作行动。Python 校验字段、长度、地点和认知来源等约束。计划最多 6 条，下一次复查间隔为 5–30 分钟。Prompt 建议给出粗粒度计划，程序并不强制一定有两条计划。
 
-**行动（act）**整理新认知和记忆，通过 MCP `commit_turn` 一起提交给 Java。Python 的校验不能代替 Java 的规则。模型选择去不存在的地点、越过发言顺序或冒用角色身份，必须在结算入口拒绝。
+**行动（act）**整理新认知和记忆，通过模型选择的独立 MCP 业务工具一起提交给 Java。Python 的校验不能代替 Java 的规则。模型选择去不存在的地点、越过发言顺序或冒用角色身份，必须在结算入口拒绝。
 
-**记录（remember）**返回已经提交后的决策结果。这个节点没有额外调用总结模型，也没有自行写另一份持久世界。真正的行动与认知已经由 Java 保存。
+**记录（remember）**返回独立持久回执确认的行动结果。这个节点没有额外调用总结模型，也没有自行写另一份持久世界。真正的行动与认知已经由 Java 保存。
 
 格式错误或 Java 规则拒绝后，当前机会最多再生成一次改选。规则拒绝会携带错误并重新读取世界，但不会完整重跑观察和检索阶段。网络超时不属于格式校验失败，客户端没有自动无限重试；运行会停下并显示原因。这种设计控制了失败时的调用量，也留下了未来改善错误恢复上下文的空间。
 
@@ -300,17 +300,17 @@ Skill 不等于 Tool。新增 Skill 不会自动得到新的世界能力；若�
 
 ### 12.1 MCP 是服务入口，行动是业务能力
 
-[`WorldMcpTools`](../world-service/src/main/java/org/novelworld/world/WorldMcpTools.java) 暴露五个 MCP 工具：
+[`WorldMcpTools`](../world-service/src/main/java/org/novelworld/world/WorldMcpTools.java) 暴露九个业务工具及五个内部工具。以下控制与查询入口不会提供给模型：
 
 | MCP 工具 | 用途 |
 | --- | --- |
 | `get_world` | 内部读取完整世界快照 |
 | `initialize_world` | 创建默认世界 |
 | `advance_world` | 依据预期 Tick 推进时间 |
-| `commit_turn` | 提交一名角色的行动、认知和记忆 |
+| `get_execution` | 按请求 ID 查询持久提交状态 |
 | `join_player` | 加入唯一玩家，不允许冒用 NPC 名字 |
 
-模型通常返回 `action + arguments`，并不是直接从上述五个服务入口中随意挑一个调用。Python 图通过 `commit_turn` 把行动提议交给 Java；Java 再调用 `WorldRules.apply()`。新增一般世界行动可以扩展这个业务分派，不必每次新增一个独立 MCP Tool。
+Python 通过 MCP `list_tools` 获取下面九个业务工具的 Schema，隐藏身份、请求 ID、revision 与持久认知封装字段，再添加结构化 cognition 参数。模型实际返回原生工具名称和参数；Act 调用该独立 MCP Tool。Java 各入口复用公共 `execute` → `WorldRules.apply()`，不重复实现业务规则。新增行动需要同步规则、独立工具和模型允许列表。
 
 ### 12.2 当前可用行动
 
@@ -338,9 +338,9 @@ Skill 不等于 Tool。新增 Skill 不会自动得到新的世界能力；若�
 
 `revision` 是乐观并发控制的修订号：更新时要求数据库仍处于读取时的版本，避免旧快照覆盖新状态。Java MCP 修改方法使用 `synchronized` 在当前进程串行执行；这不等于跨机器互斥。Python 自己也用锁组织 NPC 与玩家输入。
 
-`commit_turn` 用请求 ID 查最近决策记录，同一个 ID 重复提交时返回已有结果，减少“接口响应丢了，但数据库已经写入”造成的重复行动。决策只保留最近 120 条，因此是有限窗口防重，不是无限期 exactly-once。`advance_world` 使用预期 Tick 识别已经推进的请求。不要把这些保护描述成生产集群的分布式事务。
+九个工具以 `(world_id, request_id)` 查询 MySQL `action_executions` 持久回执。世界快照、行动认知和回执在一个 Spring 事务内保存；revision 仍防止旧观察覆盖新状态。相同请求内容返回原回执，复用 ID 但改变内容会拒绝。回执保存规范化请求 SHA-256，不重复存放整份认知和记忆。网络响应丢失时 Python 只调用 `get_execution` 确认，无法确认则暂停，不改选或重放。`advance_world` 继续用 expectedTick 防重。这不是跨服务集群的 exactly-once 保证。
 
-新版世界 `version=3`。旧版本可以导出，不能激活运行；目前没有自动迁移。改变运行数据结构时，应明确选择兼容读取、提供迁移，或者升级版本并要求新建世界，不能仅改字段后让旧快照随机报错。
+新版世界 `version=3`。v3 的旧 decisions 在首次读取时以事务迁移：现存请求写回执表，Event 添加 request_id/action_trace，删除快照 decisions，并推进一次 revision。旧版早已裁掉的请求无法恢复。v1/v2 仍只供导出，不能激活运行。改变运行数据结构时，应明确选择兼容读取、提供迁移，或者升级版本并要求新建世界，不能仅改字段后让旧快照随机报错。
 
 ## 13. 运行控制与玩家输入
 
@@ -407,7 +407,7 @@ SSE，即服务器发送事件，是一条由服务器持续向浏览器发送�
 
 它不是模型逐 Token 输出，也不是数据库事务日志驱动的事件总线。每个 SSE 连接都有自己的查询工作，适合少量演示客户端，不能据此声称高并发推送能力。Runtime 的状态读取不等待慢模型持有的运行锁，避免页面刷新状态被模型请求一起堵住。
 
-默认状态窗口包含最新 120 条事件，历史接口每页最多 120 条，并按视角过滤。前端可加载更早纪事；切换世界时清空本地纪事缓存。MySQL 事件历史没有因这个窗口而被删除，但短动机对应的决策只保留最近 120 次，因此非常早的事件可能没有可关联的动机。
+默认状态窗口包含最新 120 条事件，历史接口每页最多 120 条，并按视角过滤。前端可加载更早纪事；切换世界时清空本地纪事缓存。MySQL 事件历史没有因这个窗口而被删除，新行动动机直接随 Event 保存；旧版已裁掉的 Decision 无法补回，兼容 decisions 输出仍只派生最近 120 次行动。
 
 ## 15. 自己扩展功能：从小改动开始
 
@@ -452,7 +452,7 @@ SSE，即服务器发送事件，是一条由服务器持续向浏览器发送�
 
 第一步在 `WorldRules.apply()` 增加行动分支和精确参数校验，验证角色、地点、权限和目标对象后修改快照，调用统一事件构造逻辑设置感知范围。若会产生新状态字段，同时考虑模板初始化和旧快照兼容。
 
-第二步在 `characters/prompt.py` 的行动说明中添加这项能力，说明参数与限制。沿 `agent/graph.py` 检查是否存在需要同步的提议校验。`commit_turn` 仍可作为统一提交入口，通常不用再增加一个只转发该行动的 MCP 工具。
+第二步在 `characters/prompt.py` 的行动说明中添加这项能力，说明参数与限制。沿 `agent/graph.py` 检查是否存在需要同步的提议校验。为该行动增加独立 MCP Tool，转发公共 execute，并更新 Python 业务工具允许列表；不要复制 WorldRules 的结算逻辑。
 
 第三步在 `PlayMode.jsx` 增加合法的玩家输入方式，在 `main.jsx` 对应事件展示中增加可读标签。若玩家无此权限，也要由 Java 拒绝，不能只通过隐藏按钮控制权限。
 

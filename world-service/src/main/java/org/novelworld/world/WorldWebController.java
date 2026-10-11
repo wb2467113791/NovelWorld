@@ -42,14 +42,24 @@ public class WorldWebController {
                 var summary = new LinkedHashMap<>(p);
                 var memories = WorldRules.list(p.getOrDefault("memories", List.of()));
                 summary.put("memories", new ArrayList<>(memories.subList(Math.max(0, memories.size() - 18), memories.size())));
+                var latest = WorldRules.list(w.get("events")).stream().map(WorldRules::map)
+                        .filter(e -> e.containsKey("action_trace"))
+                        .map(e -> WorldRules.map(e.get("action_trace")))
+                        .filter(t -> name.equals(t.get("actor"))).reduce((first, second) -> second);
+                latest.ifPresent(t -> summary.put("last_action", t));
                 visiblePeople.put(name, summary);
             }
         });
         v.put("characters", visiblePeople);
         var events = WorldRules.list(w.get("events")).stream().map(WorldRules::map)
-                .filter(e -> !play || (player != null && WorldRules.list(e.get("perceived_by")).contains(player))).toList();
+                .filter(e -> !play || (player != null && WorldRules.list(e.get("perceived_by")).contains(player)))
+                .map(e -> { var copy = new LinkedHashMap<String, Object>(e);
+                    if (play) { copy.remove("action_trace"); copy.remove("request_id"); } return copy; }).toList();
         v.put("events", events.subList(Math.max(0, events.size() - 120), events.size()));
-        v.put("decisions", play ? List.of() : w.get("decisions"));
+        // 保留既有外部字段，但不再存储独立 Decision 世界状态。
+        var traces = WorldRules.list(w.get("events")).stream().map(WorldRules::map)
+                .filter(e -> e.containsKey("action_trace")).map(e -> e.get("action_trace")).toList();
+        v.put("decisions", play ? List.of() : traces.subList(Math.max(0, traces.size() - 120), traces.size()));
         v.put("invitations", WorldRules.list(w.get("invitations")).stream().map(WorldRules::map)
                 .filter(i -> !play || i.get("from").equals(player) || i.get("to").equals(player)).toList());
         v.put("conversations", WorldRules.list(w.get("conversations")).stream().map(WorldRules::map)
@@ -80,7 +90,9 @@ public class WorldWebController {
         var status = runtime.status(); var w = store.load((String) status.get("world_id"));
         String player = (String) view(w, status, true).get("player_name");
         var events = WorldRules.list(w.get("events")).stream().map(WorldRules::map)
-                .filter(e -> !"play".equals(mode) || (player != null && WorldRules.list(e.get("perceived_by")).contains(player))).toList();
+                .filter(e -> !"play".equals(mode) || (player != null && WorldRules.list(e.get("perceived_by")).contains(player)))
+                .map(e -> { var copy = new LinkedHashMap<String, Object>(e);
+                    if ("play".equals(mode)) { copy.remove("action_trace"); copy.remove("request_id"); } return copy; }).toList();
         int end = events.size();
         if (before != null) {
             end = -1;

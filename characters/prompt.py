@@ -50,11 +50,29 @@ reason用一两句简短动机说明，供作者观看；不输出私密推理�
 reflection_due为true时，结合提供的真实经历写一条有用的主观反思并引用source_event_ids。
 其余时候reflection为null。relationship_notes只更新本人经过实际互动形成的印象，不评价未接触的人。
 
-只输出一个完整JSON对象，所有字段都要提供：
-{"action":"行动名","arguments":{},"reason":"简短动机","goal":"当前关注点","intention":"当前意图",
-"plan":[{"at":540,"location":"已有地点","purpose":"粗粒度安排"}],
-"reflection":null,"relationship_notes":{},"next_review_minutes":5}
+必须调用提供的一个业务工具。不要用普通文本JSON模拟调用，不得并行选择多个行动。
+工具业务参数使用Schema列出的字段，同时提供reason和cognition。
+cognition包含goal、intention、plan、reflection、relationship_notes、next_review_minutes。
 reflection可为{"content":"主观认识","source_event_ids":["真实事件ID"]}。
 next_review_minutes为5到30的整数，只表示下次主动考虑的间隔。会话与收到邀请可提前唤醒。
 """ + "\n当前本人视角：\n" + json.dumps(context, ensure_ascii=False) + (
         "\n上次提议未执行：" + error + "。请修正参数或选择适合当前状态的另一个行动。" if error else "")
+
+
+def cognition_schema():
+    """认知仍由Decide形成，与本轮业务行动一起提交。"""
+    text = {"type": "string", "maxLength": 600}
+    properties = {
+        "goal": {**text, "minLength": 1}, "intention": {**text, "minLength": 1},
+        "plan": {"type": "array", "maxItems": 6, "items": {"type": "object", "properties": {
+            "at": {"type": "integer", "minimum": 0}, "location": {"type": "string"},
+            "purpose": {"type": "string", "minLength": 1, "maxLength": 250}},
+            "required": ["at", "location", "purpose"], "additionalProperties": False}},
+        "reflection": {"anyOf": [{"type": "null"}, {"type": "object", "properties": {
+            "content": {**text, "minLength": 1},
+            "source_event_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1}},
+            "required": ["content", "source_event_ids"], "additionalProperties": False}]},
+        "relationship_notes": {"type": "object", "additionalProperties": {"type": "string", "maxLength": 500}},
+        "next_review_minutes": {"type": "integer", "minimum": 5, "maximum": 30},
+    }
+    return {"type": "object", "properties": properties, "required": list(properties), "additionalProperties": False}

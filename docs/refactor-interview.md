@@ -38,7 +38,7 @@
 
 Java 检查双方是否同地点、是否存在其他会话、是否轮到本人发言等条件。通过以后才生成事件并保存。模型可以说出不真实的内容；系统只保证“某人说了这句话”是真实事件，不保证这句话的内容是真的。
 
-代码：`agent/graph.py` 的 `decide`、`act` → `tools/remote_world.py` 的 `commit` → `WorldMcpTools.commitTurn` → `WorldRules.apply`。
+代码：`agent/graph.py` 的 `decide`、`act` → `tools/remote_world.py` 的 `commit` → `WorldMcpTools 的独立工具 / execute` → `WorldRules.apply`。
 
 ### 2. 用明确的活动与会话状态代替复杂的反应链
 
@@ -54,9 +54,9 @@ Java 检查双方是否同地点、是否存在其他会话、是否轮到本人
 
 记忆统一为亲历、听说和反思，并保存源事件ID。Python观察事件时按 `perceived_by`（知情者名单）过滤；检索长期记忆时Chroma按owner过滤；世界设定按audience过滤。上帝视角可以展示全局信息，但NPC Prompt不直接接收全局视图。
 
-Java在一次角色提交里校验行动、认知字段和记忆来源，生成真实事件，关联动机记录，随后用一次MySQL更新保存。MySQL通过revision（快照版本号）条件更新，避免旧快照覆盖新状态。这里采用整份JSON快照，不是复杂的分布式事务系统。
+Java在一次角色提交里校验行动、认知字段和记忆来源，生成真实事件，关联动机记录，随后在一个MySQL事务里保存快照与独立请求回执。MySQL通过revision（快照版本号）条件更新，避免旧快照覆盖新状态。这里采用整份JSON快照，不是复杂的分布式事务系统。
 
-代码：`memory/stream.py`、`retrieval/chroma_index.py`、`characters/prompt.py`、`WorldMcpTools.commitTurn`、`WorldStore.update`。
+代码：`memory/stream.py`、`retrieval/chroma_index.py`、`characters/prompt.py`、`WorldMcpTools 的独立工具 / execute`、`WorldStore.update`。
 
 ## 一次真实行动：许宁邀请苏晚
 
@@ -119,6 +119,6 @@ Java在一次角色提交里校验行动、认知字段和记忆来源，生成�
 
 ## 当前局限与下一步
 
-当前是小规模单机、单玩家、双人会话、顺序模型调用。JSON历史增长会增加读写成本，角色可能重复行为，叙事质量依赖模型。旧存档只能导出，没有自动迁移。
+当前是小规模单机、单玩家、双人会话、顺序模型调用。JSON历史增长会增加读写成本，角色可能重复行为，叙事质量依赖模型。v1/v2旧存档只能导出；v3旧Decision会兼容迁移现存记录，旧版已裁掉的请求不能恢复。
 
 下一步应先观察较长运行中的重复行为和计划执行，再决定是否增加计划清理、记忆压缩或更好的调度。它们是未来方向，不能在面试里说成已经实现。

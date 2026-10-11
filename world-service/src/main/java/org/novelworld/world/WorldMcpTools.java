@@ -1,6 +1,5 @@
 package org.novelworld.world;
 
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -8,6 +7,7 @@ import java.util.Set;
 import org.springframework.ai.mcp.annotation.McpTool;
 import org.springframework.ai.mcp.annotation.McpToolParam;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
 
 /** 一次角色轮次原子提交行动与认知；Java 自己生成真实事件和故事记录的关联。 */
@@ -41,17 +41,153 @@ public class WorldMcpTools {
         rules.advance(w); store.update(worldId, w); return json(w);
     }
 
-    @McpTool(name = "commit_turn", description = "校验角色行动并原子保存行动事件、本人认知和简短动机；requestId 防止短期重复提交")
-    public synchronized String commitTurn(@McpToolParam(description = "世界ID") String worldId,
-                                          @McpToolParam(description = "当前行动角色") String actor,
-                                          @McpToolParam(description = "轮次请求ID") String requestId,
-                                          @McpToolParam(description = "JSON: action, arguments, reason, mind, memories") String turnJson) {
+    @McpTool(name = "get_execution", description = "内部 Runtime 按请求ID确认持久提交状态；不执行行动")
+    public String getExecution(String worldId, String actor, String requestId) {
+        store.load(worldId); // 兼容迁移旧 v3 存档的现存回执
+        var receipt = store.execution(worldId, requestId);
+        if (receipt == null) return json(Map.of("status", "not_committed"));
+        if (!actor.equals(receipt.get("actor"))) throw new IllegalArgumentException("请求不属于本人");
+        var feedback = new LinkedHashMap<String, Object>(receipt); feedback.remove("request_hash");
+        return json(feedback);
+    }
+
+    @McpTool(name = "move", description = "空闲且不在会话时移动到已有地点；校验并原子保存行动与认知")
+    @Transactional
+    public synchronized String performMove(@McpToolParam(description = "世界ID") String worldId,
+            @McpToolParam(description = "行动者，由Runtime绑定") String actor,
+            @McpToolParam(description = "幂等请求ID，由Runtime绑定") String requestId,
+            @McpToolParam(description = "观察时revision") long expectedRevision,
+            @McpToolParam(description = "简短行动动机") String reason,
+            @McpToolParam(description = "内部JSON: mind, memories；由Runtime组装") String cognitionJson,
+            @McpToolParam(description = "location") String location) {
+        return execute(worldId, actor, requestId, expectedRevision, "move", Map.of("location", location), reason, cognitionJson);
+    }
+
+    @McpTool(name = "invite", description = "邀请现场另一人交谈；校验并原子保存行动与认知")
+    @Transactional
+    public synchronized String performInvite(@McpToolParam(description = "世界ID") String worldId,
+            @McpToolParam(description = "行动者，由Runtime绑定") String actor,
+            @McpToolParam(description = "幂等请求ID，由Runtime绑定") String requestId,
+            @McpToolParam(description = "观察时revision") long expectedRevision,
+            @McpToolParam(description = "简短行动动机") String reason,
+            @McpToolParam(description = "内部JSON: mind, memories；由Runtime组装") String cognitionJson,
+            @McpToolParam(description = "target") String target,
+            @McpToolParam(description = "message") String message) {
+        return execute(worldId, actor, requestId, expectedRevision, "invite", Map.of("target", target, "message", message), reason, cognitionJson);
+    }
+
+    @McpTool(name = "say", description = "在本人会话轮次发言；校验并原子保存行动与认知")
+    @Transactional
+    public synchronized String performSay(@McpToolParam(description = "世界ID") String worldId,
+            @McpToolParam(description = "行动者，由Runtime绑定") String actor,
+            @McpToolParam(description = "幂等请求ID，由Runtime绑定") String requestId,
+            @McpToolParam(description = "观察时revision") long expectedRevision,
+            @McpToolParam(description = "简短行动动机") String reason,
+            @McpToolParam(description = "内部JSON: mind, memories；由Runtime组装") String cognitionJson,
+            @McpToolParam(description = "message") String message) {
+        return execute(worldId, actor, requestId, expectedRevision, "say", Map.of("message", message), reason, cognitionJson);
+    }
+
+    @McpTool(name = "inspect", description = "查看本人现场对象；校验并原子保存行动与认知")
+    @Transactional
+    public synchronized String performInspect(@McpToolParam(description = "世界ID") String worldId,
+            @McpToolParam(description = "行动者，由Runtime绑定") String actor,
+            @McpToolParam(description = "幂等请求ID，由Runtime绑定") String requestId,
+            @McpToolParam(description = "观察时revision") long expectedRevision,
+            @McpToolParam(description = "简短行动动机") String reason,
+            @McpToolParam(description = "内部JSON: mind, memories；由Runtime组装") String cognitionJson,
+            @McpToolParam(description = "object_id") String object_id) {
+        return execute(worldId, actor, requestId, expectedRevision, "inspect", Map.of("object_id", object_id), reason, cognitionJson);
+    }
+
+    @McpTool(name = "start_activity", description = "开始符合地点与身份的持续活动；校验并原子保存行动与认知")
+    @Transactional
+    public synchronized String performStartActivity(@McpToolParam(description = "世界ID") String worldId,
+            @McpToolParam(description = "行动者，由Runtime绑定") String actor,
+            @McpToolParam(description = "幂等请求ID，由Runtime绑定") String requestId,
+            @McpToolParam(description = "观察时revision") long expectedRevision,
+            @McpToolParam(description = "简短行动动机") String reason,
+            @McpToolParam(description = "内部JSON: mind, memories；由Runtime组装") String cognitionJson,
+            @McpToolParam(description = "activity_id") String activity_id) {
+        return execute(worldId, actor, requestId, expectedRevision, "start_activity", Map.of("activity_id", activity_id), reason, cognitionJson);
+    }
+
+    @McpTool(name = "stop_activity", description = "中断本人活动；校验并原子保存行动与认知")
+    @Transactional
+    public synchronized String performStopActivity(@McpToolParam(description = "世界ID") String worldId,
+            @McpToolParam(description = "行动者，由Runtime绑定") String actor,
+            @McpToolParam(description = "幂等请求ID，由Runtime绑定") String requestId,
+            @McpToolParam(description = "观察时revision") long expectedRevision,
+            @McpToolParam(description = "简短行动动机") String reason,
+            @McpToolParam(description = "内部JSON: mind, memories；由Runtime组装") String cognitionJson) {
+        return execute(worldId, actor, requestId, expectedRevision, "stop_activity", Map.of(), reason, cognitionJson);
+    }
+
+    @McpTool(name = "respond_invitation", description = "接受或拒绝本人收到的邀请；校验并原子保存行动与认知")
+    @Transactional
+    public synchronized String performRespondInvitation(@McpToolParam(description = "世界ID") String worldId,
+            @McpToolParam(description = "行动者，由Runtime绑定") String actor,
+            @McpToolParam(description = "幂等请求ID，由Runtime绑定") String requestId,
+            @McpToolParam(description = "观察时revision") long expectedRevision,
+            @McpToolParam(description = "简短行动动机") String reason,
+            @McpToolParam(description = "内部JSON: mind, memories；由Runtime组装") String cognitionJson,
+            @McpToolParam(description = "invitation_id") String invitation_id,
+            @McpToolParam(description = "accept") boolean accept) {
+        return execute(worldId, actor, requestId, expectedRevision, "respond_invitation", Map.of("invitation_id", invitation_id, "accept", accept), reason, cognitionJson);
+    }
+
+    @McpTool(name = "leave_conversation", description = "结束本人会话；校验并原子保存行动与认知")
+    @Transactional
+    public synchronized String performLeaveConversation(@McpToolParam(description = "世界ID") String worldId,
+            @McpToolParam(description = "行动者，由Runtime绑定") String actor,
+            @McpToolParam(description = "幂等请求ID，由Runtime绑定") String requestId,
+            @McpToolParam(description = "观察时revision") long expectedRevision,
+            @McpToolParam(description = "简短行动动机") String reason,
+            @McpToolParam(description = "内部JSON: mind, memories；由Runtime组装") String cognitionJson) {
+        return execute(worldId, actor, requestId, expectedRevision, "leave_conversation", Map.of(), reason, cognitionJson);
+    }
+
+    @McpTool(name = "wait", description = "静候10分钟，占用活动时间；校验并原子保存行动与认知")
+    @Transactional
+    public synchronized String performWait(@McpToolParam(description = "世界ID") String worldId,
+            @McpToolParam(description = "行动者，由Runtime绑定") String actor,
+            @McpToolParam(description = "幂等请求ID，由Runtime绑定") String requestId,
+            @McpToolParam(description = "观察时revision") long expectedRevision,
+            @McpToolParam(description = "简短行动动机") String reason,
+            @McpToolParam(description = "内部JSON: mind, memories；由Runtime组装") String cognitionJson) {
+        return execute(worldId, actor, requestId, expectedRevision, "wait", Map.of(), reason, cognitionJson);
+    }
+
+    private String execute(String worldId, String actor, String requestId, long expectedRevision,
+                           String action, Map<String, Object> arguments, String reason, String cognitionJson) {
+        try {
+            return executeValidated(worldId, actor, requestId, expectedRevision, action, arguments, reason, cognitionJson);
+        } catch (IllegalArgumentException error) {
+            // 只有明确的规则/输入拒绝允许模型改选。存储等系统异常交由客户端确认提交状态。
+            return json(Map.of("status", "rejected", "error", error.getMessage()));
+        }
+    }
+    private String executeValidated(String worldId, String actor, String requestId, long expectedRevision,
+                                    String action, Map<String, Object> arguments, String reason, String cognitionJson) {
         var w = store.load(worldId); WorldRules.requireCurrent(w);
         if (requestId == null || !requestId.matches("[a-zA-Z0-9-]{1,80}")) throw new IllegalArgumentException("请求ID无效");
-        if (WorldRules.list(w.get("decisions")).stream().map(WorldRules::map).anyMatch(d -> requestId.equals(d.get("id")))) return json(w);
-        var turn = parse(turnJson);
-        if (!turn.keySet().equals(Set.of("action", "arguments", "reason", "mind", "memories"))) throw new IllegalArgumentException("轮次字段无效");
-        String action = WorldRules.text(turn, "action", 80), reason = WorldRules.text(turn, "reason", 600);
+        var cognition = parse(cognitionJson);
+        if (!cognition.keySet().equals(Set.of("mind", "memories"))) throw new IllegalArgumentException("认知封装字段无效");
+        var turn = new LinkedHashMap<String, Object>(cognition);
+        turn.put("action", action); turn.put("arguments", arguments); turn.put("reason", reason);
+        var request = new LinkedHashMap<String, Object>(turn);
+        request.put("actor", actor); request.put("expected_revision", expectedRevision);
+        String requestHash = requestHash(request);
+        var previous = store.execution(worldId, requestId);
+        if (previous != null) {
+            if (!actor.equals(previous.get("actor")) || !action.equals(previous.get("action"))
+                    || (previous.containsKey("request_hash") && !requestHash.equals(previous.get("request_hash"))))
+                throw new IllegalArgumentException("请求ID已用于不同的行动或内容");
+            var feedback = new LinkedHashMap<String, Object>(previous); feedback.remove("request_hash");
+            return json(Map.of("world", w, "execution", feedback));
+        }
+        if (((Number) w.get("revision")).longValue() != expectedRevision) throw new IllegalArgumentException("世界已改变，请重新观察");
+        WorldRules.text(turn, "reason", 600);
         var person = WorldRules.actor(w, actor);
         boolean npc = "npc".equals(person.get("actor_type"));
         if (npc) validateCognition(w, actor, WorldRules.map(turn.get("mind")), WorldRules.list(turn.get("memories")));
@@ -76,9 +212,30 @@ public class WorldMcpTools {
         d.put("intention", npc ? WorldRules.map(turn.get("mind")).getOrDefault("intention", "") : "玩家输入");
         d.put("goal", npc ? WorldRules.map(turn.get("mind")).getOrDefault("goal", "") : "");
         d.put("event_ids", committed.stream().map(e -> WorldRules.map(e).get("id")).toList());
-        var decisions = WorldRules.list(w.get("decisions")); decisions.add(d);
-        if (decisions.size() > 120) decisions.subList(0, decisions.size() - 120).clear();
-        store.update(worldId, w); return json(w);
+        d.put("status", "committed");
+        // 最后一条事件展示动机，全部真实事件通过 request_id 关联同一个提交。
+        for (Object raw : committed) WorldRules.map(raw).put("request_id", requestId);
+        WorldRules.map(committed.get(committed.size() - 1)).put("action_trace", new LinkedHashMap<>(d));
+        d.put("request_hash", requestHash);
+        store.update(worldId, w);
+        store.saveExecution(worldId, requestId, d);
+        var feedback = new LinkedHashMap<String, Object>(d); feedback.remove("request_hash");
+        return json(Map.of("world", w, "execution", feedback));
+    }
+    private Object canonical(Object value) {
+        if (value instanceof Map<?, ?> m) {
+            var sorted = new java.util.TreeMap<String, Object>();
+            m.forEach((key, item) -> sorted.put(key.toString(), canonical(item)));
+            return sorted;
+        }
+        if (value instanceof List<?> items) return items.stream().map(this::canonical).toList();
+        return value;
+    }
+    private String requestHash(Map<String, Object> request) {
+        try {
+            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(json(canonical(request)).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException error) { throw new IllegalStateException(error); }
     }
     /** 来源引用必须属于本人的真实可见经历。关系文字是本人印象，不是客观心理或数值。 */
     private static void validateCognition(Map<String, Object> w, String name, Map<String, Object> mind, List<Object> memories) {

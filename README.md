@@ -51,7 +51,7 @@ mvn.cmd -f world-service/pom.xml spring-boot:run
 
 “走过5分钟”推进所有活动，然后让至多两名可行动 NPC 决策；“生活一小时”运行12轮。持续活动期间通常不请求模型，收到邀请时可以提前考虑。暂停在当前轮次结束后生效。旁观页面可以直接展开参与面板，运行中也能加入并提交行动；输入等待当前轮次结束后结算，优先于下一轮NPC决策。每次只接受一条未完成的玩家输入，执行失败单独提示。
 
-参与面板使用服务器过滤后的玩家现场视图，群像纪事与人物手记仍然保留。收起面板只是回到旁观，不删除玩家；结束交谈请使用对应行动。事件一直保存在MySQL，默认推送最新120条，可以通过“读更早的纪事”分页查看；角色短动机仍只保留最近120次决策。
+参与面板使用服务器过滤后的玩家现场视图，群像纪事与人物手记仍然保留。收起面板只是回到旁观，不删除玩家；结束交谈请使用对应行动。事件一直保存在MySQL，默认推送最新120条，可以通过“读更早的纪事”分页查看；新行动短动机随Event保存，兼容视图仍派生最近120次行动。
 
 运行控制也支持输入1–100个Tick并执行指定轮数，每Tick推进5分钟，沿用所选阅读间隔；运行中可暂停，完成指定轮数后自动停止。
 
@@ -72,7 +72,7 @@ mvn.cmd -f world-service/pom.xml spring-boot:run
 - 角色只看到附近人的公开状态、自己的邀请与会话，以及本人感知过的事件。
 - 听到的消息标记为 reported；直接经历标记为 observation；reflection 是引用真实经历的主观反思。
 - 日程、动机和关系印象属于角色认知。计划中的见面不是已经获得别人同意的共同约定。
-- 一次轮次把实际行动和本人认知一起写入 MySQL。`revision` 防止覆盖并发更新，最近120条轮次ID用于短期防重；不宣称无限期 exactly-once。
+- 一次轮次把实际行动和本人认知一起写入 MySQL。`revision` 防止覆盖并发更新，独立持久回执用于防重和响应丢失确认，与世界快照同事务保存；不宣称跨服务无限期 exactly-once。
 
 ## 代码阅读与演示
 
@@ -80,11 +80,11 @@ mvn.cmd -f world-service/pom.xml spring-boot:run
 
 第一次接手建议先读开发者指南：包含启动配置、各模块职责、一次Tick的完整调用链、Prompt与记忆准备、Java结算边界，以及新增活动、角色、Skill和世界行动的具体修改步骤。
 
-从 `web_api.py` → `agent/tick.py` → `agent/graph.py` → `tools/remote_world.py` → Java `WorldMcpTools.commitTurn` → `WorldRules.apply` 阅读主链路。与新架构不兼容的旧测试、Eval、模块与版本文档已经撤下，不保留两套运行方式。
+从 `web_api.py` → `agent/tick.py` → `agent/graph.py` → `tools/remote_world.py` → Java `WorldMcpTools 独立业务工具 / execute` → `WorldRules.apply` 阅读主链路。与新架构不兼容的旧测试、Eval、模块与版本文档已经撤下，不保留两套运行方式。
 
 ## 存档边界
 
-新版快照 `version=3`。旧数据库世界和 `data/world.json` 不会被自动删除或覆盖，旧世界可在“世界与开局”导出原始 JSON，但不能继续运行。新的活动、会话和认知结构与旧版不同，本轮没有编写含糊的自动迁移。当前新版世界可以暂停、切换并重启恢复。
+新版快照 `version=3`。v1/v2 旧数据库世界和 `data/world.json` 不会被自动删除或覆盖，旧版本世界可在“世界与开局”导出原始 JSON，但不能继续运行。v3 旧存档的现存 Decision 会在首次读取时事务迁移为回执和事件动机。当前新版世界可以暂停、切换并重启恢复。
 
 MySQL 数据卷是存档；`data/chroma` 是可重建索引；`data/runtime.json` 是世界指针。不要删除数据卷处理普通启动错误。
 
@@ -93,3 +93,6 @@ MySQL 数据卷是存档；`data/chroma` 是可重建索引；`data/runtime.json
 小规模单机、单玩家、文本地点移动、双人会话，每段最多12条消息，45分钟无回应会结束。活动目录是规则声明，不支持模型发明新活动或物理效果。记忆与事件历史随运行增长。人物自主性和叙事质量依赖真实模型，离线检查只能证明执行链路与规则边界，不能证明故事一定有趣。
 
 参考 [AI Town](https://github.com/a16z-infra/ai-town/blob/main/ARCHITECTURE.md) 的世界/Agent分层与持续交流，以及 [Generative Agents](https://arxiv.org/abs/2304.03442) 的记忆、规划和反思；这是更小的独立实现。
+
+
+原生行动调用保持 Tick → Observe → Recall → Decide → Act → Remember。Python 从 MCP 发现九个业务工具 Schema，现有模型通过原生 tool_calls 选择一个行动，Java 仍使用 WorldRules.apply 校验与结算。工具提交与本人认知、记忆及 MySQL action_executions 回执在同一事务保存。v3 的旧 decisions 在首次读取时兼容迁移；v1/v2 的保留与导出规则不变。详见 [审计与验收](docs/native-tool-calling.md)。

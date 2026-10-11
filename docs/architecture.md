@@ -10,8 +10,8 @@
 4. `opportunities` 选择至多两名有机会的 NPC。持续活动可同时存在，模型请求顺序执行。久未行动者优先，之后考虑邀请、会话轮次与日程。
 5. LangGraph 的 observe 读取 Java 快照。`memory.stream.observe` 仅收集 `perceived_by` 含本人的经历；`characters.prompt.build_prompt` 不会把全局快照直接发给模型。
 6. recall 在 Chroma 中先按 owner 过滤再检索；近期8条直接进上下文。长期候选综合语义相关性、新近程度和重要性。世界设定按 audience 过滤。
-7. decide 用现有模型返回一个行动、短动机、粗粒度计划及可选反思。SKILL 来自身份与情境相关的 Markdown，不是固定工具流程。
-8. act 通过 `RemoteWorld.commit` 调用 `WorldMcpTools.commitTurn`。Java 白名单检查认知字段及记忆来源，`WorldRules.apply` 校验并执行动作。
+7. decide 从 MCP 适配的 Schema 中让现有模型通过原生 tool_calls 选择一个业务工具，携带短动机、粗粒度计划及可选反思。SKILL 来自身份与情境相关的 Markdown，不是固定工具流程。
+8. act 通过 `RemoteWorld.commit` 调用选中的独立 `WorldMcpTools` 业务工具，共用 `execute`。Java 白名单检查认知字段及记忆来源，`WorldRules.apply` 校验并执行动作。
 9. Java 为实际动作生成事件，自动关联故事记录，并原子保存业务状态、本人认知和记忆。数据库 revision 乐观锁防止覆盖其他请求。
 10. SSE 推送已保存的世界视图。React `Story` 按真实事件顺序展示对话与活动，把短动机放在对应事件旁。
 
@@ -23,7 +23,7 @@
 
 旁观与参与在同一个页面中组合，世界ID不变。参与面板另外订阅服务器过滤的play视图，不把群像私密字段传给NPC。玩家输入由单个待处理线程等待世界结算锁，在当前轮次结束后执行；下一轮NPC运行前等待已接收输入完成。拒绝的输入显示player_error，不中止其他NPC运行。这是单机单玩家的有界等待，不是分布式消息队列；进程退出前未执行的输入不持久保存。
 
-事件存档不会因视角变化而删除。SSE默认带最新120条，`/api/history`按事件ID向前分页，并按视角过滤。前端保留已读事件；切换世界才清空当前纪事缓存。角色动机的决策记录仍只保留最近120次，不能声称所有历史认知都能回放。
+事件存档不会因视角变化而删除。SSE默认带最新120条，`/api/history`按事件ID向前分页，并按视角过滤。前端保留已读事件；切换世界才清空当前纪事缓存。短动机保存在对应 Event 的 action_trace 中；兼容 Web decisions 输出由事件派生最近120次，没有独立的 Decision 世界数组。
 
 ## 信息与关系
 
@@ -39,7 +39,7 @@ MySQL 保存 version=3 世界 JSON、业务事件、认知、记忆、活动及�
 
 Chroma是可重建索引，不能修改世界状态。Redis只缓存向量，键包含模型、维度和文本SHA-256；缓存不包含角色决策，不会让两名角色复用同一行动。缓存掉线时退化，不把Redis称为权威数据库或分布式任务调度。
 
-Python只存当前世界ID；重启从Java恢复。轮次请求ID保留最近120条，用于网络返回丢失后的确认。时间推进携带 expectedTick。以上只提供本原型的短期防重，不宣称跨服务无限期 exactly-once、集群一致性或生产并发经验。
+Python只存当前世界ID；重启从Java恢复。轮次请求ID和提交状态存入独立 action_executions 表，与世界快照同事务保存，不随120条展示窗口裁剪；响应丢失后通过 get_execution 确认。时间推进携带 expectedTick。旧v3存档只可迁移尚存的120条请求；新提交持久防重，不宣称跨服务无限期 exactly-once、集群一致性或生产并发经验。
 
 ## 简历准确写法
 

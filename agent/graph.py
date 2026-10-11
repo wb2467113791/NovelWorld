@@ -19,6 +19,9 @@ class TurnState(TypedDict, total=False):
     error: str | None
     attempts: int
     result: dict
+    selection: dict
+    feedback: list
+    request_id: str
 
 
 def validate_proposal(value, world, name):
@@ -66,7 +69,7 @@ def build_graph(backend, index, request_model, progress=lambda *_: None):
         progress(state["name"], "观察现场")
         world = backend.load()
         mind, memories, due = observe(world, state["name"])
-        return {"world": world, "mind": mind, "memories": memories, "reflection_due": due, "attempts": 0, "error": None}
+        return {"world": world, "mind": mind, "memories": memories, "reflection_due": due, "attempts": 0, "error": None, "feedback": [], "request_id": uuid4().hex}
 
     def recall(state):
         progress(state["name"], "检索记忆")
@@ -80,8 +83,9 @@ def build_graph(backend, index, request_model, progress=lambda *_: None):
         prompt = build_prompt(state["world"], state["name"], state["mind"], state["memories"],
                               state["recalled"], state["lore"], state["reflection_due"], state["error"])
         try:
-            proposal = validate_proposal(request_model(prompt), state["world"], state["name"])
-            return {"proposal": proposal, "error": None, "attempts": state["attempts"] + 1}
+            selection = request_model(prompt, backend.model_tools(), state["feedback"])
+            proposal = validate_proposal(selection["proposal"], state["world"], state["name"])
+            return {"proposal": proposal, "selection": selection, "error": None, "attempts": state["attempts"] + 1}
         except ValueError as error:
             if state["attempts"] >= 1:
                 raise
@@ -101,17 +105,22 @@ def build_graph(backend, index, request_model, progress=lambda *_: None):
             mind.update(goal=p["goal"], intention=p["intention"], plan=p["plan"],
                         relationship_notes={**mind["relationship_notes"], **p["relationship_notes"]},
                         last_decision=state["world"]["minute"], next_decision=state["world"]["minute"] + p["next_review_minutes"])
-            result = backend.commit(state["name"], uuid4().hex, {
+            result = backend.commit(state["name"], state["request_id"], {
                 "action": p["action"], "arguments": p["arguments"], "reason": p["reason"], "mind": mind, "memories": memories})
-            return {"world": result, "error": None}
+            return {"world": result["world"], "result": result["execution"], "error": None}
         except ValueError as error:
             if state["attempts"] >= 2:
                 raise RuntimeError(f"{state['name']}连续两次提议未通过：{error}") from error
-            return {"world": backend.load(), "error": str(error)}
+            # Java规则拒绝作为原生tool结果反馈；只允许一次修正。
+            selection = state["selection"]
+            feedback = [*state["feedback"], selection["message"], {
+                "role": "tool", "tool_call_id": selection["call_id"],
+                "content": str(error)}]
+            return {"world": backend.load(), "error": str(error), "feedback": feedback}
 
     def remember(state):
         progress(state["name"], "记录本轮经历")
-        return {"result": state["world"]["decisions"][-1]}
+        return {"result": state["result"]}
 
     builder = StateGraph(TurnState)
     for name, node in (("observe", perception), ("recall", recall), ("decide", decide), ("act", act), ("remember", remember)):

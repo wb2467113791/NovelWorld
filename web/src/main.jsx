@@ -36,22 +36,14 @@ function Scene({location, description, world, selected, select}) {
 
 function Story({world, filter, follow, selected}) {
   const scroll = useRef(null)
-  const decisions = useMemo(() => {
-    const byEvent = {}
-    for (const d of world.decisions || []) {
-      const lastId = d.event_ids?.at(-1)
-      if (lastId) byEvent[lastId] = d
-    }
-    return byEvent
-  }, [world.decisions])
-  const rows = (world.events || []).filter(e => filter === 'all' || e.actor === filter || e.target === filter || decisions[e.id]?.actor === filter)
+  const rows = (world.events || []).filter(e => filter === 'all' || e.actor === filter || e.target === filter || e.action_trace?.actor === filter)
   useEffect(() => {
     if (follow && scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight
   }, [world.revision, follow, filter])
   return <div ref={scroll} className="story-scroll" tabIndex="0" aria-label="按发生顺序阅读故事">
     {!rows.length && <div className="story-empty"><span>✧</span><h3>清晨，故事还没有开始。</h3><p>让时间向前走，看看每个人会怎样度过今天。</p></div>}
     {rows.map(e => {
-      const thought = decisions[e.id]
+      const thought = e.action_trace
       const speech = e.type === 'talk' || e.type === 'invitation'
       return <article key={e.id} className={`story-entry ${speech ? 'speech-entry' : ''} ${selected === e.actor ? 'highlight' : ''}`}>
         <div className="story-margin"><time>{clock(e.minute)}</time><span className="story-dot"/></div>
@@ -67,7 +59,7 @@ function Story({world, filter, follow, selected}) {
 function CharacterDetail({world, selected, select}) {
   const people = Object.values(world.characters || {}).filter(p => p.actor_type === 'npc')
   const p = world.characters?.[selected]
-  const d = [...(world.decisions || [])].reverse().find(d => d.actor === selected)
+  const d = p?.last_action
   const mind = p?.mind || {}
   const impressions = {...p?.relationships, ...mind.relationship_notes}
   return <aside className="character-panel">
