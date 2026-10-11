@@ -163,14 +163,14 @@ function App() {
   function control(path, body) {command(path, body).catch(() => {})}
 
   return <div className="app-shell">
-    <nav className="sidebar"><a className="brand" href="#"><span>◈</span><b>NovelWorld</b><small>一座小镇，几种人生</small></a>
-      <div className="mode-switch"><button className="active" onClick={() => setParticipating(false)}>旁观小镇</button><button disabled={busy} className={participating ? 'active' : ''} onClick={() => setParticipating(v => !v)}>{participating ? '收起参与' : world?.player_name ? '继续参与' : '走进小镇'}</button></div>
-      <p className="sidebar-note">旁观，也能随时作为旅人加入。小镇纪事始终保留。</p>
+    <nav className="sidebar"><a className="brand" href="#"><span>◈</span><b>NovelWorld</b><small>一个世界，各自的人生</small></a>
+      <div className="mode-switch"><button className="active" onClick={() => setParticipating(false)}>旁观世界</button><button disabled={busy} className={participating ? 'active' : ''} onClick={() => setParticipating(v => !v)}>{participating ? '收起参与' : world?.player_name ? '继续参与' : '进入世界'}</button></div>
+      <p className="sidebar-note">旁观，也能随时以角色身份加入。世界纪事始终保留。</p>
       <button className="world-settings" onClick={() => setSetup(v => !v)}>⌂ 世界与开局</button>
       <div className="sidebar-bottom"><span className={`connection ${connected ? 'online' : ''}`}>{connected ? '世界已连接' : '连接中'}</span><small>角色自主选择<br/>每段经历，都有来处。</small></div>
     </nav>
     <main>
-      <header className="page-header"><div><span className="eyebrow">小型 AI 社会沙盒</span><h1>{world?.title || '青石镇 · 一天尚未写完'}</h1><p>{world?.premise || '正在打开小镇……'}</p></div><div className="world-clock"><span>{world?.time || '—'}</span><small>{world?.running ? world.pausing ? '正在暂停' : '时间向前走' : '此刻暂停'} · {world?.tick_count ?? 0}轮</small></div></header>
+      <header className="page-header"><div><span className="eyebrow">小型 AI 社会沙盒</span><h1>{world?.title || 'NovelWorld · 世界观测台'}</h1><p>{world?.premise || '正在加载世界……'}</p></div><div className="world-clock"><span>{world?.time || '—'}</span><small>{world?.running ? world.pausing ? '正在暂停' : '时间向前走' : '此刻暂停'} · {world?.tick_count ?? 0}轮</small></div></header>
       {notice && <div role="alert" className="notice">{notice}<button aria-label="关闭提示" onClick={() => setNotice('')}>×</button></div>}
       {world?.error && <div role="alert" className="notice error">运行已暂停：{world.error}</div>}
       {world?.player_error && <div role="alert" className="notice error">玩家行动未执行：{world.player_error}</div>}
@@ -187,12 +187,12 @@ function App() {
       </div></section>
       <p className="cost-note">运行会调用当前配置的模型。每轮最多两名角色思考，活动过程随时间推进。</p>
       {setup && <WorldSetup running={world?.running} activeWorldId={world?.world_id} command={command} busy={busy}/>}
-      {participating && <section className="participation-section"><p className="reading-note">你与镇民处在同一个世界。参与面板只使用现场可见信息；收起面板不会删除旅人或经历，离开交谈请使用“结束交谈”。</p><PlayMode key={world?.world_id} world={playerWorld?.world_id === world?.world_id ? playerWorld : null} command={command} busy={busy}/></section>}
+      {participating && <section className="participation-section"><p className="reading-note">你与其他角色处在同一个世界。参与面板只使用现场可见信息；收起面板不会删除你的角色或经历，离开交谈请使用“结束交谈”。</p><PlayMode key={world?.world_id} world={playerWorld?.world_id === world?.world_id ? playerWorld : null} command={command} busy={busy}/></section>}
       <>
-        <section className="scene-section"><div className="section-title horizontal"><div><span className="eyebrow">此时此地</span><h2>小镇正在发生什么</h2></div><span className="muted">{Object.values(world?.characters || {}).filter(p => p.actor_type === 'npc').length} 位镇民 · {world?.event_count || 0} 段经历</span></div>
+        <section className="scene-section"><div className="section-title horizontal"><div><span className="eyebrow">此时此地</span><h2>世界正在发生什么</h2></div><span className="muted">{Object.values(world?.characters || {}).filter(p => p.actor_type === 'npc').length} 位自主角色 · {world?.event_count || 0} 段经历</span></div>
           <div className="scene-grid">{Object.entries(world?.locations || {}).map(([location, description]) => <Scene key={location} location={location} description={description} world={world} selected={selected} select={setSelected}/>)}</div>
         </section>
-        <div className="reading-layout"><section className="story-panel"><div className="section-title horizontal"><div><span className="eyebrow">没有预定结局</span><h2>小镇纪事</h2></div><div className="story-tools"><select aria-label="跟随人物" value={filter} onChange={e => setFilter(e.target.value)}><option value="all">所有人物</option>{Object.keys(world?.characters || {}).map(name => <option key={name}>{name}</option>)}</select><label><input type="checkbox" checked={follow} onChange={e => setFollow(e.target.checked)}/>跟随最新</label></div></div>
+        <div className="reading-layout"><section className="story-panel"><div className="section-title horizontal"><div><span className="eyebrow">没有预定结局</span><h2>世界纪事</h2></div><div className="story-tools"><select aria-label="跟随人物" value={filter} onChange={e => setFilter(e.target.value)}><option value="all">所有人物</option>{Object.keys(world?.characters || {}).map(name => <option key={name}>{name}</option>)}</select><label><input type="checkbox" checked={follow} onChange={e => setFollow(e.target.checked)}/>跟随最新</label></div></div>
           <p className="reading-note">行动与对话来自实际发生的经历；“动机”是角色对自己选择的简短说明。</p>
           {(world?.event_count || 0) > storyWorld.events.length && <button disabled={historyBusy} onClick={earlier}>{historyBusy ? '正在读取……' : '读更早的纪事'}</button>}
           <Story world={storyWorld} filter={filter} follow={follow} selected={selected}/>

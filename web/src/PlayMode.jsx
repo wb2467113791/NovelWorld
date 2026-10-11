@@ -2,13 +2,13 @@ import React, {useState} from 'react'
 import {clock} from './api.js'
 
 export default function PlayMode({world, command, busy}) {
-  const [name, setName] = useState('旅人')
+  const [name, setName] = useState('玩家')
   const [location, setLocation] = useState('')
   const [target, setTarget] = useState('')
   const [message, setMessage] = useState('')
   const [activity, setActivity] = useState('')
   const [object, setObject] = useState('')
-  if (!world) return <p className="muted">正在打开小镇……</p>
+  if (!world) return <p className="muted">正在加载世界……</p>
   const player = world.characters?.[world.player_name]
   const disabled = busy || world.player_pending
   const places = Object.keys(world.locations || {})
@@ -16,7 +16,7 @@ export default function PlayMode({world, command, busy}) {
     try {await command('/api/play/action', {world_id: world.world_id, action, arguments: args}); setMessage('')}
     catch (_) {}
   }
-  if (!player) return <section className="play-panel"><span className="eyebrow">从一声问候开始</span><h2>成为小镇里的旅人</h2><p>你会遇见现场的人。对方怎样回应、是否接受邀请，由他们自己决定。</p><div className="form-row"><input aria-label="旅人姓名" value={name} maxLength="40" onChange={e => setName(e.target.value)}/><select aria-label="起始地点" value={location || places[0]} onChange={e => setLocation(e.target.value)}>{places.map(p => <option key={p}>{p}</option>)}</select><button className="primary" disabled={disabled || !name.trim()} onClick={() => command('/api/play/join', {world_id: world.world_id, name, location: location || places[0]}).catch(() => {})}>走进小镇</button></div></section>
+  if (!player) return <section className="play-panel"><span className="eyebrow">从一声问候开始</span><h2>以角色身份参与这个世界</h2><p>你会遇见现场的人。对方怎样回应、是否接受邀请，由他们自己决定。</p><div className="form-row"><input aria-label="玩家姓名" value={name} maxLength="40" onChange={e => setName(e.target.value)}/><select aria-label="起始地点" value={location || places[0]} onChange={e => setLocation(e.target.value)}>{places.map(p => <option key={p}>{p}</option>)}</select><button className="primary" disabled={disabled || !name.trim()} onClick={() => command('/api/play/join', {world_id: world.world_id, name, location: location || places[0]}).catch(() => {})}>进入世界</button></div></section>
   const session = world.conversations?.find(s => s.participants.includes(player.name))
   const people = Object.keys(world.characters || {}).filter(n => n !== player.name)
   const activities = Object.entries(world.activities || {}).filter(([, a]) => a.locations.includes(player.location) && (!a.roles.length || a.roles.includes(player.role)))
