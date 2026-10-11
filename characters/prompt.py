@@ -12,6 +12,13 @@ def build_prompt(world, name, mind, memories, recalled, lore, reflection_due, er
                   if not value["roles"] or person["role"] in value["roles"]}
     objects = {key: {"name": value["name"]} for key, value in world["objects"].items() if value["location"] == person["location"]}
     conversations = [s for s in world["conversations"] if name in s["participants"]]
+    conversation_hint = ""
+    if conversations:
+        message_count = len(conversations[0]["messages"])
+        if 9 <= message_count <= 10:
+            conversation_hint = "\n对话阶段提示：这段对话已经较长，可根据话题进展和自己的安排，自主决定是否收尾；无需聊满12条，也可以主动离开。\n"
+        elif message_count == 11:
+            conversation_hint = "\n对话阶段提示：这段对话已有11条消息。若继续发言，请尽量自然回应、总结未完成的话题或礼貌告别；下一条发言将达到12条安全上限，随后会话会结束。也可以自主选择leave_conversation，无需为了凑满次数继续聊天。\n"
     invitations = [i for i in world["invitations"] if name in (i["from"], i["to"])]
     context = {
         "世界": {"主题": world["premise"], "时间": world["time"], "累计分钟": world["minute"], "地点": world["locations"]},
@@ -55,7 +62,7 @@ reflection_due为true时，结合提供的真实经历写一条有用的主观�
 cognition包含goal、intention、plan、reflection、relationship_notes、next_review_minutes。
 reflection可为{"content":"主观认识","source_event_ids":["真实事件ID"]}。
 next_review_minutes为5到30的整数，只表示下次主动考虑的间隔。会话与收到邀请可提前唤醒。
-""" + "\n当前本人视角：\n" + json.dumps(context, ensure_ascii=False) + (
+""" + conversation_hint + "\n当前本人视角：\n" + json.dumps(context, ensure_ascii=False) + (
         "\n上次提议未执行：" + error + "。请修正参数或选择适合当前状态的另一个行动。" if error else "")
 
 

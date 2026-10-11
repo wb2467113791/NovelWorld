@@ -111,5 +111,25 @@ class NativeToolsTests(unittest.TestCase):
                 for secret in person["secrets"]: self.assertNotIn(secret, p)
         self.assertNotIn("只输出一个完整JSON", p)
 
+    def test_conversation_stage_hint_only_for_own_long_conversation(self):
+        w = world()
+        conversation = {"participants": ["苏晚", "许宁"], "messages": []}
+        w["conversations"] = [conversation]
+        mind = {"goal": "生活", "intention": "交流"}
+        for count in (0, 8, 9, 10, 11):
+            with self.subTest(count=count):
+                conversation["messages"] = [{"speaker": "许宁", "message": "最近读了什么？"}] * count
+                prompt = build_prompt(w, "苏晚", mind, [], [], [], False)
+                if count <= 8:
+                    self.assertNotIn("对话阶段提示：", prompt)
+                elif count <= 10:
+                    self.assertIn("自主决定是否收尾", prompt)
+                    self.assertNotIn("下一条发言将达到12条", prompt)
+                else:
+                    self.assertIn("自然回应、总结未完成的话题或礼貌告别", prompt)
+                    self.assertIn("下一条发言将达到12条安全上限", prompt)
+                other = build_prompt(w, "陈禾", mind, [], [], [], False)
+                self.assertNotIn("对话阶段提示：", other)
+
 
 if __name__ == "__main__": unittest.main()

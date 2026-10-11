@@ -141,4 +141,24 @@ public class NativeToolsTest {
         assertEquals(mapper.writeValueAsString(migrated), mapper.writeValueAsString(store.load(id)));
         assertEquals("committed", mapper.readValue(tools.getExecution(id, "苏晚", "legacy"), Map.class).get("status"));
     }
+    @Test void conversationStillClosesAtTwelveAndAllowsNextActions() {
+        String id = world();
+        act("invite", id, "苏晚", Map.of("target", "许宁", "message", "聊聊读书"));
+        String invitation = (String) WorldRules.map(WorldRules.list(store.load(id).get("invitations")).get(0)).get("id");
+        act("respond_invitation", id, "许宁", Map.of("invitation_id", invitation, "accept", true));
+        for (int i = 0; i < 12; i++) {
+            assertEquals(i, WorldRules.list(WorldRules.map(WorldRules.list(store.load(id).get("conversations")).get(0)).get("messages")).size());
+            act("say", id, i % 2 == 0 ? "许宁" : "苏晚", Map.of("message", i == 11 ? "那今天先聊到这里，下次见。" : "分享读书感受。"));
+        }
+        var w = store.load(id); assertTrue(WorldRules.list(w.get("conversations")).isEmpty());
+        var ended = WorldRules.map(WorldRules.list(w.get("events")).get(WorldRules.list(w.get("events")).size() - 1));
+        assertEquals("conversation_ended", ended.get("type"));
+        assertEquals("本次交谈告一段落", WorldRules.map(ended.get("payload")).get("reason"));
+        var memories = WorldRules.list(WorldRules.actor(w, "苏晚").get("memories"));
+        assertTrue(memories.stream().map(WorldRules::map).anyMatch(m -> WorldRules.list(m.get("source_event_ids")).contains(ended.get("id"))));
+        tools.advanceWorld(id, 0);
+        act("wait", id, "苏晚", Map.of()); act("wait", id, "许宁", Map.of());
+        assertNotNull(WorldRules.actor(store.load(id), "苏晚").get("activity"));
+        assertNotNull(WorldRules.actor(store.load(id), "许宁").get("activity"));
+    }
 }
