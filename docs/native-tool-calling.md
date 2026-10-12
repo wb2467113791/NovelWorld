@@ -1,5 +1,7 @@
 # 原生 Tool Calling 局部升级
 
+后续简化：已移除仅转交结果的 Remember 节点，当前流程为 Observe → Recall → Decide → Act → END。Act 的 `result` 仍返回执行回执，供 Tick 与演示使用；记忆、认知及回执的 Java 原子保存不变。下方五节点描述记录原升级时的实施情况。
+
 ## 改造前审计
 
 - `llm_client.py` 从 Responses 的普通文本解析 action/arguments；`characters/prompt.py` 要求文本 JSON。

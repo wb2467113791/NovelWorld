@@ -73,7 +73,7 @@ class NativeToolsTests(unittest.TestCase):
                 return request_decision(prompt, tools, feedback)
         index = NS(recall=lambda *_: ([], []))
         graph = build_graph(backend, index, model)
-        self.assertEqual(set(graph.nodes) - {"__start__"}, {"observe", "recall", "decide", "act", "remember"})
+        self.assertEqual(set(graph.nodes) - {"__start__"}, {"observe", "recall", "decide", "act"})
         results = WorldSession(backend, graph).next_tick()
         self.assertEqual(len(results), 2); self.assertEqual(backend.successes, 2)
         self.assertEqual(backend.submissions, 3); self.assertEqual(backend.snapshot["minute"], 485)

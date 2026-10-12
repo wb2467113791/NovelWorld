@@ -1,9 +1,9 @@
-"""可读的LangGraph：观察→回忆→决策→Java提交→记录；规则失败最多改选一次。"""
+"""可读的LangGraph：观察→回忆→决策→Java提交；规则失败最多改选一次。"""
 
 from typing import TypedDict
 from uuid import uuid4
 from langgraph.graph import StateGraph, START, END
-from characters.prompt import build_prompt
+from characters.prompt import build_prompt, relationship_targets
 from memory.stream import observe, add_reflection
 
 
@@ -49,12 +49,12 @@ def validate_proposal(value, world, name):
     notes = value["relationship_notes"]
     if not isinstance(notes, dict):
         raise ValueError("关系印象必须是对象")
+    eligible = set(relationship_targets(world, name))
     for target, impression in notes.items():
         if target == name or target not in world["characters"] or not isinstance(impression, str) or len(impression) > 500:
             raise ValueError("关系印象无效")
-        if not any(e["type"] in {"talk", "invitation", "invitation_declined", "conversation_started"}
-                   and name in e["perceived_by"] and {name, target} <= {e["actor"], e["target"]} for e in world["events"]):
-            raise ValueError("没有与此人的真实交流，不能更新关系印象")
+        if target not in eligible:
+            raise ValueError(f"对{target}没有本人已有关系、现场观察或可见消息依据；请移除此人的relationship_notes，无新印象时填空对象")
     reflection = value["reflection"]
     if reflection is not None and (not isinstance(reflection, dict) or set(reflection) != {"content", "source_event_ids"}
                                    or not isinstance(reflection["content"], str) or not 1 <= len(reflection["content"]) <= 600
@@ -118,15 +118,10 @@ def build_graph(backend, index, request_model, progress=lambda *_: None):
                 "content": str(error)}]
             return {"world": backend.load(), "error": str(error), "feedback": feedback}
 
-    def remember(state):
-        progress(state["name"], "记录本轮经历")
-        return {"result": state["result"]}
-
     builder = StateGraph(TurnState)
-    for name, node in (("observe", perception), ("recall", recall), ("decide", decide), ("act", act), ("remember", remember)):
+    for name, node in (("observe", perception), ("recall", recall), ("decide", decide), ("act", act)):
         builder.add_node(name, node)
     builder.add_edge(START, "observe"); builder.add_edge("observe", "recall"); builder.add_edge("recall", "decide")
     builder.add_conditional_edges("decide", lambda s: "decide" if s["error"] else "act")
-    builder.add_conditional_edges("act", lambda s: "decide" if s["error"] else "remember")
-    builder.add_edge("remember", END)
+    builder.add_conditional_edges("act", lambda s: "decide" if s["error"] else END)
     return builder.compile()

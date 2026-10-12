@@ -4,6 +4,24 @@ import json
 from skills.router import skill_for
 
 
+def relationship_targets(world, name):
+    """仅从本人已有关系、现场观察和可见经历确定可形成印象的人。"""
+    person = world["characters"][name]
+    known = set(person.get("relationships", {}))
+    known.update((person.get("mind") or {}).get("relationship_notes", {}))
+    known.update(other for other, p in world["characters"].items()
+                 if p["location"] == person["location"])
+    visible = [e for e in world["events"] if name in e.get("perceived_by", [])]
+    for event in visible:
+        known.update(target for target in (event.get("actor"), event.get("target")) if target)
+    # 听到的消息可以形成主观印象；不把猜测当成世界事实。
+    accounts = [e.get("description", "") for e in visible]
+    accounts.extend(m.get("content", "") for m in person.get("memories", [])
+                    if m.get("kind") in {"observation", "reported"})
+    known.update(other for other in world["characters"] if any(other in text for text in accounts))
+    return [other for other in world["characters"] if other != name and other in known]
+
+
 def build_prompt(world, name, mind, memories, recalled, lore, reflection_due, error=None):
     person = world["characters"][name]
     local = [{"name": other, "role": p["role"], "activity": p["activity"]}
@@ -24,6 +42,7 @@ def build_prompt(world, name, mind, memories, recalled, lore, reflection_due, er
         "世界": {"主题": world["premise"], "时间": world["time"], "累计分钟": world["minute"], "地点": world["locations"]},
         "本人": {key: person[key] for key in ("name", "role", "background", "personality", "goals", "secrets", "location", "activity", "relationships")},
         "本人认知": mind, "附近的人": local, "本人邀请": invitations, "本人会话": conversations,
+        "可更新关系印象的人": relationship_targets(world, name),
         "活动条件": activities, "现场对象": objects, "近期经历": memories[-8:],
         "检索经历": recalled, "可见设定": lore, "技能知识": skill_for(person, mind),
         "本轮是否需要反思": reflection_due,
@@ -55,7 +74,10 @@ at使用累计分钟，例如第1天09:00为540，第2天09:00为1980。结合�
 goal可结合长期目标调整为当前关注点；intention表达这一步想达成什么。
 reason用一两句简短动机说明，供作者观看；不输出私密推理过程或大段分析。
 reflection_due为true时，结合提供的真实经历写一条有用的主观反思并引用source_event_ids。
-其余时候reflection为null。relationship_notes只更新本人经过实际互动形成的印象，不评价未接触的人。
+其余时候reflection为null。relationship_notes只填写本轮需要更新的印象，不必重复已有印象；没有变化时填{}。
+只能更新“可更新关系印象的人”中的人物，可依据开局已有关系、亲眼观察或本人听到的消息。
+印象属于主观判断；仅凭传闻时应注明来源或不确定性，不得断言他人的秘密。
+本轮尚未执行的邀请、发言或移动不能当成已经发生的经历。
 
 必须调用提供的一个业务工具。不要用普通文本JSON模拟调用，不得并行选择多个行动。
 工具业务参数使用Schema列出的字段，同时提供reason和cognition。

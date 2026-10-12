@@ -95,4 +95,4 @@ MySQL 数据卷是存档；`data/chroma` 是可重建索引；`data/runtime.json
 参考 [AI Town](https://github.com/a16z-infra/ai-town/blob/main/ARCHITECTURE.md) 的世界/Agent分层与持续交流，以及 [Generative Agents](https://arxiv.org/abs/2304.03442) 的记忆、规划和反思；这是更小的独立实现。
 
 
-原生行动调用保持 Tick → Observe → Recall → Decide → Act → Remember。Python 从 MCP 发现九个业务工具 Schema，现有模型通过原生 tool_calls 选择一个行动，Java 仍使用 WorldRules.apply 校验与结算。工具提交与本人认知、记忆及 MySQL action_executions 回执在同一事务保存。v3 的旧 decisions 在首次读取时兼容迁移；v1/v2 的保留与导出规则不变。详见 [审计与验收](docs/native-tool-calling.md)。
+原生行动调用流程为 Tick → Observe → Recall → Decide → Act。Act 成功后直接结束并返回执行回执；无独立 Remember 节点。Python 从 MCP 发现九个业务工具 Schema，现有模型通过原生 tool_calls 选择一个行动，Java 仍使用 WorldRules.apply 校验与结算。工具提交与本人认知、记忆及 MySQL action_executions 回执在同一事务保存。v3 的旧 decisions 在首次读取时兼容迁移；v1/v2 的保留与导出规则不变。详见 [审计与验收](docs/native-tool-calling.md)。
